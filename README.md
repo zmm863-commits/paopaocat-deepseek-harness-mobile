@@ -191,7 +191,7 @@ App 内 **设置 → 模型轮换池**（0.18 起从「模型」里独立出来�
 
 ## 🆕 最近更新
 
-见 [CHANGELOG.md](CHANGELOG.md) 与 [GitHub Releases](https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases)
+见 [CHANGELOG.md](docs/changelog-0.18.md) 与 [GitHub Releases](https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases)
 
 ## 相关
 
