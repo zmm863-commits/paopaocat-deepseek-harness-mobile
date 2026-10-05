@@ -13,7 +13,7 @@ DSH 是一套能在本机跑起来的 AI Agent 运行时，能读写文件、执
 它不是网页套壳，也不是远程桌面。关掉网络，它的界面、历史、文件都还在你自己的手机上。
 
 - 包体：`paopaocat-preview-0.14-arm64-v8a.apk` · 188MB · arm64-v8a · minSdk 24
-- 内核：Flutter + Node · 321 名专家 / 22 分区 · 12 个技能（make-image/video/slides 等 + android-exec-shim + rotate-proxy）
+- 内核：Flutter + Node · 321 名专家 / 22 分区 · **12 个技能**（make-image / make-video / make-slides / code-tool / data-analysis / doc-digest / doc-processing / file-organize / sheet-cleanup / study-cards / translate-polish / weekly-report + android-exec-shim + rotate-proxy）
 - 外观：深色/浅色双主题一键切换，重启保持；自定义为占位说明，不会切到不存在状态
 - 隐私：API Key 只存 Android Keystore，会话与产出在私有目录，执行前需你确认
 
@@ -37,6 +37,25 @@ sha256sum paopaocat-preview-0.14-arm64-v8a.apk
 4. **做图/做视频/做 PPT**：跟模型说“生成一张图/做段视频/做个PPT”，它会调 `make-image.mjs`（文生图/图生图/多图合成，1K-4K、8种比例，当前免费）/`make-video.mjs`（文生视频/首尾帧，4-12秒）/`make-pptx.mjs`（真 .pptx，封面+要点+备注）把**真实文件**产到工作区；没配 Key 会报中文错误并给注册地址
 5. **收文件**：会话产出自动进 **资料库** → **工作区** 多目录并行；需定时则建任务（每天/工作日/每周/仅一次），到点自跑（依赖常驻通知，受国产 ROM 省电策略影响可能标“已错过”）
 6. **附件与12组内置会话**：拍照（系统相机→私有目录）/ 相册选图视频 / 任意文件（给真实路径可被模型读取）/ 语音（调系统识别）；首页 **12 条内置会话每组带一个技能**，一次显示 4 条，点**换一换**可看完全部 3 组
+
+**12 组内置会话 × 12 个技能（首页换一换可看全，每条一点即开会话）**
+
+| # | 会话入口（首页） | 背后技能 | 一句话能做什么 |
+|---|---|---|---|
+| 1 | 生成一张图片 | `make-image` | 文生图/图生图/多图合成，1K-4K、8种比例，Agnes 免费 |
+| 2 | 生成一段视频 | `make-video` | 文生视频/首尾帧，4-12秒，异步轮询 |
+| 3 | 做一份 PPT | `make-slides` (`make-pptx.mjs`) | 真 .pptx（16:9，封面+要点+备注） |
+| 4 | 写个小工具 | `code-tool` | 单个自包含 .mjs，纯 Node 内置模块，当场跑通 |
+| 5 | 分析数据 | `data-analysis` | CSV/JSON 真算一遍，产 Markdown 报告 + 离线 HTML 图表 |
+| 6 | 清理表格 | `sheet-cleanup` | 脏 CSV 去重/统格式/补字段/分组汇总，另存 clean-*.csv |
+| 7 | 速读长文 | `doc-digest` | 长文压成要点/时间线/关键数字的速读稿 |
+| 8 | 处理文档 | `doc-processing` | 摘要/改写/纠错/转 Markdown/HTML，产新文件 |
+| 9 | 整理文件 | `file-organize` | 先出方案待确认，再归档/批量重命名，可回退 |
+| 10 | 做学习卡片 | `study-cards` | 材料变问答卡片，产 Markdown + 可导入 CSV |
+| 11 | 翻译润色 | `translate-polish` | 中英互译/润色，产双语对照 Markdown |
+| 12 | 写周报 | `weekly-report` | 扫工作区新增/变更文件，汇总成带路径的周报 |
+
+> 首页一次显示 4 条，点**换一换**换一整组，点 3 次看完全部 12 条；每条都已绑定对应技能，点开即带上下文开会话。
 
 ## 0.14 预览版更新（6 个版本 · 36 条）
 
