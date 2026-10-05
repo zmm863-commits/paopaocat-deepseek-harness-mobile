@@ -62,11 +62,19 @@ sha256sum paopaocat-preview-0.14-arm64-v8a.apk
 
 *本文所有截图均来自真机实拍，未做美化（由 `紧急更新.html` 内 10 张 base64 导出，节选 8 张 720 系列作商店主图）。*
 
+## 交流与反馈
+
+- **公众号：泡泡猫（ID: paopaocat888）** — 扫码关注，**直接在公众号里留言讨论**，私信发送 **888** 即可获取安装包链接
+  - 二维码：`screenshots/wechat_qr.png` · 也可在 `docs/emergency-update-0.14.html` 末尾扫码关注
+  - 适合：使用问题、功能建议、复现反馈（比 GitHub Issue 更轻量，适合手机端随手留言）
+
+- **GitHub Issues**：https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/issues — 提 Bug/需求/兼容报告
+
 ## 相关
 
 - 桌面版：`dshpack-017`（Win/macOS）
-- 预览图文稿：`公众号-泡泡猫DSH预览版.md` / `紧急更新.html`
-- 反馈：GitHub Issues（仓库建好后）
+- 预览图文稿：`docs/preview.md` / `docs/emergency-update-0.14.html`
+- 反馈：GitHub Issues + 公众号留言（双通道）
 
 ## License
 
