@@ -2,9 +2,29 @@
 
 > 手机上的 DeepSeek Harness —— 把整套 DSH 运行时装进 Android，完整能力、完整文件系统，全部在你自己的手机里。除了调模型那一步，不依赖任何服务器。
 
-![screenshots/shot-01.jpg](screenshots/shot-01.jpg)
+<div align="center">
+  <b style="font-size:1.15em;">口袋里的完整 DSH：离线可用，一句话得真实文件</b><br><br>
+  <a href="https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/zmm863-commits/paopaocat-deepseek-harness-mobile?label=Release" /></a>
+  <a href="https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/zmm863-commits/paopaocat-deepseek-harness-mobile" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a><br><br>
+  <img alt="screenshots" src="screenshots/shot-01.jpg" width="100%" />
+</div>
 
-## 它是什么
+## 📑 目录
+- [✨ 功能一览](#-功能一览)
+- [🚀 安装](#-安装)
+- [🖼️ 特性巡礼](#-特性巡礼)
+- [💬 社区](#-社区)
+- [🆕 最近更新](#-最近更新)
+- [🛠️ 开发与构建](#-开发与构建)
+- [🔐 安全](#-安全) · [⚠️ 已知限制](#-已知限制) · [🖥️ 平台支持](#-平台支持)
+
+
+## ✨ 功能一览
+
+> 本 App 的功能一览见下方“为什么它是优点”与“12 组内置会话”两节。
+
+## 🚀 安装
 
 DSH 是一套能在本机跑起来的 AI Agent 运行时，能读写文件、执行任务、调用工具、维护多轮上下文。
 
@@ -119,6 +139,10 @@ App 内 **设置 → 模型 → 轮换池** 可把多个模型（如各家的免
   - 适合：使用问题、功能建议、复现反馈（比 GitHub Issue 更轻量，适合手机端随手留言）
 
 - **GitHub Issues**：https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/issues — 提 Bug/需求/兼容报告
+
+## 🆕 最近更新
+
+见 [CHANGELOG.md](CHANGELOG.md) 与 [GitHub Releases](https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases)
 
 ## 相关
 
