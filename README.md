@@ -1,5 +1,7 @@
 # paopaocat deepseek harness-mobile
 
+[**中文**](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
+
 > 手机上的 DeepSeek Harness —— 把整套 DSH 运行时装进 Android，完整能力、完整文件系统，全部在你自己的手机里。除了调模型那一步，不依赖任何服务器。
 
 <div align="center">
@@ -7,19 +9,20 @@
   <a href="https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/zmm863-commits/paopaocat-deepseek-harness-mobile?label=Release" /></a>
   <a href="https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/zmm863-commits/paopaocat-deepseek-harness-mobile" /></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a><br><br>
-  <img alt="0.18 设置页 · 深色" src="screenshots/0.18-settings-dark.png" width="32%" />
-  <img alt="0.18 设置页 · 浅色" src="screenshots/0.18-settings-light.png" width="32%" />
-  <img alt="0.18 模型轮换池 · 展开" src="screenshots/0.18-model-rotate-pool.png" width="32%" />
+  <img alt="0.19 设置页 · 中文" src="screenshots/0.19-settings-zh.png" width="23%" />
+  <img alt="0.19 设置页 · English" src="screenshots/0.19-settings-en.png" width="23%" />
+  <img alt="0.19 设置页 · 日本語" src="screenshots/0.19-settings-ja.png" width="23%" />
+  <img alt="0.19 设置页 · 한국어" src="screenshots/0.19-settings-ko.png" width="23%" />
 </div>
 
 ## 📑 目录
 - [✨ 功能一览](#-功能一览)
 - [🚀 安装](#-安装)
-- [🖼️ 截图](#-截图)
-- [💬 社区](#-社区)
+- [🖼️ 截图](#截图)
+- [💬 社区](#交流与反馈)
 - [🆕 最近更新](#-最近更新)
 - [🛠️ 开发与构建](#-开发与构建)
-- [🔐 安全](#-安全) · [⚠️ 已知限制](#-已知限制) · [🖥️ 平台支持](#-平台支持)
+- [🔐 安全](#-安全) · [⚠️ 已知限制](#已知限制) · [🖥️ 平台支持](#-平台支持)
 
 
 ## ✨ 功能一览
@@ -34,9 +37,9 @@ DSH 是一套能在本机跑起来的 AI Agent 运行时，能读写文件、执
 
 它不是网页套壳，也不是远程桌面。关掉网络，它的界面、历史、文件都还在你自己的手机上。
 
-- 包体：`paopaocat-preview-0.18-arm64-v8a.apk` · 188MB · arm64-v8a · minSdk 24 · **versionCode 18 / versionName 0.0.18**
+- 包体：`paopaocat-preview-0.19-arm64-v8a.apk` · 187.9MB · arm64-v8a · minSdk 24 · **versionCode 19 / versionName 0.0.19**
 - 内核：Flutter + Node · 321 名专家 / 22 分区 · **12 个技能**（make-image / make-video / make-slides / code-tool / data-analysis / doc-digest / doc-processing / file-organize / sheet-cleanup / study-cards / translate-polish / weekly-report + android-exec-shim + rotate-proxy）
-- 外观：深色/浅色双主题一键切换，重启保持；自定义为占位说明，不会切到不存在状态
+- 外观：深色/浅色双主题一键切换，重启保持；**界面语言可切（中文 / English / 日本語 / 한국어）**；自定义配色为占位说明，不会切到不存在状态
 - 隐私：API Key 只存 Android Keystore，会话与产出在私有目录，执行前需你确认
 
 ## 安装
@@ -44,12 +47,12 @@ DSH 是一套能在本机跑起来的 AI Agent 运行时，能读写文件、执
 - 真机 arm64，允许安装未知应用
 - 安装后首次启动会解压运行时（约 30 秒），之后即可离线使用
 - 仅 arm64-v8a 单架构包，x86/armeabi 设备不兼容
-- **升级不用卸载**：0.15 → 0.18 与 0.14 是同一把证书签的（调试证书 `7aaf4448…d3cc17`），versionCode 递增，**直接覆盖安装，会话 / 文件 / Key 都不丢**
+- **升级不用卸载**：0.19 与 0.14 是同一把证书签的（调试证书 `7aaf4448…d3cc17`），versionCode 递增，**直接覆盖安装，会话 / 文件 / Key 都不丢**
 
 ```sh
 # 校包体
-sha256sum paopaocat-preview-0.18-arm64-v8a.apk
-# 预期: ce814f197d2342db0adb5e82d31489cb4ea6233d7793c7a996c0829157d6ea0c
+sha256sum paopaocat-preview-0.19-arm64-v8a.apk
+# 预期: 8d38df8d705635f96901005092f1e34fa9a28f3fc3cdaeb45ad0274e0552b2d7
 ```
 
 ## 快速开始
@@ -79,6 +82,17 @@ sha256sum paopaocat-preview-0.18-arm64-v8a.apk
 | 12 | 写周报 | `weekly-report` | 扫工作区新增/变更文件，汇总成带路径的周报 |
 
 > 首页一次显示 4 条，点**换一换**换一整组，点 3 次看完全部 12 条；每条都已绑定对应技能，点开即带上下文开会话。
+
+## 🆕 0.19 更新 · 界面语言可切（中 / 英 / 日 / 韩）
+
+**「设置 → 外观」新增「语言」**：中文 / English / 日本語 / 한국어 四个按钮，点一下界面**立刻**切换、重启后保持。
+
+- **App 自己画的界面全部出了四种语言**：底部导航、设置页六个分区、按钮、空态提示、内置错误说明与下一步建议 —— **738 条**界面文案，每条都有英 / 日 / 韩译文
+- **电脑上那台 DSH 给的内容保持原文**：会话消息、技能名、321 名专家、后端报错都是电脑端回传的，App 不替它决定用什么语言。这条边界写在「外观 → 语言」下面，不是没做完
+- **语言按钮上写的是各自母语名**：界面已经切成日文时，韩国用户也能一眼找到「한국어」
+- **仓库说明与截图也出了四种语言**：本文档有 [`English`](README.en.md) · [`日本語`](README.ja.md) · [`한국어`](README.ko.md) 三个版本
+
+逐条说明见 [`docs/changelog-0.19.md`](docs/changelog-0.19.md)。
 
 ## 🆕 0.18 更新（0.15 → 0.18 · 25 条）
 
@@ -141,7 +155,7 @@ App 内 **设置 → 模型轮换池**（0.18 起从「模型」里独立出来�
 ## 已知限制
 
 - 后台常驻通知依赖系统省电策略，部分国产 ROM 仍会杀进程，错过的任务会如实标“已错过”（非假装跑过）
-- 仅 arm64-v8a 单架构，单包 188MB
+- 仅 arm64-v8a 单架构，单包 187.9MB
 - 插件安装暂未开放（需先做完安全校验与回滚机制，设置→插件页已如实说明）
 - 语音本地模型未内置（见上文原因），识别质量取决于系统离线模型/识别服务
 
@@ -159,18 +173,25 @@ App 内 **设置 → 模型轮换池**（0.18 起从「模型」里独立出来�
 | **做图/做视频/做PPT** | 一句话即得真实文件：生图（文生/图生/多图合成，8比例/1K-4K）、生视频（文生/首尾帧，4-12秒）、真 .pptx；`android-exec-shim` 补齐手机无 bash 的执行链 |
 | **隐私与可控** | Key 只存 Android Keystore，不进日志/命令行；执行前弹确认框（工具名+具体内容）；运行日志一键导出且 Key 自动脱敏 |
 | **界面可用** | 深浅双主题一键切且重启保持、模型面板两级厂家→模型点一次生效、右上角统一为工作区入口、首页 12 条内置会话分组换一换、320px 宽屏已修、边缘侧滑二次确认才退 |
-| **安装与升级** | 覆盖安装签名一致，会话/文件/Key 不丢；包命名统一 `paopaocat-preview-版本-芯片`；188MB 单包（versionCode 18 / versionName 0.0.18），minSdk 24 |
+| **安装与升级** | 覆盖安装签名一致，会话/文件/Key 不丢；包命名统一 `paopaocat-preview-版本-芯片`；187.9MB 单包（versionCode 19 / versionName 0.0.19），minSdk 24 |
 
 ## 截图
 
-**0.18 界面**（Flutter 渲染管线导出的真实渲染图，不是示意图）
+**0.19 界面 · 同一个页面的四种语言**（Flutter 渲染管线导出的真实渲染图，不是示意图）
+
+| | | | |
+|---|---|---|---|
+| ![](screenshots/0.19-settings-zh.png) | ![](screenshots/0.19-settings-en.png) | ![](screenshots/0.19-settings-ja.png) | ![](screenshots/0.19-settings-ko.png) |
+| 设置页 · 中文 | 设置页 · English | 设置页 · 日本語 | 设置页 · 한국어 |
+
+*尺寸：1236×2745（3 倍像素）。语言开关在「设置 → 外观」里；同一份代码渲染出四种语言，不是拼图。*
+
+**0.18 界面**（历史留存）
 
 | | | |
 |---|---|---|
 | ![](screenshots/0.18-settings-dark.png) | ![](screenshots/0.18-settings-light.png) | ![](screenshots/0.18-model-rotate-pool.png) |
 | 设置页 · 深色（六板块收起） | 设置页 · 浅色 | 模型轮换池 · 展开 |
-
-*尺寸：设置页 1236×2745，模型轮换池展开 1236×4200。*
 
 **历史截图**（0.14 留存 · 真机实拍）
 
@@ -179,7 +200,7 @@ App 内 **设置 → 模型轮换池**（0.18 起从「模型」里独立出来�
 | ![](screenshots/shot-01.jpg) | ![](screenshots/shot-02.jpg) | ![](screenshots/shot-03.jpg) | ![](screenshots/shot-04.jpg) |
 | ![](screenshots/shot-05.jpg) | ![](screenshots/shot-06.jpg) | ![](screenshots/shot-07.jpg) | ![](screenshots/shot-08.jpg) |
 
-*上面 3 张是当前 **0.18** 口径的界面；下面 8 张是 0.14 真机实拍留存，未做美化（由 `紧急更新.html` 内 10 张 base64 导出，节选 8 张 720 系列作商店主图）。*
+*上面 4 张（+3 张历史）是当前 **0.19** 口径的界面；下面 8 张是 0.14 真机实拍留存，未做美化（由 `紧急更新.html` 内 10 张 base64 导出，节选 8 张 720 系列作商店主图）。*
 
 ## 交流与反馈
 
@@ -191,11 +212,12 @@ App 内 **设置 → 模型轮换池**（0.18 起从「模型」里独立出来�
 
 ## 🆕 最近更新
 
-见 [CHANGELOG.md](docs/changelog-0.18.md) 与 [GitHub Releases](https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases)
+见 [`docs/changelog-0.19.md`](docs/changelog-0.19.md) 与 [GitHub Releases](https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases)
 
 ## 相关
 
 - 桌面版：`dshpack-017`（Win/macOS）
+- **0.19 更新说明：`docs/changelog-0.19.md`（界面语言四语化，含边界说明）**
 - 0.18 更新说明：`docs/changelog-0.18.md`（0.15–0.18 逐条，含升级与签名说明）
 - 预览图文稿：`docs/preview.md` / `docs/emergency-update-0.14.html`
 - 反馈：GitHub Issues + 公众号留言（双通道）
