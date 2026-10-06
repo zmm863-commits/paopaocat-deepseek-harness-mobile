@@ -36,7 +36,7 @@ DSH 是一套能在本机跑起来的 AI Agent 运行时，能读写文件、执
 
 它不是网页套壳，也不是远程桌面。关掉网络，它的界面、历史、文件都还在你自己的手机上。
 
-- 包体：`paopaocat-preview-0.20-arm64-v8a.apk` · 208.8MB · arm64-v8a · minSdk 24 · **versionCode 20 / versionName 0.0.20**
+- 包体：`paopaocat-preview-0.21-arm64-v8a.apk` · 208.8MB · arm64-v8a · minSdk 24 · **versionCode 21 / versionName 0.0.21**
 - 内核：Flutter + Node · 321 名专家 / 22 分区 · **12 个技能**（make-image / make-video / make-slides / code-tool / data-analysis / doc-digest / doc-processing / file-organize / sheet-cleanup / study-cards / translate-polish / weekly-report + android-exec-shim + rotate-proxy）
 - 外观：深色/浅色双主题一键切换，重启保持；**界面语言可切（中文 / English / 日本語 / 한국어）**；自定义配色为占位说明，不会切到不存在状态
 - 隐私：API Key 只存 Android Keystore，会话与产出在私有目录，执行前需你确认
@@ -50,8 +50,8 @@ DSH 是一套能在本机跑起来的 AI Agent 运行时，能读写文件、执
 
 ```sh
 # 校包体
-sha256sum paopaocat-preview-0.20-arm64-v8a.apk
-# 预期: 24c8878f0b666570e52b383c39bb317fea88fea831bdcf9c3619b76db94b44bf
+sha256sum paopaocat-preview-0.21-arm64-v8a.apk
+# 预期: 0e70299155c8a8a61fb4641c003610bdf468bd9c1b962b0b32ea6c0ce887efd6
 ```
 
 ## 快速开始
@@ -82,7 +82,16 @@ sha256sum paopaocat-preview-0.20-arm64-v8a.apk
 
 > 首页一次显示 4 条，点**换一换**换一整组，点 3 次看完全部 12 条；每条都已绑定对应技能，点开即带上下文开会话。
 
-## 🆕 0.20 更新 · 手机本地就能跑大模型（离线可用）
+## 🆕 0.21 更新 · 模型分成两类：云端大模型 / 本地大模型
+
+- **「设置 → 模型」改名为「云端大模型」**：这一块管的是"连厂家 API 的模型"，名字现在直接说明它是什么，不会再和本机跑的模型混在一起。
+- **新增独立板块「本地大模型」**：手机本地跑的模型（下载 / 从本地文件导入 / 启动服务 / 测速）全部归这一块，不再塞在云端那张卡里。
+- **名称统一**：入口与页面标题都叫「本地大模型」（原来叫「端侧模型」，这个词容易被理解成输入法或离线语音识别那类功能）。
+- **修好一个真 bug**：启动了本地服务以后，会话的模型选择器里**看不到它**（选择器读的是 App 自己的模型库，而本地模型此前只写进了 DSH 的配置）。现在它会像「轮换池」一样以 **「本地大模型」** 分组出现。
+- **「本地大模型」页按 App 既有观感重做**：统一用玻璃卡 / 可折叠板块 / 入口行（与设置页**同一份实现**），字号只用 13 / 11 / 12 / 15 四档 —— 上一版自定了一套字号，再乘上文字缩放后有些行大得刺眼。
+- **「关于」的标题不再贴着卡片**：补上与其它板块一致的留白。
+
+## 🕘 0.20 更新 · 手机本地就能跑大模型（离线可用）
 
 - **手机本地就能跑大模型（离线可用）**：模型文件装进 App，DSH 的模型列表里就多出一个 `local` 厂家 —— 选它对话时算力全在这台手机上，**断网、飞行模式都能用**。
 - **两种后端可切 + 一键测速**：默认走 GPU（Vulkan），也可切回「仅 CPU」；点【测速】直接报出这台手机的生成速度（tok/s）与首字延迟。
@@ -99,7 +108,7 @@ sha256sum paopaocat-preview-0.20-arm64-v8a.apk
 - **语言按钮上写的是各自母语名**：界面已经切成日文时，韩国用户也能一眼找到「한국어」
 - **仓库说明与截图也出了四种语言**：本文档有 [`English`](README.en.md) · [`日本語`](README.ja.md) · [`한국어`](README.ko.md) 三个版本
 
-逐条说明见 [`docs/changelog-0.20.md`](docs/changelog-0.20.md)。
+逐条说明见 [`docs/changelog-0.21.md`](docs/changelog-0.21.md)。
 
 ## 🆕 0.18 更新（0.15 → 0.18 · 25 条）
 
@@ -180,7 +189,7 @@ App 内 **设置 → 模型轮换池**（0.18 起从「模型」里独立出来�
 | **做图/做视频/做PPT** | 一句话即得真实文件：生图（文生/图生/多图合成，8比例/1K-4K）、生视频（文生/首尾帧，4-12秒）、真 .pptx；`android-exec-shim` 补齐手机无 bash 的执行链 |
 | **隐私与可控** | Key 只存 Android Keystore，不进日志/命令行；执行前弹确认框（工具名+具体内容）；运行日志一键导出且 Key 自动脱敏 |
 | **界面可用** | 深浅双主题一键切且重启保持、模型面板两级厂家→模型点一次生效、右上角统一为工作区入口、首页 12 条内置会话分组换一换、320px 宽屏已修、边缘侧滑二次确认才退 |
-| **安装与升级** | 覆盖安装签名一致，会话/文件/Key 不丢；包命名统一 `paopaocat-preview-版本-芯片`；208.8MB 单包（versionCode 20 / versionName 0.0.20），minSdk 24 |
+| **安装与升级** | 覆盖安装签名一致，会话/文件/Key 不丢；包命名统一 `paopaocat-preview-版本-芯片`；208.8MB 单包（versionCode 21 / versionName 0.0.21），minSdk 24 |
 
 ## 截图
 
@@ -224,7 +233,8 @@ App 内 **设置 → 模型轮换池**（0.18 起从「模型」里独立出来�
 ## 相关
 
 - 桌面版：`dshpack-017`（Win/macOS）
-- **0.20 更新说明：`docs/changelog-0.20.md`（手机本地跑大模型，含边界与已知限制）**
+- **0.21 更新说明：`docs/changelog-0.21.md`（模型分成云端 / 本地两类）**
+- 0.20 更新说明：`docs/changelog-0.20.md`（手机本地跑大模型，含边界与已知限制）
 - 0.19 更新说明：`docs/changelog-0.19.md`（界面语言四语化，含边界说明）
 - 0.18 更新说明：`docs/changelog-0.18.md`（0.15–0.18 逐条，含升级与签名说明）
 - 预览图文稿：`docs/preview.md` / `docs/emergency-update-0.14.html`
