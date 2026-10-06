@@ -21,8 +21,7 @@
 - [🖼️ Screenshots](#screenshots)
 - [💬 Community](#contact-and-feedback)
 - [🆕 Recent Updates](#-recent-updates)
-- [🛠️ Development & Build](#-开发与构建)
-- [🔐 Security](#-安全) · [⚠️ Known Limitations](#known-limitations) · [🖥️ Platform Support](#-平台支持)
+- [⚠️ Known Limitations](#known-limitations)
 
 
 ## ✨ Feature Overview
