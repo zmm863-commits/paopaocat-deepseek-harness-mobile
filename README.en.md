@@ -36,7 +36,7 @@ What this app does is: **fit an entire DSH runtime into an Android application, 
 
 It is not a web wrapper, and it is not a remote desktop. Turn off the network, and its interface, history, and files are still there on your own phone.
 
-- Package: `paopaocat-preview-0.22-arm64-v8a.apk` · 208.8MB · arm64-v8a · minSdk 24 · **versionCode 22 / versionName 0.0.22**
+- Package: `paopaocat-preview-0.23-arm64-v8a.apk` · 208.8MB · arm64-v8a · minSdk 24 · **versionCode 23 / versionName 0.0.23**
 - Kernel: Flutter + Node · 321 experts / 22 divisions · **12 skills** (make-image / make-video / make-slides / code-tool / data-analysis / doc-digest / doc-processing / file-organize / sheet-cleanup / study-cards / translate-polish / weekly-report + android-exec-shim + rotate-proxy)
 - Appearance: dark/light themes switch with one tap and persist across restarts; **the interface language can be switched (中文 / English / 日本語 / 한국어)**; custom color schemes are a placeholder description and will not switch to a state that does not exist
 - Privacy: API Keys are stored only in the Android Keystore, sessions and outputs are in a private directory, and your confirmation is required before execution
@@ -50,8 +50,8 @@ It is not a web wrapper, and it is not a remote desktop. Turn off the network, a
 
 ```sh
 # 校包体
-sha256sum paopaocat-preview-0.22-arm64-v8a.apk
-# expected: 7b0ad9363b351932627daa6005e1437764e252444cb1cd2a28111317399ecbde
+sha256sum paopaocat-preview-0.23-arm64-v8a.apk
+# expected: 469dc5bb81d8a8b7a3ce0ce7cf026723e17ee5dab550e20e8897890ef4d96c35
 ```
 
 ## Quick Start
@@ -82,7 +82,14 @@ sha256sum paopaocat-preview-0.22-arm64-v8a.apk
 
 > The home page shows 4 at a time; tapping **Shuffle** switches a whole group, and tapping it 3 times shows all 12; each entry is already bound to its skill, so opening it starts a session with the context in place.
 
-## 🆕 0.22 Update · Fixed: the on-device model was visible but not selectable
+## 🆕 0.23 Update · Auto-retry on failure · Smoother swiping · Reordered settings · Compatibility badges
+
+- **Session failures are no longer scary — and it retries once automatically**: a single failure used to dump a wall of red raw error text into the conversation. Now it **retries once**, clearing any partial reply from the failed attempt first, and even if both attempts fail it says one plain sentence — the raw error folds into "Technical details" for when you actually need it.
+- **Swiping is more responsive**: previously you had to drag past half the screen and the animation was a fixed 260 ms; now a quick flick turns the page (velocity is taken into account) and the animation length follows the remaining distance.
+- **Settings sections were reordered**: Appearance → Cloud models → On-device models → Model rotation pool → Plugins → Phone permissions → File paths → About.
+- **Every model now has a compatibility badge** (🔴 cannot run / ⚪ runs barely / 🟢 runs smoothly). It is estimated right away from **RAM + chipset + engine** with the reason spelled out; tap **Test** to run it for real and the badge switches to the **measured** verdict (with tok/s and first-token latency), which is remembered.
+
+## 🕘 0.22 Update · Fixed: the on-device model was visible but not selectable
 
 - **Fixed "the on-device model is visible but not selectable"**: after starting the local service the entry appeared in the session model picker, yet tapping it had no effect. The App's "did the config change?" check ignored the local model, so it took the in-session path that can only switch models already registered in the running process. That check now includes it: starting or stopping the service (or switching models) rebuilds the session, so selecting it takes effect.
 
@@ -112,7 +119,7 @@ sha256sum paopaocat-preview-0.22-arm64-v8a.apk
 - **The language buttons are labelled in each language's own native name**: even when the interface has already switched to Japanese, a Korean user can spot 「한국어」 at a glance
 - **The repository description and screenshots also come in four languages**: this document has [`English`](README.en.md) · [`日本語`](README.ja.md) · [`한국어`](README.ko.md) versions
 
-See [`docs/changelog-0.22.md`](docs/changelog-0.22.md) for the itemized notes.
+See [`docs/changelog-0.23.md`](docs/changelog-0.23.md) for the itemized notes.
 
 ## 🆕 0.18 Update (0.15 → 0.18 · 25 items)
 
@@ -193,7 +200,7 @@ In the app, **Settings → Model rotation pool** (separate from "Model" and alon
 | **Image / video / PPT generation** | One sentence yields real files: image generation (text-to-image / image-to-image / multi-image composition, 8 ratios / 1K-4K), video generation (text-to-video / first-and-last frames, 4-12 seconds), a real .pptx; `android-exec-shim` fills in the execution chain for phones that have no bash |
 | **Privacy and control** | Keys are stored only in the Android Keystore and never enter logs or the command line; a confirmation dialog appears before execution (tool name + specific content); runtime logs export with one tap and Keys are redacted automatically |
 | **A usable interface** | Dark and light themes switch with one tap and persist across restarts, the model panel goes two levels from vendor → model and takes effect with one tap, the top-right corner is unified as the workspace entry, the home page's 12 built-in sessions shuffle by group, the 320px-wide screen issue is fixed, and edge side-swipes require a second confirmation before exiting |
-| **Installation and upgrades** | Over-the-top installation with a matching signature, so sessions / files / Keys are preserved; package naming is uniform as `paopaocat-preview-<version>-<abi>`; a single 208.8MB package (versionCode 22 / versionName 0.0.22), minSdk 24 |
+| **Installation and upgrades** | Over-the-top installation with a matching signature, so sessions / files / Keys are preserved; package naming is uniform as `paopaocat-preview-<version>-<abi>`; a single 208.8MB package (versionCode 23 / versionName 0.0.23), minSdk 24 |
 
 ## Screenshots
 
@@ -237,7 +244,8 @@ See [`docs/changelog-0.19.md`](docs/changelog-0.19.md) and [GitHub Releases](htt
 ## Related
 
 - Desktop version: `dshpack-017` (Win/macOS)
-- **0.22 release notes: `docs/changelog-0.22.md` (fixes the on-device model being visible but unselectable)**
+- **0.23 release notes: `docs/changelog-0.23.md` (auto-retry, swiping, settings order, compatibility badges)**
+- 0.22 release notes: `docs/changelog-0.22.md` (fixes the on-device model being visible but unselectable)
 - 0.21 release notes: `docs/changelog-0.21.md` (models split into cloud / on-device)
 - 0.20 release notes: `docs/changelog-0.20.md` (running models locally on the phone, including boundaries and known limits)
 - 0.19 release notes: `docs/changelog-0.19.md` (interface localized into four languages, including the boundary note)
