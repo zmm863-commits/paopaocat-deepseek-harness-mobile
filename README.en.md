@@ -36,7 +36,7 @@ What this app does is: **fit an entire DSH runtime into an Android application, 
 
 It is not a web wrapper, and it is not a remote desktop. Turn off the network, and its interface, history, and files are still there on your own phone.
 
-- Package: `paopaocat-preview-0.20-arm64-v8a.apk` · 208.8MB · arm64-v8a · minSdk 24 · **versionCode 20 / versionName 0.0.20**
+- Package: `paopaocat-preview-0.21-arm64-v8a.apk` · 208.8MB · arm64-v8a · minSdk 24 · **versionCode 21 / versionName 0.0.21**
 - Kernel: Flutter + Node · 321 experts / 22 divisions · **12 skills** (make-image / make-video / make-slides / code-tool / data-analysis / doc-digest / doc-processing / file-organize / sheet-cleanup / study-cards / translate-polish / weekly-report + android-exec-shim + rotate-proxy)
 - Appearance: dark/light themes switch with one tap and persist across restarts; **the interface language can be switched (中文 / English / 日本語 / 한국어)**; custom color schemes are a placeholder description and will not switch to a state that does not exist
 - Privacy: API Keys are stored only in the Android Keystore, sessions and outputs are in a private directory, and your confirmation is required before execution
@@ -50,8 +50,8 @@ It is not a web wrapper, and it is not a remote desktop. Turn off the network, a
 
 ```sh
 # 校包体
-sha256sum paopaocat-preview-0.20-arm64-v8a.apk
-# expected: 24c8878f0b666570e52b383c39bb317fea88fea831bdcf9c3619b76db94b44bf
+sha256sum paopaocat-preview-0.21-arm64-v8a.apk
+# expected: 0e70299155c8a8a61fb4641c003610bdf468bd9c1b962b0b32ea6c0ce887efd6
 ```
 
 ## Quick Start
@@ -82,7 +82,16 @@ sha256sum paopaocat-preview-0.20-arm64-v8a.apk
 
 > The home page shows 4 at a time; tapping **Shuffle** switches a whole group, and tapping it 3 times shows all 12; each entry is already bound to its skill, so opening it starts a session with the context in place.
 
-## 🆕 0.20 Update · Run large models locally on the phone (works offline)
+## 🆕 0.21 Update · Models are now split in two: Cloud models / On-device models
+
+- **"Settings → Models" is renamed to "Cloud models"**: that section is about models reached through a vendor API, and the name now says so instead of blurring together with models running on the phone itself.
+- **A new standalone section, "On-device models"**: everything about running models locally (download / import from a local file / start the service / benchmark) now lives there instead of being tucked into the cloud card.
+- **One name everywhere**: both the entry and the page title now read "On-device models" (previously "端侧模型", a term easily mistaken for an input method or offline speech feature).
+- **A real bug is fixed**: after starting the local service, it was **invisible in the session model picker** (the picker reads the App's own model store, while the local model had only been written into the DSH config). It now shows up as an **"On-device models"** group, like the rotation pool.
+- **The "On-device models" page was rebuilt to match the App's own look**: the same glass cards / collapsible sections / entry rows (**one shared implementation**, the same one the Settings page uses), and only four font sizes (13 / 11 / 12 / 15) — the previous version invented its own scale, which looked glaring once the global text scale was applied.
+- **"About" no longer has its title glued to the card**: the gap now matches every other section.
+
+## 🕘 0.20 Update · Run large models locally on the phone (works offline)
 
 - **Run large models locally on the phone (works offline)**: install a model file into the App and a `local` vendor shows up in DSH — inference runs entirely on the phone, so **airplane mode works**.
 - **Two backends, switchable, with a one-tap benchmark**: GPU (Vulkan) by default, or switch back to CPU only; tap **Benchmark** to see this phone's generation speed (tok/s) and first-token latency.
@@ -99,7 +108,7 @@ sha256sum paopaocat-preview-0.20-arm64-v8a.apk
 - **The language buttons are labelled in each language's own native name**: even when the interface has already switched to Japanese, a Korean user can spot 「한국어」 at a glance
 - **The repository description and screenshots also come in four languages**: this document has [`English`](README.en.md) · [`日本語`](README.ja.md) · [`한국어`](README.ko.md) versions
 
-See [`docs/changelog-0.20.md`](docs/changelog-0.20.md) for the itemized notes.
+See [`docs/changelog-0.21.md`](docs/changelog-0.21.md) for the itemized notes.
 
 ## 🆕 0.18 Update (0.15 → 0.18 · 25 items)
 
@@ -180,7 +189,7 @@ In the app, **Settings → Model rotation pool** (separate from "Model" and alon
 | **Image / video / PPT generation** | One sentence yields real files: image generation (text-to-image / image-to-image / multi-image composition, 8 ratios / 1K-4K), video generation (text-to-video / first-and-last frames, 4-12 seconds), a real .pptx; `android-exec-shim` fills in the execution chain for phones that have no bash |
 | **Privacy and control** | Keys are stored only in the Android Keystore and never enter logs or the command line; a confirmation dialog appears before execution (tool name + specific content); runtime logs export with one tap and Keys are redacted automatically |
 | **A usable interface** | Dark and light themes switch with one tap and persist across restarts, the model panel goes two levels from vendor → model and takes effect with one tap, the top-right corner is unified as the workspace entry, the home page's 12 built-in sessions shuffle by group, the 320px-wide screen issue is fixed, and edge side-swipes require a second confirmation before exiting |
-| **Installation and upgrades** | Over-the-top installation with a matching signature, so sessions / files / Keys are preserved; package naming is uniform as `paopaocat-preview-<version>-<abi>`; a single 208.8MB package (versionCode 20 / versionName 0.0.20), minSdk 24 |
+| **Installation and upgrades** | Over-the-top installation with a matching signature, so sessions / files / Keys are preserved; package naming is uniform as `paopaocat-preview-<version>-<abi>`; a single 208.8MB package (versionCode 21 / versionName 0.0.21), minSdk 24 |
 
 ## Screenshots
 
@@ -224,7 +233,8 @@ See [`docs/changelog-0.19.md`](docs/changelog-0.19.md) and [GitHub Releases](htt
 ## Related
 
 - Desktop version: `dshpack-017` (Win/macOS)
-- **0.20 release notes: `docs/changelog-0.20.md` (running models locally on the phone, including boundaries and known limits)**
+- **0.21 release notes: `docs/changelog-0.21.md` (models split into cloud / on-device)**
+- 0.20 release notes: `docs/changelog-0.20.md` (running models locally on the phone, including boundaries and known limits)
 - 0.19 release notes: `docs/changelog-0.19.md` (interface localized into four languages, including the boundary note)
 - 0.18 release notes: `docs/changelog-0.18.md` (0.15–0.18 item by item, including upgrade and signing notes)
 - Preview write-ups: `docs/preview.md` / `docs/emergency-update-0.14.html`
