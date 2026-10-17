@@ -381,6 +381,19 @@ class ConfiguredModels {
         if (!isMediaPortModel(m.provider, m.id)) m,
     ];
 
+    // ⚠️ 清掉**已废弃厂家**的模型（见 [kRetiredProviderIds]）。留着的后果不是"多几条
+    // 选项"那么轻：一旦 `selected` 指向它，ACP 建会话就内部失败，用户看到的是
+    // 「会话没有建立起来」——而那正是 2026-10-17 用户连报两轮的现象。
+    final aliveModels = <ModelSpec>[
+      for (final m in chatModels)
+        if (!kRetiredProviderIds.contains(m.provider)) m,
+    ];
+    final droppedRetired = chatModels.length - aliveModels.length;
+    if (droppedRetired > 0) {
+      debugPrint('[dsh-models] 清掉 $droppedRetired 条已废弃厂家的模型'
+          '（${kRetiredProviderIds.join(',')}）');
+    }
+
     var selected = decoded['selected']?.toString();
     // 选中项正好是被滤掉的媒体模型 → 一并清掉。否则界面会显示一个
     // "当前用的模型"却哪儿都找不到它（选中必然失败）。
@@ -388,11 +401,21 @@ class ConfiguredModels {
       debugPrint('[dsh-models] 选中项 $selected 是媒体端口模型 → 已清掉');
       selected = null;
     }
+    // 选中项指向已废弃厂家 → 同样清掉（否则会话建不起来，且改成 null 后
+    // 运行时会回退到第一个可用模型）。
+    if (selected != null) {
+      final i = selected.indexOf('/');
+      final pid = i > 0 ? selected.substring(0, i) : '';
+      if (kRetiredProviderIds.contains(pid)) {
+        debugPrint('[dsh-models] 选中项 $selected 属于已废弃厂家 → 已清掉');
+        selected = null;
+      }
+    }
 
     return ConfiguredConfig(
       version: (decoded['version'] is int) ? decoded['version'] as int : 1,
       providers: providers,
-      models: chatModels,
+      models: aliveModels,
       groups: groups,
       selected: selected,
     );

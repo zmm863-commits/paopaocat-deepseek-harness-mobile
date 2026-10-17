@@ -1047,19 +1047,19 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
     var listed = 0;
     var hidden = 0;
     ApiErrorText? listErr;
-    // ⚠️ 2026-10-17 用户反复反馈「go 拉取的模型明显不对 / 拉取的少」，根因就在下一行：
-    //    原来只有 `mine.isEmpty`（一个模型都没有）时才去拉真实清单；而卡片一打开往往
-    //    已经带着**预置建议模型**（`p.exampleModels`，只有几个），于是"测试并保存"
-    //    永远用那几个预置的，用户看到的就是"这么少、明显不对"。
-    //    改法：如果现在登记的**看起来就是预置清单**，先拉一次真实的再覆盖；
-    //    用户自己勾过的（不等于预置）则保持不动，免得把他的选择冲掉。
-    final looksLikePreset = mine.isNotEmpty &&
-        mine.length <= p.exampleModels.length &&
-        mine.every((m) => p.exampleModels.contains(m.id));
-    if (looksLikePreset) {
-      debugPrint('[dsh-model-panel] 厂家=$pid 当前是预置模型（${mine.length} 个）→ 先拉真实清单');
-    }
-    if (mine.isEmpty || looksLikePreset) {
+    // ⚠️⚠️ 这里**不能**靠"内容猜来源"。
+    //
+    // 2026-10-17 的教训：我曾加过一条 `looksLikePreset` —— 当登记的几个模型 id 都出现在
+    // `p.exampleModels`（预置建议）里，就以为"这还是预置、不是用户选的"，于是拉全量覆盖。
+    // 结果用户**真的只勾了 2 个**（恰好都在预置名单里）→ 被误判 → 他的选择被冲成全部。
+    // 用户原话：「我只选了 2 个模型，但是点击测试保存，却显示全部模型」。
+    //
+    // 结论：**"预置"与"用户选择"无法从内容上区分**，只能看来源。而这条路径根本没有
+    // 来源标记，所以正确的做法是——**只在完全空的时候才拉**（回退到最初的行为），
+    // 绝不去覆盖用户已经登记的选择。
+    // 「想拿到全部模型」由**用户主动点「获取模型」**来完成（那条路径本来就会拉全量、
+    // 并把清单摊在选择器里让用户自己勾），不由"保存"按钮代劳。
+    if (mine.isEmpty) {
       final r = await fetchModelList(provider: _draft(p, base), apiKey: key);
       final usable = r.ok
           ? <FetchedModel>[

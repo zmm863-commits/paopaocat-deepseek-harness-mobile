@@ -13,6 +13,16 @@
 /// 出厂内置的 Agnes 厂家 id。
 const String kAgnesProviderId = 'agnes';
 
+/// **已废弃的厂家 id** —— 它们的模型不再登记（读取老配置时会清掉）。
+///
+/// 为什么需要（2026-10-17）：`opencode`（OpenCode Zen 免费档）的模型普遍回
+/// `403 {"type":"RegionError"...}` / 权限不足，用户实测"选取它依然不能使用"。
+/// 卡片已按用户要求移除，但**老配置的 `models.json` 里还留着它那几十个模型，
+/// 甚至 `selected` 就指向它** —— 那会让 ACP 建会话时内部失败，用户看到的是
+/// 「会话没有建立起来」（真机日志：`session/new 失败：Internal error`）。
+/// 所以读取时必须一并清掉模型与选中项，否则"删了卡片"根本救不回会话。
+const Set<String> kRetiredProviderIds = <String>{'opencode'};
+
 /// Agnes 官方列出的三个"免费"模型（文本 / 图像 / 视频）。
 const String kAgnesTextModel = 'agnes-3.0-flash';
 const String kAgnesImageModel = 'agnes-image-2.5-flash';

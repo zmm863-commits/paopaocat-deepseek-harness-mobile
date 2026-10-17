@@ -916,10 +916,12 @@ class DshRuntime {
       // 它**内置**的 opencode-go provider —— header 正确、端点也正确。
       // 本机 `/dsh/profiles/web/cordis.patch.yml` 里的 `opencode-go` 就是这么写的（只有
       // displayName / apiKeyEnv / models），而那套配置在本机是能正常出话的。
-      // 这两个都走 DSH 内置 provider（pi-ai 里各有一个同名 provider，
-      // 且都被 withOpenCodeSessionHeader 包着 —— 必须保住那个头）：
-      //   opencode-go → OpenCode Go（37 个）
-      //   opencode    → OpenCode Zen 免费档（85 个）
+      // 走 DSH 内置 provider 的厂家（pi-ai 里有同名 provider 且被
+      // withOpenCodeSessionHeader 包着，必须保住那个头）：
+      //   opencode-go → OpenCode Go
+      //   opencode    → OpenCode Zen 免费档（2026-10-17 用户反馈其模型普遍 403
+      //                 「没有访问该模型的权限」，已从厂家列表移除；这里保留特判，
+      //                 只是为了不让老配置里的残留条目突然变成自定义通道）
       final useBuiltinProvider = p.id == 'opencode-go' || p.id == 'opencode';
       if (!useBuiltinProvider) {
         buf.writeln('        api: ${p.api}');

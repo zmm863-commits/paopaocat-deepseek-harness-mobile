@@ -157,35 +157,6 @@ List<ModelProvider> get kModelProviders => <ModelProvider>[
         //    ⚠️ 以后这里会过时 —— 这正是"兜底清单需要跟着上游核对"的例子。
         exampleModels: <String>['deepseek-flash', 'deepseek-v4-pro'],
       ),
-      // ── OpenCode Zen（**免费档**，2026-10-17 用户指出「很多免费的都没有」）──
-      //
-      // ⚠️ 关键区别（实测拉过两个端点）：
-      //   `/zen/v1/models`     → **85 个**（`jev-1.13-free`、`deepseek-v4.1-flash-free`、
-      //                          `glm-5.3-flash-free`、`gemini-*`、`gpt-*`、`claude-*` … 一大堆）
-      //   `/zen/go/v1/models`  → **37 个**（Go 套餐那批）
-      // 之前只加了 Go 那张卡，所以免费模型一个都看不到。
-      //
-      // 与 Go 一样：**overlay 里不写 api/baseURL**（走 DSH 内置的 `opencode` provider，
-      // 这样才能带上 `x-opencode-session` 头）；Key 也用同一个 `OPENCODE_API_KEY`。
-      ModelProvider(
-        id: 'opencode',
-        name: tr('OpenCode Zen（免费档）'),
-        baseUrl: 'https://opencode.ai/zen/v1',
-        keyHint: tr('OpenCode API Key（与 OpenCode Go 是同一把）'),
-        keyUrl: 'https://opencode.ai/auth',
-        note: tr(
-            '这是**免费档**（/zen/v1），模型比 Go 档多得多：实测 85 个，其中带 -free 的都能免费用。'
-            '同一个 Key 同时适用于这一档与 OpenCode Go。'),
-        intro: tr(
-            'OpenCode 的免费/通用档：包含大量 *-free 模型（jev、deepseek-flash-free、glm-flash-free 等）'
-            '以及 gemini / gpt / claude 全系。想找免费模型，来这一档。'),
-        exampleModels: <String>[
-          'jev-1.13-free',
-          'deepseek-v4.1-flash-free',
-          'glm-5.3-flash-free',
-          'mimo-v2.6-flash-free',
-        ],
-      ),
       // ── OpenCode Go（2026-10-17 用户要求「增加一个 opencode go 的设置页面」）──
       //
       // 端点依据（不是猜的）：DSH 内置的 pi-ai 里，`opencode-go` 这个 provider 的
@@ -289,7 +260,6 @@ ModelProvider get kAgnesModelProvider => ModelProvider(
 const List<String> kMyModelOrder = <String>[
   AgnesBuiltin.providerId, // 'agnes'
   'deepseek',
-  'opencode', // OpenCode Zen（免费档，2026-10-17 新增）
   'opencode-go', // OpenCode Go（2026-10-17 新增）
   'com', // Command（聚合）：id 是历史短名，不能改
   'mimo',

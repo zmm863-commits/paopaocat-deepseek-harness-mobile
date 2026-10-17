@@ -338,6 +338,12 @@ class AcpClient {
     });
     final error = res['error'];
     if (error != null) {
+      // ⚠️ **把完整错误记进日志**（2026-10-17 用户连报两轮「会话没有建立起来」）。
+      //
+      // 为什么不能只取 message：DSH 对内部失败常常只回一句 `Internal error`，
+      // 真正的线索在同一个 error 对象的 `data` / `code` 里 —— 只转述 message
+      // 等于把唯一的证据扔掉，日志里就只剩那句废话，谁都没法定位。
+      onLog?.call('[acp] session/new 失败，服务端完整返回：${jsonEncode(error)}');
       throw StateError('session/new 失败：${(error as Map)['message']}');
     }
     final result = Map<String, dynamic>.from(res['result'] as Map? ?? const {});
