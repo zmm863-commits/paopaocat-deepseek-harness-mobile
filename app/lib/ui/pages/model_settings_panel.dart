@@ -1047,7 +1047,19 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
     var listed = 0;
     var hidden = 0;
     ApiErrorText? listErr;
-    if (mine.isEmpty) {
+    // ⚠️ 2026-10-17 用户反复反馈「go 拉取的模型明显不对 / 拉取的少」，根因就在下一行：
+    //    原来只有 `mine.isEmpty`（一个模型都没有）时才去拉真实清单；而卡片一打开往往
+    //    已经带着**预置建议模型**（`p.exampleModels`，只有几个），于是"测试并保存"
+    //    永远用那几个预置的，用户看到的就是"这么少、明显不对"。
+    //    改法：如果现在登记的**看起来就是预置清单**，先拉一次真实的再覆盖；
+    //    用户自己勾过的（不等于预置）则保持不动，免得把他的选择冲掉。
+    final looksLikePreset = mine.isNotEmpty &&
+        mine.length <= p.exampleModels.length &&
+        mine.every((m) => p.exampleModels.contains(m.id));
+    if (looksLikePreset) {
+      debugPrint('[dsh-model-panel] 厂家=$pid 当前是预置模型（${mine.length} 个）→ 先拉真实清单');
+    }
+    if (mine.isEmpty || looksLikePreset) {
       final r = await fetchModelList(provider: _draft(p, base), apiKey: key);
       final usable = r.ok
           ? <FetchedModel>[

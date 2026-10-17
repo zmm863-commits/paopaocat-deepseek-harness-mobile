@@ -1,7 +1,7 @@
 name: dsh_mobile
 description: "DSH Mobile —— 远程使用电脑上的 DSH Agent（会话、流式消息、工具卡片、命令审批）"
 publish_to: 'none'
-version: 0.0.77+93
+version: 0.0.77+94
 
 environment:
   sdk: ^3.0.0
