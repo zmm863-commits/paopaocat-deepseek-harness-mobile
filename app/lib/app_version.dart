@@ -219,6 +219,20 @@
 ///      里排除掉（只隐藏、不删），并修好 Bot 会话里「联网搜索」不可用的问题
 ///      （`insert` 的插件按 profile 目录解析，包得放进种子）。）
 ///
+///      后续构建号 85~87 把这条线收口：
+///      · 85：修**浅色主题下输入框文字看不清**（`TextTheme` 只声明了 4 个样式，
+///        Material 的 TextField 用的 `bodyLarge` 恰好没声明 → 文字色只能靠继承兜底，
+///        最终落成次要灰 #566A8D。补上 `bodyLarge` 一行，所有输入框一次性都对）；
+///        群的「谁回答」加一键切换（只由主持人点名 ⇄ 全员都会回答）。
+///      · 86：删掉网页界面后 App 里没地方新建 Bot/群了 → Bot 页补「＋」菜单
+///        （新建 Bot / 新建群聊，走 ds-bot 自己的 create-bot / create-room）。
+///      · 87：模型设置加 **OpenCode Go**。它有个必须注意的头：DSH 内置的
+///        `opencode-go` provider 每次请求都会补 `x-opencode-session: <会话 id>`
+///        （OpenCode 靠它按会话路由）。所以 App 生成 overlay 时**故意不写**
+///        `api` / `baseURL` —— 写了就会被当成"自定义兼容通道"、丢掉那层 header
+///        包装；不写才会回落内置端点（`request.baseURL ?? base?.baseUrl ?? …`）。
+///        ⚠️ 与 Bot 无关，是模型通道的事，记在这里免得以后又被"补全 baseURL"改回去。
+///
 /// ⚠️ 发版时**必须同时改两处**，否则装了新版也分不清：
 ///   1. 这里的 [kAppVersion]；
 ///   2. `app/pubspec.yaml` 里的 `version:`（`versionCode` 也要跟着 +1，它决定
