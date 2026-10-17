@@ -52,7 +52,6 @@ class TaskHomeView extends StatefulWidget {
   const TaskHomeView({
     super.key,
     required this.onOpenChat,
-    required this.onOpenBot,
     required this.onOpenWorkspace,
     required this.workspaceName,
     required this.models,
@@ -72,10 +71,6 @@ class TaskHomeView extends StatefulWidget {
   /// 定时任务/项目），加第 6 项就偏离了。所以入口放在顶栏右侧。
   final VoidCallback onOpenWorkspace;
 
-  /// 打开「Bot 团队」页（本机 dsh web + ds-bot，用 WebView 显示）。
-  ///
-  /// 测试版入口：验证「把同一套 web 前端搬进手机」这条路值不值得做下去。
-  final VoidCallback onOpenBot;
 
   /// 当前工作区名，显示在顶栏状态行里（`● 本机 · <名字>`）
   final String workspaceName;
@@ -236,7 +231,6 @@ class _TaskHomeViewState extends State<TaskHomeView> {
                 needsModel: !ready,
                 onShuffle: _shuffle,
                 onOpenWorkspace: widget.onOpenWorkspace,
-                onOpenBot: widget.onOpenBot,
                 onOpenModelSettings: widget.onOpenModelSettings,
                 onTapStarter: _onTapStarter,
                 settings: widget.appSettings,
@@ -331,7 +325,6 @@ class _ScrollBody extends StatelessWidget {
     required this.needsModel,
     required this.onShuffle,
     required this.onOpenWorkspace,
-    required this.onOpenBot,
     required this.onOpenModelSettings,
     required this.onTapStarter,
     required this.settings,
@@ -350,7 +343,6 @@ class _ScrollBody extends StatelessWidget {
   final bool needsModel;
   final VoidCallback onShuffle;
   final VoidCallback onOpenWorkspace;
-  final VoidCallback onOpenBot;
   final VoidCallback onOpenModelSettings;
   final void Function(BuiltinStarter starter) onTapStarter;
 
@@ -426,7 +418,6 @@ class _ScrollBody extends StatelessWidget {
         _TopBar(
           workspaceName: workspaceName,
           onOpenWorkspace: onOpenWorkspace,
-          onOpenBot: onOpenBot,
         ),
         // 常驻提示条放在顶栏正下方：不滚动就能看见，且**不点按钮也能看到出路**。
         if (needsModel) _ModelNotice(onOpenSettings: onOpenModelSettings),
@@ -526,12 +517,10 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.workspaceName,
     required this.onOpenWorkspace,
-    required this.onOpenBot,
   });
 
   final String workspaceName;
   final VoidCallback onOpenWorkspace;
-  final VoidCallback onOpenBot;
 
   @override
   Widget build(BuildContext context) {
@@ -606,20 +595,6 @@ class _TopBar extends StatelessWidget {
               // 工作区入口：图标 + 文字（只用图标用户不知道是干嘛的 —— 上一版
               // 就是个列表图标 + 角标数字，用户原话"不知道是干嘛的"）。
               WorkspaceEntryButton(onTap: onOpenWorkspace),
-              const SizedBox(width: 4),
-              // Bot 团队入口：**放在首页顶栏的最右边**（用户 2026-10-17 明确要求
-              // "把 bot 按钮放到首页的右边"）。样式与工作区入口同一观感。
-              TextButton.icon(
-                onPressed: onOpenBot,
-                icon: const Icon(Icons.smart_toy_outlined, size: 15),
-                label: const Text('Bot', style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(
-                  foregroundColor: DshColors.accent,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
             ],
           ),
         ),

@@ -14,10 +14,12 @@ import 'package:dsh_mobile/ui/widgets/bottom_nav.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('底部导航 5 项，顺序是 首页 / 影视 / 资料库 / 定时任务 / 设置', () {
+  test('底部导航 6 项，顺序是 首页 / Bot / 创作台 / 资料库 / 定时任务 / 设置', () {
     final labels = DshBottomNav.items.map((i) => i.label).toList();
+    // 2026-10-17 用户要求「bot 是放在底部导航栏，首页按钮的右边」→ 插在首页之后，
+    // 于是它后面所有下标都 +1。
     expect(labels,
-        <String>['首页', '创作台', '资料库', '定时任务', '设置']);
+        <String>['首页', 'Bot', '创作台', '资料库', '定时任务', '设置']);
     // 「专家」不能再出现在底部（它现在是设置页里的入口）
     expect(labels.contains('专家'), isFalse);
   });
@@ -25,19 +27,21 @@ void main() {
   test('「创作台」现在是第 2 个 Tab（原名「影视」，2026-10-12 改名）', () {
     final labels = DshBottomNav.items.map((i) => i.label).toList();
     final media = labels.indexOf('创作台');
-    expect(media, 1, reason: '撤下「本地大模型」后它前移到这里');
+    expect(media, 2, reason: '2026-10-17 Bot 插在首页右边后，它后移一位');
     expect(labels[media + 1], '资料库', reason: '后面的顺序不该被打乱');
   });
 
-  test('⚠️ 写死的下标：设置 = 4、定时任务 = 3（`app_shell` / `chat_page` 里各有一处）', () {
+  test('⚠️ 写死的下标：设置 = 5、定时任务 = 4（`app_shell` / `chat_page` 里各有一处）', () {
     final labels = DshBottomNav.items.map((i) => i.label).toList();
-    // app_shell: 首页「去配模型」按钮 = _goToTab(4)
-    expect(labels.indexOf('设置'), 4,
-        reason: 'app_shell 的 onOpenModelSettings: () => _goToTab(4) 依赖这个值');
-    // chat_page: 附件菜单「定时任务」= pop({'tab': 3})
-    expect(labels.indexOf('定时任务'), 3,
-        reason: "chat_page 的 pop({'tab': 3}) 依赖这个值");
+    // app_shell: 首页「去配模型」按钮 = _goToTab(5)
+    expect(labels.indexOf('设置'), 5,
+        reason: 'app_shell 的 onOpenModelSettings: () => _goToTab(5) 依赖这个值');
+    // chat_page: 附件菜单「定时任务」= pop({'tab': 4})
+    expect(labels.indexOf('定时任务'), 4,
+        reason: "chat_page 的 pop({'tab': 4}) 依赖这个值");
     // 创作台自己的「去设置」也走回调（壳层传 5），不写死
-    expect(labels.indexOf('创作台'), 1);
+    expect(labels.indexOf('创作台'), 2);
+    // Bot 就插在首页右边（用户 2026-10-17 的要求）
+    expect(labels.indexOf('Bot'), 1);
   });
 }

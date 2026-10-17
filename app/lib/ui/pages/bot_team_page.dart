@@ -141,6 +141,8 @@ class _BotTeamPageState extends State<BotTeamPage> {
       appBar: AppBar(
         backgroundColor: DshColors.navBg,
         foregroundColor: DshColors.text,
+        // 它是底部导航的一项（不是推入的页），所以不该有返回箭头。
+        automaticallyImplyLeading: false,
         title: const Text('Bot 团队'),
         actions: [
           if (_phase == _Phase.ready)

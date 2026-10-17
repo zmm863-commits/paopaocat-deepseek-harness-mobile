@@ -31,7 +31,17 @@ class DshBottomNav extends StatelessWidget {
           activeIcon: Icons.chat_bubble,
           label: tr('首页')
         ),
-        // 当前五项：0 首页 / 1 创作台 / 2 资料库 / 3 定时任务 / 4 设置。
+        // 当前六项：0 首页 / **1 Bot** / 2 创作台 / 3 资料库 / 4 定时任务 / 5 设置。
+        // ⚠️ 2026-10-17 用户要求「bot 是放在底部导航栏，首页按钮的右边」——
+        //    这一项是**插在首页之后**的，所以它后面所有下标都 +1 了
+        //    （`app_shell` 的 `_goToTab(4)→(5)`、`_pageTicks` 全体后移、
+        //      `chat_page` 的 `{'tab': 3}→4`、以及 `nav_items_test` 的断言）。
+        (
+          icon: Icons.smart_toy_outlined,
+          activeIcon: Icons.smart_toy,
+          label: tr('Bot')
+        ),
+        // 原五项（历史）：0 首页 / 1 创作台 / 2 资料库 / 3 定时任务 / 4 设置。
         // ⚠️ 任何写死下标的地方都要跟着改。2026-10-11 插「影视」（后改名「创作台」）时
         //    踩过一次：`app_shell` 里写死的「下标 4 = 设置」和 `chat_page`
         //    附件菜单里的 `{'tab': 3}`（定时任务）都一起改了，漏一个就是"点进去跑错页"。

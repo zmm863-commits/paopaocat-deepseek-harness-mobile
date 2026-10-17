@@ -180,7 +180,7 @@ class _AppShellState extends State<AppShell> {
   /// 用户要求「每切换一个按钮，就相当于刷新一次」。但如果用一个全局计数，
   /// IndexedStack 里 5 个页面会**一起**刷新（连没在看的也刷）—— 浪费还慢。
   /// 所以改成按页计数，只有刚切到的那页才会在 didUpdateWidget 里重载。
-  final List<int> _pageTicks = List<int>.filled(5, 0);
+  final List<int> _pageTicks = List<int>.filled(6, 0);
 
   /// 切 Tab：记录下标，并只 bump 目标页自己的刷新计数。
   /// 切到第 [i] 页。
@@ -547,37 +547,9 @@ class _AppShellState extends State<AppShell> {
     return parts.isEmpty ? path : parts.last;
   }
 
-  /// 打开「Bot 团队」页 —— **原生页面，不嵌网页**。
-  ///
-  /// 这是用户 2026-10-17 纠正后的做法：他要的是「在我 APP 会话界面一样的聊天」。
-  /// 所以这一页只列 Bot 名册，点进去由 [_openChat] 用**现有的原生聊天页**打开
-  /// （Bot 本来就是普通会话；ACP 的 resume 不回放历史，历史由 App 自己读会话文件
-  /// 回放，见 `local/session_transcript.dart`）。
-  ///
-  /// Bot 的宿主进程由 [BotServer] 在后台持有，**离开页面不停**。
-  Future<void> _openBot() async {
-    debugPrint('[dsh-nav] open bot team page');
-    await Navigator.of(context).push<Object?>(
-      MaterialPageRoute<Object?>(
-        builder: (ctx) => BotTeamPage(
-          runtime: _runtime,
-          onOpenSession: ({
-            required String sessionId,
-            required String cwd,
-            required String title,
-          }) {
-            // **不**收掉名册页：聊天页压在它上面，返回时回到 Bot 列表（更顺手）。
-            // `_openChat` 自己只会摘掉栈上旧的**会话页**，不会动这一页。
-            // cwd 必须原样传：ACP 的 session/resume 会校验 cwd 与持久化时一致。
-            unawaited(_openChat(
-              resumeSessionId: sessionId,
-              workspacePath: cwd,
-            ));
-          },
-        ),
-      ),
-    );
-  }
+  // 「Bot 团队」曾经是首页顶栏推入的一页（`_openBot`）。2026-10-17 用户要求
+  // 「bot 是放在底部导航栏，首页按钮的右边」→ 它现在是**底部导航的一项**，
+  // 直接挂在下面的 `pages` 列表里（下标 1），不再需要单独的推入入口。
 
   /// 打开工作区管理器（首页顶栏右侧 + 会话页顶栏右侧，**同一个功能**）。
   Future<void> _openWorkspace() async {
@@ -697,12 +669,24 @@ class _AppShellState extends State<AppShell> {
         // 首页在"还没有模型"时要有一个直达设置的动作 —— 用户实测反馈第 4 条：
         // 首次安装没配模型时，首页那个「开始」按钮点了没有有效引导。
         // 这里只是把"切到设置 Tab"这个已有能力暴露出去，不动模型/overlay 逻辑。
-        onOpenModelSettings: () => _goToTab(4),
+        onOpenModelSettings: () => _goToTab(5),
         onOpenChat: ({String? initialText}) =>
             _openChat(initialText: initialText),
         onOpenWorkspace: _openWorkspace,
-        onOpenBot: _openBot,
         workspaceName: _ws.current.name,
+      ),
+      // 下标 1 =「Bot 团队」（用户 2026-10-17：放在首页右边）。
+      // **原生页面**，不是网页内切 —— 点条目用现有的原生聊天页打开那个会话。
+      BotTeamPage(
+        runtime: _runtime,
+        onOpenSession: ({
+          required String sessionId,
+          required String cwd,
+          required String title,
+        }) {
+          // cwd 必须原样传：ACP 的 session/resume 会校验 cwd 与持久化时一致。
+          unawaited(_openChat(resumeSessionId: sessionId, workspacePath: cwd));
+        },
       ),
       // ⚠️ 原下标 1 =「本地大模型」**已撤下**（用户 2026-10-12：功能不够成熟，
       //    连知识库一起从界面拿掉）。页面文件与引擎都保留（可逆方案），
@@ -715,7 +699,7 @@ class _AppShellState extends State<AppShell> {
         settings: widget.appSettings,
         // 「去设置配 Key」交给壳层做 —— 只有它知道最新下标（这次就因为它知道，
         // 才不会重演"写死下标 → 跳错页"）。
-        onOpenSettings: () => _goToTab(4),
+        onOpenSettings: () => _goToTab(5),
         // 「创作台 → 创作」里那些「开始…会话」按钮：带首句开一个新会话。
         // ⚠️ **不能再用 `_openChatForSkill`** —— 那个方法（见下方）在会话关闭后
         //    会**再推一个「专家 → 技能」页**，那是给「用对话生成技能」这条流程准备的
@@ -723,12 +707,12 @@ class _AppShellState extends State<AppShell> {
         //    就会被弹到专家页，表现成"点了就跳去专家技能页、没法往下走"
         //    —— 2026-10-12 真机反馈第 6/7/8 条就是这么来的。
         onStartPrompt: (prompt) => _openChat(initialText: prompt),
-        refreshTick: _pageTicks[1],
+        refreshTick: _pageTicks[2],
         // 右上角「这次用哪三个模型」里的**文本模型**要从这儿读（就是会话模型）。
         models: widget.models,
       ),
       LibraryPage(
-        refreshTick: _pageTicks[2],
+        refreshTick: _pageTicks[3],
         // 「作品」从创作台入口屏挪到了资料库（用户 2026-10-12 真机反馈第 4 条）：
         // 这里推的是**同一个创作台页**，只是让它直接落在「作品库」那一格，
         // 所以九宫格视图只有一份（见 MediaPage.initialSeg）。
@@ -737,7 +721,7 @@ class _AppShellState extends State<AppShell> {
             builder: (_) => MediaPage(
               runtime: _runtime,
               settings: widget.appSettings,
-              onOpenSettings: () => _goToTab(4),
+              onOpenSettings: () => _goToTab(5),
               onStartPrompt: (prompt) => _openChat(initialText: prompt),
               initialSeg: 5,
               models: widget.models,
@@ -746,7 +730,7 @@ class _AppShellState extends State<AppShell> {
         ),
       ),
       ScheduledPage(
-          store: _schedules, runner: _runner, refreshTick: _pageTicks[3]),
+          store: _schedules, runner: _runner, refreshTick: _pageTicks[4]),
       // 原「项目空间」→ 用户要求改为「设置」（外观 / 模型 / 插件 / 关于）。
       // project_page.dart 已不再挂载，文件保留作设计稿参考。
       SettingsTab(
@@ -755,7 +739,7 @@ class _AppShellState extends State<AppShell> {
         onModelChanged: widget.onModelChanged,
         onOpenExperts: _openExpertsPage,
         onOpenMemory: _openMemoryPage,
-        refreshTick: _pageTicks[4],
+        refreshTick: _pageTicks[5],
       ),
     ];
 
