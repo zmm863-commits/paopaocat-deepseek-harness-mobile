@@ -136,6 +136,13 @@ class AcpClient {
     // —— 会话连起都起不来。
     await AndroidToolbox.ensureInstalled(filesDir);
 
+    // ⚠️ ACP 的 profile 是 DSH 自带的模板建的，里面**没有** anysearch 插件；
+    // 而咱们的补丁会 `- insert: web-search-anysearch` → 每次启动刷
+    // `web-search-anysearch: failed to import`。启动前补一次（幂等）。
+    try {
+      await runtime.ensureProfileHasAnysearch('acp');
+    } catch (_) {}
+
     final args = <String>[
       '--expose-internals',
       '--require', runtime.fsShim,

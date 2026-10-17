@@ -1089,6 +1089,53 @@ class DshRuntime {
     );
   }
 
+  /// 把运行时里的 anysearch 插件补进某个 profile 的 `node_modules`。
+  ///
+  /// 为什么要补（2026-10-17 对照真机日志发现的一个**判断错位**）：
+  ///   * [runtimeHasAnysearchPlugin] 检查的是**运行时解包根**
+  ///     （`<filesDir>/dsh/node_modules/@deepseek-ai/dsh-web-search-anysearch`）；
+  ///   * 而真正 `import` 它的是 **profile 自己的 `node_modules`**。
+  /// 两者不是一回事 → App 以为"有"、照常在补丁里写 `- insert: web-search-anysearch`，
+  /// 而 `acp` profile 是 **DSH 首次使用时从它自带模板建的**，里面没有这个包 →
+  /// 每次启动都刷 `web-search-anysearch (@deepseek-ai/dsh-web-search-anysearch): failed to import`。
+  /// （对照：bottest 的**种子**里我们早就放了它，所以 bot 那边没这条。）
+  ///
+  /// 只在 profile 目录**已存在**时补 —— 不存在时交给 DSH 自己初始化，
+  /// 下次启动前我们会再补一次。
+  Future<void> ensureProfileHasAnysearch(String profileName) async {
+    final src = Directory('$runtimeRoot/node_modules/@deepseek-ai/dsh-web-search-anysearch');
+    if (!src.existsSync()) return;
+    final profDir = Directory('$nodeHome/profiles/$profileName');
+    if (!profDir.existsSync()) {
+      debugPrint('[dsh-runtime] profile $profileName 还不存在，跳过补 anysearch（DSH 会自己初始化）');
+      return;
+    }
+    final dst = Directory('${profDir.path}/node_modules/@deepseek-ai');
+    final target = Directory('${dst.path}/dsh-web-search-anysearch');
+    if (target.existsSync()) return;
+    try {
+      dst.createSync(recursive: true);
+      // 用系统 cp 不可靠（Android 上路径与权限都别扭），交给 Dart 递归复制。
+      _copyDirSync(src, target);
+      debugPrint('[dsh-runtime] 已把 anysearch 插件补进 profile $profileName');
+    } catch (e) {
+      debugPrint('[dsh-runtime] 补 anysearch 到 profile $profileName 失败（会有 failed to import 警告）：$e');
+    }
+  }
+
+  static void _copyDirSync(Directory from, Directory to) {
+    to.createSync(recursive: true);
+    for (final e in from.listSync(recursive: true, followLinks: false)) {
+      final rel = e.path.substring(from.path.length + 1);
+      final target = '${to.path}/$rel';
+      if (e is Directory) {
+        Directory(target).createSync(recursive: true);
+      } else if (e is File) {
+        File(target).writeAsBytesSync(e.readAsBytesSync());
+      }
+    }
+  }
+
   /// 写一份**最小 overlay**：只放"与模型无关、但会直接影响会话行为"的几段。
   ///
   /// 为什么需要单独一个方法（2026-10-17 真机铁证）：
