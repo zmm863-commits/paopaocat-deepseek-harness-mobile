@@ -215,11 +215,27 @@ class BotServer {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
     try {
       // ① token → cookie
+      //
+      // ⚠️ **必须关掉自动跟随重定向**（2026-10-17 真机日志 `FormatException` 的根因）：
+      //    带 `?token=` 访问会返回 **303 + Set-Cookie**，而 `HttpClient.followRedirects`
+      //    默认是 true —— 它会一路跟到最终页面，于是**这次响应的头就读不到了**，
+      //    cookie 永远是 null → 后续 POST 全部 401 → 返回 HTML 而不是 JSON
+      //    → `jsonDecode` 抛 `FormatException`（真机现象：拉模型清单失败、
+      //    「新建 Bot」也建不成）。
       String? cookie;
       try {
-        final res = await (await client.getUrl(Uri.parse(url))).close();
+        final getReq = await client.getUrl(Uri.parse(url));
+        getReq.followRedirects = false; // ← 关键：停在 303 上拿到 Set-Cookie
+        final res = await getReq.close();
         final sc = res.headers['set-cookie'];
-        if (sc != null && sc.isNotEmpty) cookie = sc.first.split(';').first;
+        if (sc != null && sc.isNotEmpty) {
+          cookie = sc.first.split(';').first;
+          DiagnosticsLog.add('dsh-bot',
+              'token→cookie 成功（HTTP ${res.statusCode}，cookie 名=${cookie.split('=').first}）');
+        } else {
+          DiagnosticsLog.add('dsh-bot',
+              'token→cookie 未拿到 Set-Cookie（HTTP ${res.statusCode}）—— 后续请求会 401');
+        }
         await res.drain<void>();
       } catch (e) {
         debugPrint('[dsh-bot] 取 cookie 失败（继续试直连）：$e');
@@ -227,6 +243,7 @@ class BotServer {
 
       // ② 调 API
       final req = await client.postUrl(Uri.parse('http://127.0.0.1:$port/api/bot'));
+      req.followRedirects = false; // 别把 401 跟成一个 200 的 HTML 页面
       req.headers.contentType = ContentType.json;
       if (cookie != null) req.headers.set('Cookie', cookie);
       req.write(jsonEncode(<String, Object?>{
@@ -235,9 +252,30 @@ class BotServer {
       }));
       final res = await req.close();
       final body = await res.transform(utf8.decoder).join();
+      final code = res.statusCode;
+
+      // ⚠️ 401 时 `/api/bot` 返回的是**纯文本 `unauthorized`**，不是 JSON
+      //（2026-10-17 实测）。原来这里直接 jsonDecode → 抛
+      // `FormatException: Unexpected character (at character 1)`，
+      // 真机日志里就是那条「拉模型清单失败」，把新建 Bot 也一起带崩了。
+      // 现在的做法：先看状态码、再决定怎么解析，**任何情况下都不抛**。
+      if (code != 200) {
+        DiagnosticsLog.add(
+            'dsh-bot', 'API $endpoint 返回 HTTP $code（cookie=${cookie == null ? '未拿到' : '已拿到'}）：${body.substring(0, body.length.clamp(0, 80))}');
+        return <String, dynamic>{
+          'ok': false,
+          'error': <String, dynamic>{
+            'code': 'http/$code',
+            'message': code == 401
+                ? '本地 Bot 服务拒绝了这次请求（未授权）。多半是 token→cookie 没建立起来，重新进一次 Bot 页通常就好。'
+                : '本地 Bot 服务返回 HTTP $code：${body.substring(0, body.length.clamp(0, 120))}',
+          },
+        };
+      }
+
       final decoded = jsonDecode(body);
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      return <String, dynamic>{'ok': false, 'error': '非预期响应：${body.substring(0, body.length.clamp(0, 120))}'};
+      return <String, dynamic>{'ok': false, 'error': '非预期响应（HTTP $code）：${body.substring(0, body.length.clamp(0, 120))}'};
     } finally {
       client.close(force: true);
     }

@@ -125,10 +125,23 @@ Future<ModelListResult> fetchModelList({
       return ModelListResult(ok: false, error: error);
     }
 
-    final parsed = parseModelList(body);
+    final rawParsed = parseModelList(body);
+    // **先剔除「已知地区不可用」的模型**（用户 2026-10-17 明确要求：
+    // "去除他可以使用，必须修改，这会给用户一个 bug 的感觉"）。
+    // 放在排序前做，免得被排序结果掩盖到底过滤了几个。
+    final parsed = <FetchedModel>[
+      for (final m in rawParsed)
+        if (!kRegionBlockedModels.contains(m.id)) m,
+    ];
+    final dropped = rawParsed.length - parsed.length;
     debugPrint(
-      '[dsh-models] list ok: ${parsed.length} models from ${provider.modelsUri}',
+      '[dsh-models] list ok: ${parsed.length} models from ${provider.modelsUri}'
+      '${dropped > 0 ? '（已剔除 $dropped 个地区不可用）' : ''}',
     );
+    if (dropped > 0) {
+      debugPrint('[dsh-models] 被剔除的都是 kRegionBlockedModels 里的：'
+          '${kRegionBlockedModels.join(',')}');
+    }
     if (parsed.isEmpty) {
       return ModelListResult(
         ok: false,
@@ -289,6 +302,27 @@ class ModelTestResult {
 /// 为什么用 `POST /chat/completions`：App 的 overlay 就是用
 /// `api: openai-completions` 跑对话的，测试必须和**实际使用的**是同一条路，
 /// 否则"测试通过、对话失败"就成了新的坑。`max_tokens` 压到 16，成本可忽略。
+/// 已知**在当前地区拿不到、选了也用不了**的模型 —— 拉取列表时直接剔除。
+///
+/// 为什么要有这张表（2026-10-17 用户原话：「依然能看到那个 free 的模型，选取他依然
+/// 不能使用，**去除他可以使用**。必须修改，这会给用户一个 bug 的感觉」）：
+///   OpenCode 的 `/models` 会把**全量**模型都列出来，但其中一部分按**地区**封锁，
+///   请求会回 `403 {"type":"RegionError","message":"This model is not available in
+///   your country"}`。留在下拉里只会让人点了就失败、看着像 App 坏了。
+///
+/// 维护方式：这里只能"已知就加"。更根本的判断要靠实际探活（太慢，不合适放在
+/// 拉列表这一步）。**加之前必须实测过一次**这个模型确实地区不可用。
+const Set<String> kRegionBlockedModels = <String>{
+  // 2026-10-17 实测：POST /zen/go/v1/chat/completions → 403 RegionError。
+  // 同一批里的 longcat-2.5-preview-free **没有**这个限制（它回的是 401 缺凭据），
+  // 所以不要顺手把 "*-free" 一律当成不可用。
+  'beam-free',
+};
+
+/// 从拉到的模型清单里剔掉「已知地区不可用」的那些（按模型 id 精确匹配）。
+List<String> filterRegionBlocked(Iterable<String> ids) =>
+    <String>[for (final id in ids) if (!kRegionBlockedModels.contains(id)) id];
+
 Future<ModelTestResult> testModelConnection({
   required String baseUrl,
   required String apiKey,
