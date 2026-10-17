@@ -18,6 +18,7 @@ import '../state/app_settings.dart';
 import '../state/model_store.dart';
 import 'theme/dsh_tokens.dart';
 import 'chat_page.dart';
+import 'pages/bot_page.dart';
 import 'pages/expert_page.dart';
 import 'pages/library_page.dart';
 import 'pages/memory_page.dart';
@@ -546,6 +547,19 @@ class _AppShellState extends State<AppShell> {
     return parts.isEmpty ? path : parts.last;
   }
 
+  /// 打开「Bot 团队」页（本机 dsh web + ds-bot，用 WebView 显示）。
+  ///
+  /// 测试版：验证「把桌面版那套 web 前端搬进手机」这条路。Bot 的服务进程
+  /// 由 BotServer 持有，**离开页面不停**（Bot 要接着在后台干活）。
+  Future<void> _openBot() async {
+    debugPrint('[dsh-nav] open bot page');
+    await Navigator.of(context).push<Object?>(
+      MaterialPageRoute<Object?>(
+        builder: (_) => BotPage(runtime: _runtime),
+      ),
+    );
+  }
+
   /// 打开工作区管理器（首页顶栏右侧 + 会话页顶栏右侧，**同一个功能**）。
   Future<void> _openWorkspace() async {
     debugPrint('[dsh-nav] open workspace page (current=${_ws.current.path})');
@@ -668,6 +682,7 @@ class _AppShellState extends State<AppShell> {
         onOpenChat: ({String? initialText}) =>
             _openChat(initialText: initialText),
         onOpenWorkspace: _openWorkspace,
+        onOpenBot: _openBot,
         workspaceName: _ws.current.name,
       ),
       // ⚠️ 原下标 1 =「本地大模型」**已撤下**（用户 2026-10-12：功能不够成熟，

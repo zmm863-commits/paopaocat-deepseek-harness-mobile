@@ -72,8 +72,13 @@ class MainActivity : FlutterActivity() {
          * 也就是"会话里的联网搜索免 Key 可用"这条能力要靠它才生效。
          * 升级后的行为：完整包直接从安装包里取出（**不联网**，见
          * `copyRuntimeAssetTo`），精简包用本地那份（`runtime.json` 一致时同样不下载）。
+         *
+         * 2026-10-17：2 → 3。运行环境里**多了 Bot 团队的 profile 种子**
+         * （`app/profiles-seed/bottest/`：@deepseek-ai/dsh-base + dsh-web-app +
+         * ds-bot + dsh-client-ui-mobile）。手机上的「Bot 团队」页靠它把
+         * dsh web 与 ds-bot 在本机跑起来（见 `lib/local/bot_server.dart`）。
          */
-        private const val RUNTIME_VERSION = "2"
+        private const val RUNTIME_VERSION = "3"
 
         // **完整包**里带着运行环境（`build.gradle.kts` 的 `DSH_ANDROID_INCLUDE_RUNTIME=1`
         // 时把 `app-assets` 加进 assets），**精简包**里没有 —— 所以下面每一处都要
