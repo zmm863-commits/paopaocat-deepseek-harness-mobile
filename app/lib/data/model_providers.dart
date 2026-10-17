@@ -172,18 +172,23 @@ List<ModelProvider> get kModelProviders => <ModelProvider>[
         keyUrl: 'https://opencode.ai/auth',
         note: tr(
             '端点是 /zen/go/v1（免费那档是 /zen/v1，两个别混）。'
-            '⚠️ 「获取模型」拿到的清单里**混有别的套餐的模型**（比如各种 *-free）——'
-            'Go 套餐实际能用的主要是：deepseek-v4.1-flash / deepseek-v4-pro / '
-            'glm-5.3 / glm-5.3-flash / kimi-k2.7-code / qwen3.8-flash / mimo-v2.6-pro。'
-            '选到套餐外的会报「没有访问该模型的权限」，那不是 Key 坏了。'),
+            '「获取模型」拉的是这个端点的实时清单（实测约 37 个），'
+            '里面**含免费模型**（如 beam-free、longcat-2.5-preview-free）——'
+            '所以看到 *-free 不用吃惊，它们确实属于这档。'
+            '若某个模型报「没有访问该模型的权限」，那是你这把 Key 在该模型上的权限问题，不是 Key 坏了。'),
         intro: tr(
             'OpenCode 的 Go 套餐：一个 Key 就能用 DeepSeek V4/V4.1、GLM 5.x、Qwen3.8、Grok 4.x 这一批模型。'),
         // 拉取失败时的兜底清单（与 DSH 内置的 opencode-go 模型表对得上）。
+        // 兜底清单（拉取失败时才用）：取自 2026-10-17 实测的 /zen/go/v1/models，
+        // 挑最常用的几个（含一个免费模型）。
+        // ⚠️ 以后上游加/删模型这里会过时 —— 但它只是"连不上时的占位"，
+        //    正常路径永远是拉接口拿实时清单。
         exampleModels: <String>[
           'deepseek-v4.1-flash',
           'deepseek-v4-pro',
           'glm-5.3',
           'qwen3.8-flash',
+          'beam-free',
         ],
       ),
       ModelProvider(

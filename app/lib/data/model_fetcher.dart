@@ -313,6 +313,19 @@ Future<ModelTestResult> testModelConnection({
     final request = await client.postUrl(uri).timeout(timeout);
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $key');
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    // ⚠️ OpenCode（`/zen/v1` 与 `/zen/go/v1`）的对话端点**强制要求**
+    // `x-opencode-session` 头，不带直接 400（2026-10-17 实测原文：
+    //   {"type":"error","error":{"type":"MissingSessionID",
+    //    "message":"Request is missing x-opencode-session and cannot be routed efficiently."}}）
+    //
+    // 为什么必须在这里补：探活是 **App 自己发的** HTTP，而真正对话是 **DSH** 发的
+    // （它内置的 provider 会自动加这个头）。不补的话结果就是
+    // **「测试永远不过、但实际能用」** —— 用户被误导去怀疑 Key。
+    // 值用一次性的探活 id 就够（OpenCode 只是拿它做按会话路由）。
+    if (uri.host.contains('opencode')) {
+      request.headers.set('x-opencode-session',
+          'dsh-probe-${DateTime.now().microsecondsSinceEpoch}');
+    }
     request.headers.contentType =
         ContentType('application', 'json', charset: 'utf-8');
     request.add(utf8.encode(jsonEncode(<String, dynamic>{
