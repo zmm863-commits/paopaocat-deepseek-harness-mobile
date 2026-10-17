@@ -178,7 +178,19 @@ class ProviderKeys {
     final env = <String, String>{};
     for (final p in cfg.providers) {
       final k = await read(p.id);
-      if (k != null && k.isNotEmpty) env[p.apiKeyEnv] = k;
+      if (k == null || k.isEmpty) continue;
+      env[p.apiKeyEnv] = k;
+      // ⚠️ **opencode-go 要额外注入 `OPENCODE_API_KEY`**（2026-10-17 真机回归的根因）。
+      //
+      // 原因：这个厂家的 overlay **故意不写 api/baseURL**（写了会丢 `x-opencode-session` 头），
+      // 于是 DSH 用它**内置**的 provider —— 而内置 provider 的 auth 把变量名**硬编码**成
+      // `OPENCODE_API_KEY`（见 pi-ai 的 providers/opencode-go.js：
+      //   `auth: { apiKey: envApiKeyAuth("OpenCode API key", ["OPENCODE_API_KEY"]) }`）。
+      // App 自己那套命名（如 OPENCODE_GO_API_KEY）它**读不到** → 拿不到 Key →
+      // ACP `initialize` 成功、但 `session/new` / `session/resume` 全报 Internal error、
+      // 进程随即退出（真机日志就是这串现象）。
+      // 所以这里两个名字都给：App 自己的（给自定义路径）+ 内置那个（给内置 provider）。
+      if (p.id == 'opencode-go') env['OPENCODE_API_KEY'] = k;
     }
     // 向后兼容：老 overlay / 老调用点还在用这几个固定变量名。
     final primary = cfg.providers.isEmpty ? null : cfg.providers.first;
