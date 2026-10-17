@@ -179,8 +179,9 @@ List<ModelProvider> get kModelProviders => <ModelProvider>[
         intro: tr(
             'OpenCode 的 Go 套餐：一个 Key 就能用 DeepSeek V4/V4.1、GLM 5.x、Qwen3.8、Grok 4.x 这一批模型。'),
         // 拉取失败时的兜底清单（与 DSH 内置的 opencode-go 模型表对得上）。
-        // 兜底清单（拉取失败时才用）：取自 2026-10-17 实测的 /zen/go/v1/models，
-        // 挑最常用的几个（含一个免费模型）。
+        // 兜底清单（拉取失败时才用）：取自 2026-10-17 实测的 /zen/go/v1/models。
+        // ⚠️ 故意**不放** beam-free：它虽然在那份清单里，但实测回
+        //    403 RegionError（该模型在你所在地区不可用），放进兜底只会误导。
         // ⚠️ 以后上游加/删模型这里会过时 —— 但它只是"连不上时的占位"，
         //    正常路径永远是拉接口拿实时清单。
         exampleModels: <String>[
@@ -188,7 +189,6 @@ List<ModelProvider> get kModelProviders => <ModelProvider>[
           'deepseek-v4-pro',
           'glm-5.3',
           'qwen3.8-flash',
-          'beam-free',
         ],
       ),
       ModelProvider(

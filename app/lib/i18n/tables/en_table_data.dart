@@ -1255,6 +1255,7 @@ const Map<String, String> kEnTable = <String, String>{
   '没有找到可以剪的视频。\n这里列的是「作品」里生成过的视频 + 工作区里的视频；两个地方都空的话，先去「创作台 → 生视频」生成一段，或把视频放进工作区。': 'No videos to clip.\nThis lists videos generated in Works plus videos in the workspace; if both are empty, generate one first in Studio → Generate video, or put a video into the workspace.',
   '没有拿到失败原因，下面是脚本的原话：': 'No reason was captured; here is what the script actually said:',
   '没有提炼出内容': 'Nothing was extracted',
+  '这个模型在你所在地区不可用（不是 Key 的问题）。': 'This model is not available in your region (not a Key issue).',
   '没有访问该模型的权限（可能是套餐不含、或 Key 权限受限）。': 'No access to this model (it may not be in your plan, or the Key\'s permissions are limited).',
   '没有识别到内容（可能没说话、或识别服务临时失败）。可以重试，或先用文字输入。': 'No speech detected (maybe you didn\'t say anything, or the service failed for a moment). Try again, or type instead.',
   '没有读到内容': 'Couldn\'t read any content',

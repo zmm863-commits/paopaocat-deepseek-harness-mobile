@@ -97,6 +97,12 @@ ApiErrorText translateHttpError({required int statusCode, String? body}) {
       sniff.contains('does not exist') ||
       sniff.contains('no such model') ||
       sniff.contains('model_not_found');
+  // 地区限制（2026-10-17 实测）：OpenCode 对某些模型回
+  // `403 {"type":"RegionError","message":"This model is not available in your country"}`
+  // —— 这跟 Key、跟套餐都无关，笼统报"没有权限"会把人往错方向带。
+  final looksRegion = sniff.contains('regionerror') ||
+      sniff.contains('not available in your country') ||
+      sniff.contains('not available in your region');
   final looksKey = sniff.contains('invalid_api_key') ||
       sniff.contains('invalid api key') ||
       sniff.contains('missing_api_key') ||
@@ -124,7 +130,9 @@ ApiErrorText translateHttpError({required int statusCode, String? body}) {
     case 403:
       zh = looksQuota
           ? tr('额度已用完或该模型未开通，请到服务商后台查看用量。')
-          : tr('没有访问该模型的权限（可能是套餐不含、或 Key 权限受限）。');
+          : looksRegion
+              ? tr('这个模型在你所在地区不可用（不是 Key 的问题）。')
+              : tr('没有访问该模型的权限（可能是套餐不含、或 Key 权限受限）。');
       break;
     case 404:
       zh = looksModel
