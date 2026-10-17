@@ -60,6 +60,26 @@ class BotServer {
   /// 解析锚定 profile 目录，放别处解析不到（本机实测踩过）。
   ///
   /// 只在缺失时布置：用户之后在手机上改了 Bot 团队，不该被下次启动覆盖掉。
+  /// 保证 `model.overlay.yml` 存在 —— **哪怕用户一个模型都没配**。
+  ///
+  /// 为什么不能"没配就不写"：这个 overlay 不只描述模型，还带着**权限预设**
+  /// （`permission.defaultPreset: danger-full-access`）。缺了它，会话会掉进
+  /// 默认的 `workspace-write` + `approval: ask`，而 Android 上没有沙箱后端 →
+  /// 每个工具调用都要用户点一次批准（用户原话：「一直出现 agent 请求执行操作」）。
+  static Future<void> _ensureOverlay(DshRuntime runtime) async {
+    if (runtime.hasModelConfig) return;
+    try {
+      // ⚠️ 必须用 writeMinimalOverlay 而不是 writeOverlayFromConfig：
+      // 后者在"没有任何带模型的厂家"时**会主动拒绝写**（怕写坏 overlay），
+      // 那正是"没配模型的用户根本没有 overlay"的原因。
+      await runtime.writeMinimalOverlay();
+      DiagnosticsLog.add('dsh-bot',
+          'overlay 原本不存在 → 已写最小 overlay（关键是权限预设 danger-full-access）');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '写最小 overlay 失败（会影响权限审批）：$e');
+    }
+  }
+
   static Future<void> ensureProfile(DshRuntime runtime) async {
     final target = Directory('${runtime.nodeHome}/profiles/$profileName');
     final seed = Directory('${runtime.runtimeRoot}/profiles-seed/$profileName');
@@ -117,6 +137,21 @@ class BotServer {
       if (!runtime.environment.containsKey('NODE_OPTIONS'))
         'NODE_OPTIONS': '--max-old-space-size=1024',
     };
+
+    // ⚠️⚠️ **确保 overlay 存在**（2026-10-17 真机铁证，用户报「一直出现 agent 请求执行操作」）。
+    //
+    // 用户那份会话产物里写着 `"sandboxMode": { "val": "workspace-write" }` ——
+    // **不是** `danger-full-access`。原因是下面传 `--patch` 是有条件的：
+    //     if (runtime.hasModelConfig) ...['--patch', runtime.overlayPath]
+    // 而"用户还没配过模型"时 overlay 文件不存在 → **整个 patch 都没传** →
+    // 连里面的**权限预设**（`defaultPreset: danger-full-access`，即 approval=never）
+    // 一起丢 → DSH 退回默认的 `workspace-write` + `approval: ask`。
+    // Android 上**没有 DSH 需要的沙箱后端**，于是每个工具调用都失败并弹出
+    // 「请求执行操作」让用户批准（真机日志：`The sandbox backend isn't usable, so tools fail`
+    // 紧跟 `权限请求`）。桌面版没这现象，因为它 profile 自带权限配置。
+    //
+    // 所以：起服务前**先写一份最小 overlay**（模型为空也没关系，权限预设是关键）。
+    await _ensureOverlay(runtime);
 
     // ⚠️ 先把运行时要用的目录建好（2026-10-17 真机日志暴露的遗漏）：
     //   DSH 的 spill-local 插件会在 `<filesDir>/tmp` 下 `mkdtemp('dsh-spill-XXXXXX')`，

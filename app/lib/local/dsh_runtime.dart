@@ -1089,6 +1089,31 @@ class DshRuntime {
     );
   }
 
+  /// 写一份**最小 overlay**：只放"与模型无关、但会直接影响会话行为"的几段。
+  ///
+  /// 为什么需要单独一个方法（2026-10-17 真机铁证）：
+  /// `writeOverlayFromConfig` 在"没有任何带模型的厂家"时会**主动拒绝**
+  /// （`没有任何「带模型的厂家」/轮换组/本地模型，拒绝写空 providers（会写坏 overlay）`）
+  /// —— 它这个自我保护是对的，但后果是：**还没配模型的用户根本没有 overlay 文件**，
+  /// 于是 `BotServer` / `ACPServer` 那句 `if (runtime.hasModelConfig) [... '--patch', overlayPath]`
+  /// 不成立，**连带权限预设一起没传** → 会话退回默认的 `workspace-write` + `approval: ask`；
+  /// 而 Android 上**没有 DSH 需要的沙箱后端**，于是每个工具调用都要用户点一次批准。
+  /// 用户的原话是「一直出现 agent 请求执行操作」，会话产物里的证据是
+  /// `"sandboxMode": { "val": "workspace-write" }`。
+  ///
+  /// 这里**故意不写 providers**（避免"写坏 overlay"那个风险），只写权限段。
+  Future<void> writeMinimalOverlay() async {
+    final buf = StringBuffer();
+    buf.writeln('# 由 App 生成：最小 overlay（用户还没配模型时也要有的那几段）。');
+    buf.writeln('# 关键作用是权限预设 —— 缺了它，Android 上每个工具调用都要用户批准。');
+    buf.writeln('- id: permission');
+    buf.writeln('  name: "@deepseek-ai/dsh-permission-presets"');
+    buf.writeln('  config:');
+    buf.writeln('    defaultPreset: danger-full-access');
+    writeStringAtomicSync(File(overlayPath), buf.toString());
+    debugPrint('[dsh-runtime] 已写最小 overlay（权限预设 danger-full-access）');
+  }
+
   bool get hasModelConfig => File(overlayPath).existsSync();
 
   /// overlay 里有没有「Android 沙箱修复」**且**「权限预设显式指定」（升级迁移用）。

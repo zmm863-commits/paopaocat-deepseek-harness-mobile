@@ -150,6 +150,10 @@ class AcpClient {
         '--patch',
         overlayPath
       ],
+      // 注意：overlay 缺失时这里就**不传 patch**，会话会掉进默认权限
+      // （workspace-write + approval ask）→ Android 上每步都要用户批准。
+      // 已在调用方（ChatPage/AppShell）保证 overlay 存在；见 BotServer._ensureOverlay
+      // 的同名注释与 2026-10-17 的真机会话产物证据（sandboxMode=workspace-write）。
     ];
 
     final env = <String, String>{

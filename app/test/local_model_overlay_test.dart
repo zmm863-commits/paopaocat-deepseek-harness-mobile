@@ -51,6 +51,25 @@ void main() {
     expect(text, isNot(contains('contextWindow: 4096')));
   });
 
+  test('★ 空配置也要写出权限预设（否则 Android 上每步都要用户批准）', () async {
+    // 2026-10-17 真机铁证：用户那份会话产物里 `"sandboxMode": {"val": "workspace-write"}`。
+    // 原因：BotServer 传 --patch 是有条件的（`if (runtime.hasModelConfig)`），
+    // 而"还没配模型"时 overlay 不存在 → 整个 patch 没传 → 连**权限预设**一起丢 →
+    // 退回默认 workspace-write + approval:ask；Android 上没有沙箱后端，
+    // 于是每个工具调用都弹「请求执行操作」（用户原话）。
+    // 所以：即使一个模型都没配，也必须能写出一份带 `danger-full-access` 的 overlay。
+    // ⚠️ 注意不能走 writeOverlayFromConfig：它在"没有带模型的厂家"时会拒绝写
+    //（`拒绝写空 providers（会写坏 overlay）`），而那正是本 bug 的成因。
+    await runtime.writeMinimalOverlay();
+    final text = File(runtime.overlayPath).readAsStringSync();
+    expect(text, isNot(contains('providers:')),
+        reason: '最小 overlay 故意不写 providers，避免写坏');
+    expect(text, contains('dsh-permission-presets'),
+        reason: '权限预设段必须存在，否则会话掉进 approval:ask');
+    expect(text, contains('defaultPreset: danger-full-access'),
+        reason: 'danger-full-access = approval never，Android 上必须用它才不会每步都问');
+  });
+
   test('opencode-go 必须写全 api/baseURL，并补上 x-opencode-session 头', () async {
     // 2026-10-17 真机回归（用户连报两轮「会话没有建立起来」）。
     //
