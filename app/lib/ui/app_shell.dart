@@ -18,7 +18,7 @@ import '../state/app_settings.dart';
 import '../state/model_store.dart';
 import 'theme/dsh_tokens.dart';
 import 'chat_page.dart';
-import 'pages/bot_team_page.dart';
+import 'pages/bot_page.dart';
 import 'pages/expert_page.dart';
 import 'pages/library_page.dart';
 import 'pages/memory_page.dart';
@@ -676,18 +676,17 @@ class _AppShellState extends State<AppShell> {
         workspaceName: _ws.current.name,
       ),
       // 下标 1 =「Bot 团队」（用户 2026-10-17：放在首页右边）。
-      // **原生页面**，不是网页内切 —— 点条目用现有的原生聊天页打开那个会话。
-      BotTeamPage(
-        runtime: _runtime,
-        onOpenSession: ({
-          required String sessionId,
-          required String cwd,
-          required String title,
-        }) {
-          // cwd 必须原样传：ACP 的 session/resume 会校验 cwd 与持久化时一致。
-          unawaited(_openChat(resumeSessionId: sessionId, workspacePath: cwd));
-        },
-      ),
+      //
+      // ⚠️ 2026-10-17 用户实测后的决定：**回到 WebView（网页版）方案**。
+      // 原因不是原生方案"做不出来"，而是它踩在一个**极简底座**上：
+      //   * 网页版跑的是**完整 dsh web**（`bottest` = dsh-base + dsh-web-app + ds-bot），
+      //     与桌面版同源，会话/群聊/Bot 全在网页内 → 用户实测「网页版可以跑通」；
+      //   * 原生版改走 **ACP**（`--profile acp`，bundles 只有 dsh-base + dsh-acp-app、
+      //     patch 层是空数组），于是每发现一样"桌面版有它没有"的东西就得补一样：
+      //     TMPDIR、cookie、Key 变量名、协议声明、权限预设、插件包……补了 13 个版本。
+      // 所以这里回到 BotPage（WebView）。**其余修复全部保留**（浅色字色、模型设置、
+      // OpenCode Go、探活补头、shared_preferences 钉版本…那些与页面方案无关）。
+      BotPage(runtime: _runtime),
       // ⚠️ 原下标 1 =「本地大模型」**已撤下**（用户 2026-10-12：功能不够成熟，
       //    连知识库一起从界面拿掉）。页面文件与引擎都保留（可逆方案），
       //    只是不再挂进这个列表 —— 想恢复就把上面那段放回来并把下面下标全体后移。
