@@ -191,6 +191,17 @@
 ///      明确"彻底不用了"；只排除了 .so，Java 类与代码都留着，要恢复删四行即可）。
 ///      于是之后每次更新都能少下这 41 MB）
 ///
+/// → 0.77（**Bot 团队上手机**：首页顶栏新增「Bot」入口。
+///      做法**不是**重写界面 —— Bot 的界面是插件 `ds-bot` 自带的浏览器前端
+///      （826 条文案、群聊、@选人、记忆/密钥/用量/审批卡片、实时状态词），
+///      用 Flutter 重写不可能追平。所以改成「在本机起一个 `dsh --profile bottest`
+///      进程（dsh-base + dsh-web-app + ds-bot + dsh-client-ui-mobile），
+///      再用 WebView 打开它」：同一套前端，因此**体验与桌面版一致**。
+///      运行时包里多一份 profile 种子（压缩后 +461KB）；
+///      最小组合常驻约 200MB（对照：整份 web profile 23 个 bundle 是 1.46GB）。
+///      服务跑在本机、不用联网；Bot 是普通会话，名册与群聊在 `bot/state.json`。
+///      详见 `docs/BOT-TEST.md`；要弃用只需删 `profiles/bottest`。）
+///
 /// ⚠️ 发版时**必须同时改两处**，否则装了新版也分不清：
 ///   1. 这里的 [kAppVersion]；
 ///   2. `app/pubspec.yaml` 里的 `version:`（`versionCode` 也要跟着 +1，它决定
