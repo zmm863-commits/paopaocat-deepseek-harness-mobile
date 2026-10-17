@@ -448,6 +448,17 @@ ThemeData buildDshTheme() {
       ),
     ),
     textTheme: TextTheme(
+      // ⚠️ **bodyLarge 必须给**（2026-10-17 用户反馈「浅色主题下改工作区名看不清字」）：
+      //    Material 的 `TextField` 默认就取 `textTheme.bodyLarge` 当输入文字样式。
+      //    这里原来是**一张只声明了 4 个样式的 TextTheme**，bodyLarge 为 null ——
+      //    于是 `EditableText.style.color` 实测就是 `null`，颜色只能靠层层继承兜底，
+      //    浅色皮肤下最终落成次要灰（实测像素 #566A8D，即 textDim），在白底上就"看不清"。
+      //    补上正文色后，所有输入框（对话输入条、新建工作区、搜索…）一次性都对。
+      bodyLarge: skinFont(TextStyle(
+          color: skin.text,
+          fontSize: 16,
+          height: 1.5,
+          letterSpacing: DshMetrics.letterSpacing)),
       bodyMedium: skinFont(TextStyle(
           color: skin.text,
           fontSize: 14,

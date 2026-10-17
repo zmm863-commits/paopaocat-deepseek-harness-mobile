@@ -190,6 +190,49 @@ class BotServer {
     return server;
   }
 
+  /// 调 Bot 的 HTTP API（`POST /api/bot`）。
+  ///
+  /// 为什么需要它：Bot 名册能直接从 `state.json` 读（那步不需要进程），但**改**东西
+  /// 不行 —— 比如把群的「谁回答」从「只交给主持人」改成「全员都答」，得走 ds-bot
+  /// 自己的 `update-room`。App 一旦直接去改 `state.json`，就等于两套写入方打架。
+  ///
+  /// 认证方式与浏览器一致：先带 `?token=` 访问一次拿 `Set-Cookie`，再带着它请求。
+  /// （实测：不带 token 是 401，带 token 是 303 并下发 cookie。）
+  Future<Map<String, dynamic>> callApi(
+    String endpoint, [
+    Map<String, dynamic>? payload,
+  ]) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
+    try {
+      // ① token → cookie
+      String? cookie;
+      try {
+        final res = await (await client.getUrl(Uri.parse(url))).close();
+        final sc = res.headers['set-cookie'];
+        if (sc != null && sc.isNotEmpty) cookie = sc.first.split(';').first;
+        await res.drain<void>();
+      } catch (e) {
+        debugPrint('[dsh-bot] 取 cookie 失败（继续试直连）：$e');
+      }
+
+      // ② 调 API
+      final req = await client.postUrl(Uri.parse('http://127.0.0.1:$port/api/bot'));
+      req.headers.contentType = ContentType.json;
+      if (cookie != null) req.headers.set('Cookie', cookie);
+      req.write(jsonEncode(<String, Object?>{
+        'endpoint': endpoint,
+        'payload': payload ?? const <String, Object?>{},
+      }));
+      final res = await req.close();
+      final body = await res.transform(utf8.decoder).join();
+      final decoded = jsonDecode(body);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return <String, dynamic>{'ok': false, 'error': '非预期响应：${body.substring(0, body.length.clamp(0, 120))}'};
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   bool _exited = false;
 
   /// 进程退出（或 [stop] 过）就是 false。

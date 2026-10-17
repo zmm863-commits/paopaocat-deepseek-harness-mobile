@@ -103,6 +103,7 @@ class BotTeam {
           name: (m['name'] ?? '').toString(),
           memberCount: (m['members'] as List?)?.length ?? 0,
           adminId: (m['admin'])?.toString(),
+          mode: m['mode']?.toString(),
         ));
       }
       rooms.sort((a, b) => a.name.compareTo(b.name));
@@ -151,10 +152,26 @@ class BotTeamRoom {
     required this.name,
     required this.memberCount,
     this.adminId,
+    this.mode,
   });
 
   final String id;
   final String name;
   final int memberCount;
   final String? adminId;
+
+  /// ds-bot 的「谁回答」：`admin`（默认，只交给主持人点名）或 `everyone`（全员轮流答）。
+  final String? mode;
+
+  /// 这个群是不是**只有主持人能开口**。
+  ///
+  /// 2026-10-17 对照实验（本机实测）：`mode=admin` **且确实有 admin** 时，
+  /// 普通消息只交给 admin —— admin 不回，群里就"没人理"（用户抱怨的正是这个）；
+  /// 而没有 admin 时，成员**都会**回答（实践上等同全员）。
+  bool get onlyAdminAnswers =>
+      (mode ?? 'admin') == 'admin' && (adminId != null && adminId!.isNotEmpty);
+
+  /// 界面上怎么描述「谁回答」。
+  String get whoAnswersLabel =>
+      onlyAdminAnswers ? '只由主持人点名（@名字可指定）' : '全员都会回答';
 }

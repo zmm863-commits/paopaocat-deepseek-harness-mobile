@@ -105,14 +105,50 @@ class _BotTeamPageState extends State<BotTeamPage> {
     }
   }
 
-  void _reload() {
+  void _reload({bool force = false}) {
     final t = BotTeam.read(widget.runtime);
     // 内容没变就不 setState（3 秒一次的轮询不该把整页反复重建）。
     final same = t.bots.length == _team.bots.length &&
         t.rooms.length == _team.rooms.length &&
         _sameIds(t);
-    if (same) return;
+    if (same && !force) return;
     setState(() => _team = t);
+  }
+
+  /// 切群的「谁回答」—— 这是用户抱怨「几方完全没有联系」的直接解法。
+  ///
+  /// 走 ds-bot 自己的 `update-room`（**不**直接改 state.json：那会变成两套写入方打架）。
+  Future<void> _toggleRoomMode(BotTeamRoom r) async {
+    final server = BotServer.current;
+    if (server == null) {
+      _snack('Bot 服务还没起来，稍后再试');
+      return;
+    }
+    final toEveryone = r.onlyAdminAnswers;
+    final target = toEveryone ? 'everyone' : 'admin';
+    try {
+      final res = await server.callApi(
+        'update-room',
+        <String, dynamic>{'id': r.id, 'mode': target},
+      );
+      final ok = res['ok'] == true;
+      if (!ok) {
+        final err = res['error'];
+        final msg = err is Map ? (err['message'] ?? '$err') : '$err';
+        _snack('改不动：$msg');
+        return;
+      }
+      _snack(toEveryone ? '已改成「全员都会回答」' : '已改成「只由主持人点名」');
+      _reload(force: true);
+    } catch (e) {
+      _snack('改不动：$e');
+    }
+  }
+
+  void _snack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(text)));
   }
 
   bool _sameIds(BotTeam t) {
@@ -269,7 +305,8 @@ class _BotTeamPageState extends State<BotTeamPage> {
         ],
         const SizedBox(height: 14),
         Text(
-          '点任意一条，就是你熟悉的那个聊天页 —— Bot 本来就是普通会话。',
+          '点任意一条，就是你熟悉的那个聊天页 —— Bot 本来就是普通会话。\n'
+          '群里没人接话时，点群右侧的按钮切「全员都会回答」，或在群里直接 @它的名字。',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 11.5, color: DshColors.textFaint),
         ),
@@ -302,9 +339,20 @@ class _BotTeamPageState extends State<BotTeamPage> {
   Widget _roomTile(BotTeamRoom r) => _tile(
         leading: _avatarDot(DshColors.accent2),
         title: r.name.isEmpty ? r.id : r.name,
-        subtitle: '${r.memberCount} 位成员',
+        // 「谁回答」直接摆出来 —— 用户看到的「几方完全没有联系」，
+        // 根因就是这里：群交给主持人以后，普通消息只送到主持人那里。
+        subtitle: '${r.memberCount} 位成员 · ${r.whoAnswersLabel}',
         badge: '群',
         onTap: () => _open(r.id, r.name.isEmpty ? r.id : r.name),
+        trailing: IconButton(
+          tooltip: r.onlyAdminAnswers ? '改成「全员都会回答」' : '改成「只由主持人点名」',
+          icon: Icon(
+            r.onlyAdminAnswers ? Icons.person_outline : Icons.groups_outlined,
+            size: 19,
+            color: DshColors.textDim,
+          ),
+          onPressed: () => unawaited(_toggleRoomMode(r)),
+        ),
       );
 
   Widget _tile({
@@ -313,6 +361,7 @@ class _BotTeamPageState extends State<BotTeamPage> {
     required String subtitle,
     required VoidCallback onTap,
     String? badge,
+    Widget? trailing,
   }) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -376,8 +425,9 @@ class _BotTeamPageState extends State<BotTeamPage> {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right,
-                      size: 18, color: DshColors.textFaint),
+                  trailing ??
+                      Icon(Icons.chevron_right,
+                          size: 18, color: DshColors.textFaint),
                 ],
               ),
             ),
