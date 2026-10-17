@@ -566,8 +566,8 @@ class _AppShellState extends State<AppShell> {
             required String cwd,
             required String title,
           }) {
-            // 先把名册页收掉：否则聊天页压在它上面，返回时又回到一个列表。
-            Navigator.of(ctx).pop();
+            // **不**收掉名册页：聊天页压在它上面，返回时回到 Bot 列表（更顺手）。
+            // `_openChat` 自己只会摘掉栈上旧的**会话页**，不会动这一页。
             // cwd 必须原样传：ACP 的 session/resume 会校验 cwd 与持久化时一致。
             unawaited(_openChat(
               resumeSessionId: sessionId,
