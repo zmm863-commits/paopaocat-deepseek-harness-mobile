@@ -1,3 +1,10 @@
+// ⚠️ **当前未引用**（2026-10-17 用户决定改用网页版后保留）：
+// Bot 页现在用的是 `bot_page.dart`（WebView 加载 dsh web），见 app_shell.dart。
+// 这一份是「原生方案」的实现（Flutter 列表 + 走 ACP 的会话），保留是为了：
+//   ① 以后若要把 Bot 页做回原生，改 app_shell 的 import 与那一行即可；
+//   ② 里面的「谁回答」切换、主 Bot 提示等交互逻辑有参考价值。
+// 但**它的会话路径（ACP）有已知的底座短板**（acp profile 是最小组合），
+// 详见 docs/BOT-TEST.md 里 2026-10-17 那段「为什么回到网页版」。
 import 'dart:async';
 import 'dart:io';
 

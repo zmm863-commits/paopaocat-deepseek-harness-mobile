@@ -19,7 +19,38 @@
 
 ---
 
-## 0. 现在的实现（构建号 87 起，**以此为准**）
+## 0. 现在的实现（2026-10-17 最终形态：**网页版**）
+
+> ⚠️ **方向已定（用户 2026-10-17 明确）**：Bot 页面用 **WebView 加载 dsh web**（`bot_page.dart`），
+> **不做原生那条线**。原因见下面的「为什么回到网页版」。
+
+```
+【用户看到的】
+  底部导航「Bot」→ WebView 打开 `http://127.0.0.1:<port>/?token=…`
+      └→ 里面就是 **ds-bot 自己的完整网页 UI**（左侧频道/会话列表 + 右侧聊天 + 设置）
+
+【后台】
+  BotServer 起一个 `dsh --profile bottest` 的 node 进程
+    · bottest = dsh-base + dsh-web-app + **ds-bot**（+ dsh-client-ui-mobile 窄屏增强）
+    · **不含** dsh-client-ui-paopaocat（品牌主题）—— 用户 2026-10-17 明确「不需要品牌主题」
+    · 种子随 runtime 分发：`<filesDir>/dsh/profiles-seed/bottest`
+
+【会话怎么跑】
+  **全在网页内**：会话、群聊、Bot 都由 ds-bot 的网页 UI 驱动，**不走 ACP**。
+```
+
+### 为什么回到网页版（2026-10-17 的关键决策）
+两条路的差别不在功能，而在**底座**：
+
+| | 网页版 | 原生版（79~100 我做的） |
+|---|---|---|
+| 会话怎么跑 | 整个 dsh web 在 WebView 里 | App 用 **ACP**（`--profile acp`）建会话再自己渲染 |
+| 底座 | `bottest` = `dsh-base + dsh-web-app + ds-bot`，**与桌面版同源** | `acp` = bundles 只有 `dsh-base + dsh-acp-app`，**profile 的 patch 层是空数组** |
+| 结果 | 天然齐全，用户实测「可以跑通」 | 每发现一样「桌面版有它没有」就得补一样：TMPDIR、cookie、Key 变量名、协议声明、权限预设、插件包…补了 13 个版本 |
+
+**教训：选方案先看底座。** 极简 profile 不是「轻量」，而是「什么都得自己补齐」。
+
+
 
 ```
 【用户看到的】
