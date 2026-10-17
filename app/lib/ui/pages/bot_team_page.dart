@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -49,7 +50,7 @@ class BotTeamPage extends StatefulWidget {
   State<BotTeamPage> createState() => _BotTeamPageState();
 }
 
-enum _Phase { starting, ready, failed }
+enum _Phase { starting, ready, failed, noRuntime }
 
 class _BotTeamPageState extends State<BotTeamPage> {
   _Phase _phase = _Phase.starting;
@@ -78,6 +79,17 @@ class _BotTeamPageState extends State<BotTeamPage> {
         _error = null;
         _lastLine = '';
       });
+    }
+    // ⚠️ 先看这个**安装包**里到底有没有 Bot 种子（`<runtimeRoot>/profiles-seed/bottest`）。
+    // 完整包（full）带运行环境、种子在里面；**精简包（lite）不带**，它的运行环境是
+    // 首次启动时另下的 —— 那种情况下 Bot 根本无从谈起。
+    // 这条检查是为了让"精简包用户"看到一句人话，而不是「服务没能起来」那种像 bug 的报错。
+    final seedPkg = File(
+        '${widget.runtime.runtimeRoot}/profiles-seed/${BotServer.profileName}/package.json');
+    if (!seedPkg.existsSync()) {
+      if (!mounted) return;
+      setState(() => _phase = _Phase.noRuntime);
+      return;
     }
     try {
       // 宿主没起来的话，state.json 还是上一次的（甚至不存在）—— 先确保它在跑。
@@ -357,6 +369,29 @@ class _BotTeamPageState extends State<BotTeamPage> {
                 ),
                 const SizedBox(height: 20),
                 FilledButton(onPressed: () => unawaited(_boot()), child: const Text('重试')),
+              ],
+            ),
+          ),
+        );
+      case _Phase.noRuntime:
+        // 精简包：说清楚"要不要装完整版"，不要让用户以为是坏了。
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.info_outline, size: 44, color: DshColors.textDim),
+                const SizedBox(height: 14),
+                const Text('这个安装包不含 Bot 功能',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                Text(
+                  '你装的是「精简版」——它的运行环境是首次启动时另下的，里面没有 Bot 那一套。\n'
+                  '装「完整版」（full 包）就能用 Bot 团队了。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12.5, color: DshColors.textDim),
+                ),
               ],
             ),
           ),
