@@ -57,6 +57,10 @@ class _BotTeamPageState extends State<BotTeamPage> {
   String? _error;
   String _lastLine = '';
   BotTeam _team = const BotTeam();
+
+  /// 可选模型（route 字符串）。从 `state` API 拉 —— 名册文件里没有这条，
+  /// 那是 ds-bot 按当前 DSH 配置现算的。拉不到就空着，新建弹窗相应地不显示下拉。
+  List<String> _models = const <String>[];
   Timer? _poll;
 
   @override
@@ -103,6 +107,7 @@ class _BotTeamPageState extends State<BotTeamPage> {
       if (!mounted) return;
       _reload();
       setState(() => _phase = _Phase.ready);
+      unawaited(_loadModels());
       // 名册是小 JSON，重读很便宜；3 秒一次让"刚建的 Bot / 刚开的群"能自己冒出来。
       _poll?.cancel();
       _poll = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -115,6 +120,29 @@ class _BotTeamPageState extends State<BotTeamPage> {
         _phase = _Phase.failed;
         _error = '$e';
       });
+    }
+  }
+
+  /// 拉一次可用模型清单（`state` API 的 `models[].ref`）。
+  ///
+  /// 为什么不从 state.json 读：模型清单不在那个文件里 —— 它是 ds-bot 按**当前
+  /// DSH 的 provider 配置**现算出来的。所以这里走 API。
+  Future<void> _loadModels() async {
+    final server = BotServer.current;
+    if (server == null) return;
+    try {
+      final res = await server.callApi('state');
+      final v = res['value'];
+      if (v is! Map) return;
+      final ms = v['models'];
+      if (ms is! List) return;
+      final out = <String>[
+        for (final m in ms)
+          if (m is Map && m['ref'] != null) '${m['ref']}',
+      ];
+      if (mounted && out.isNotEmpty) setState(() => _models = out);
+    } catch (e) {
+      debugPrint('[dsh-bot] 拉模型清单失败（新建时就不显示下拉）：$e');
     }
   }
 
@@ -192,24 +220,47 @@ class _BotTeamPageState extends State<BotTeamPage> {
       _snack('Bot 服务还没起来，稍后再试');
       return;
     }
+    // 团队里没有主 Bot → 这次新建的就该当主 Bot（弹窗里会提前讲明）。
+    final willBeMain = !_team.hasMainBot;
     final r = await showDialog<Map<String, String>>(
       context: context,
-      builder: (_) => const NewBotDialog(),
+      builder: (_) => NewBotDialog(willBeMain: willBeMain, models: _models),
     );
     if (r == null || !mounted) return;
     final name = r['name'] ?? '';
     final role = r['role'] ?? '';
+    final model = r['model'] ?? '';
     try {
       final res = await server.callApi('create-bot', <String, dynamic>{
         'name': name,
         if (role.isNotEmpty) 'role': role,
+        // 空就不传 —— 让 ds-bot 用它自己的团队默认模型。
+        if (model.isNotEmpty) 'model': model,
       });
-      if (res['ok'] == true) {
-        _snack('已建好「$name」');
-        _reload(force: true);
-      } else {
+      if (res['ok'] != true) {
         _snack('建不了：${_errText(res)}');
+        return;
       }
+      // `create-bot` 接口**不带 main 参数**（所以新建的天然是普通 Bot）。
+      // 如果团队原本没有主 Bot，这里补一次 `set-main`，否则会"群龙无首"。
+      if (willBeMain) {
+        final created = res['value'];
+        final id = created is Map ? created['id'] : null;
+        if (id is String && id.isNotEmpty) {
+          final res2 = await server.callApi('set-main', <String, dynamic>{
+            'id': id,
+            'main': true,
+            'primary': true,
+          });
+          if (res2['ok'] != true) {
+            _snack('「$name」建好了，但设为「主 Bot」失败：${_errText(res2)}');
+            _reload(force: true);
+            return;
+          }
+        }
+      }
+      _snack(willBeMain ? '已建好「$name」，并设为主 Bot' : '已建好「$name」');
+      _reload(force: true);
     } catch (e) {
       _snack('建不了：$e');
     }

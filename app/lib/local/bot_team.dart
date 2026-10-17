@@ -35,6 +35,15 @@ class BotTeam {
 
   bool get isEmpty => bots.isEmpty && rooms.isEmpty;
 
+  /// 团队里现在**有没有主 Bot**。
+  ///
+  /// 为什么要单独判断：主 Bot 是 ds-bot 首次启动时自动建的（`bootstrap()` 里的
+  /// `createBot({..., main: true})`）；而 `create-bot` 接口**不带 main 参数**，
+  /// 所以用户手动建的永远是普通 Bot。如果用户把主 Bot 删了、再新建一个，
+  /// 那个新 Bot 不会自己变成主 Bot —— 界面上又看不出来，就成了"群龙无首"。
+  /// 所以新建流程会拿这个判断来决定要不要事后 `set-main`。
+  bool get hasMainBot => bots.any((b) => b.isMain);
+
   /// Bot 的会话都在同一个工作区下（ds-bot 固定这么放）。
   ///
   /// ACP 的 `session/resume` 会**校验 cwd 与持久化时一致**（不一致直接报
