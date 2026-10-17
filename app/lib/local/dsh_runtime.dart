@@ -900,32 +900,28 @@ class DshRuntime {
     for (final p in providers) {
       buf.writeln('      ${_yamlStr(p.id)}:');
       buf.writeln('        apiKeyEnv: ${p.apiKeyEnv}');
-      // ⚠️ **opencode-go 故意不写 `api` / `baseURL`**（2026-10-17，用户提醒"有个头的问题"）。
+      // ⚠️⚠️ 2026-10-17 订正：**不能再走"内置 provider"那条路**。
       //
-      // 原因：DSH 内置的 pi-ai 里，`opencode-go` 这个 provider 被
-      // `withOpenCodeSessionHeader(...)` 包着，每次请求都会补一个
-      // **`x-opencode-session: <会话 id>`** 头（见
-      // `@earendil-works/pi-ai/dist/providers/opencode-headers.js`）——
-      // OpenCode 靠它做**按会话路由**。
+      // 我原以为：只要不写 api/baseURL，DSH 就会用它**内置**的 `opencode-go` provider
+      // （那样能自动带上 `x-opencode-session` 头）。真机打脸的原文（用户 97 版日志）：
+      //   llm-pi-ai: provider "opencode-go" model "deepseek-v4.1-flash" needs an api;
+      //   the installed catalog does not describe it,
+      //   so set the route's api to the wire protocol its endpoint speaks
+      // 也就是说 **DSH 的 catalog 里根本没有这个 provider**（pi-ai 的
+      // `providers/opencode-go.js` 并不等于 DSH 的 installed catalog）。
+      // 结果：会话建不起来，用户看到「会话没有建立起来」。
       //
-      // 但只要我们在这里写了 `baseURL`（+ `api: openai-completions`），DSH 就会把它当成
-      // 一个**自定义的 OpenAI 兼容通道**、走通用实现，那层 header 包装就不会生效 →
-      // 请求缺 `x-opencode-session`，OpenCode 那边行为异常。
-      //
-      // 反过来：**只写 `apiKeyEnv` 和 `models`、不写 `api`/`baseURL`**，DSH 就会用
-      // 它**内置**的 opencode-go provider —— header 正确、端点也正确。
-      // 本机 `/dsh/profiles/web/cordis.patch.yml` 里的 `opencode-go` 就是这么写的（只有
-      // displayName / apiKeyEnv / models），而那套配置在本机是能正常出话的。
-      // 走 DSH 内置 provider 的厂家（pi-ai 里有同名 provider 且被
-      // withOpenCodeSessionHeader 包着，必须保住那个头）：
-      //   opencode-go → OpenCode Go
-      //   opencode    → OpenCode Zen 免费档（2026-10-17 用户反馈其模型普遍 403
-      //                 「没有访问该模型的权限」，已从厂家列表移除；这里保留特判，
-      //                 只是为了不让老配置里的残留条目突然变成自定义通道）
-      final useBuiltinProvider = p.id == 'opencode-go' || p.id == 'opencode';
-      if (!useBuiltinProvider) {
-        buf.writeln('        api: ${p.api}');
-        buf.writeln('        baseURL: ${_yamlStr(p.baseUrl)}');
+      // 正确做法：**照自定义通道写全**（api + baseURL），**并用 `headers` 把那个头补上**
+      // —— `profile` 的 schema 里 `headers: z.dict(z.string())` 是支持的，
+      // 而实测 `x-opencode-session` 用**固定值**就能过校验（curl 验证：
+      // 带 `x-opencode-session: dsh-probe-1` 会走到 401「Go requires a credential」，
+      // 说明头本身已被接受；不带则是 400 MissingSessionID）。
+      final needsOpenCodeHeader = p.id == 'opencode-go' || p.id == 'opencode';
+      buf.writeln('        api: ${p.api}');
+      buf.writeln('        baseURL: ${_yamlStr(p.baseUrl)}');
+      if (needsOpenCodeHeader) {
+        buf.writeln('        headers:');
+        buf.writeln('          x-opencode-session: dsh-mobile');
       }
       buf.writeln('        models:');
       final mine = config.models.where((m) => m.provider == p.id).toList();

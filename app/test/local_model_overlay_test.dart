@@ -51,6 +51,51 @@ void main() {
     expect(text, isNot(contains('contextWindow: 4096')));
   });
 
+  test('opencode-go 必须写全 api/baseURL，并补上 x-opencode-session 头', () async {
+    // 2026-10-17 真机回归（用户连报两轮「会话没有建立起来」）。
+    //
+    // 我曾"故意不写 api/baseURL"，以为 DSH 会用它**内置**的 opencode-go provider。
+    // DSH 的原话（用户 97 版日志里那行完整 error）：
+    //   llm-pi-ai: provider "opencode-go" model "deepseek-v4.1-flash" needs an api;
+    //   the installed catalog does not describe it,
+    //   so set the route's api to the wire protocol its endpoint speaks
+    // 也就是说 **DSH 的 catalog 里没有这个 provider**，必须显式写明协议；
+    // 而 OpenCode 又**硬性要求** `x-opencode-session` 头（不带会 400 MissingSessionID，
+    // curl 实测），所以要用 `headers`（schema 支持 `headers: z.dict(z.string())`）补上。
+    // 这三行缺任何一行，会话都建不起来 —— 钉死。
+    const cfg = ConfiguredConfig(
+      version: 2,
+      providers: <ProviderSpec>[
+        ProviderSpec(
+          id: 'opencode-go',
+          label: 'OpenCode Go',
+          baseUrl: 'https://opencode.ai/zen/go/v1',
+          api: 'openai-completions',
+          apiKeyEnv: 'OPENCODE_GO_API_KEY',
+        ),
+      ],
+      models: <ModelSpec>[
+        ModelSpec(
+            provider: 'opencode-go',
+            id: 'deepseek-v4.1-flash',
+            name: 'DeepSeek V4.1 Flash'),
+      ],
+      groups: <RotationGroupSpec>[],
+      selected: 'opencode-go/deepseek-v4.1-flash',
+    );
+    await runtime.writeOverlayFromConfig(
+      config: cfg,
+      activeRoute: 'opencode-go/deepseek-v4.1-flash',
+    );
+    final text = File(runtime.overlayPath).readAsStringSync();
+    expect(text, contains('api: openai-completions'),
+        reason: '不写 api → DSH 直接拒绝建会话（needs an api）');
+    expect(text, contains('opencode.ai/zen/go/v1'),
+        reason: '不写 baseURL → 同一条错误');
+    expect(text, contains('x-opencode-session'),
+        reason: 'OpenCode 硬性要求这个头，不带会 400 MissingSessionID');
+  });
+
   test('overlay 必须显式指定权限预设（否则 dsh-permission-presets 不激活）', () async {
     // 复现过的真机问题（2026-10-09）：overlay 把 sandbox-policy 改成
     // danger-full-access 之后，"沙箱 + 审批"组合出来的默认值匹配不上 profile 里
