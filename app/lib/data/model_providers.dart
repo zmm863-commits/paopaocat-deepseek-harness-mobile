@@ -157,6 +157,31 @@ List<ModelProvider> get kModelProviders => <ModelProvider>[
         //    ⚠️ 以后这里会过时 —— 这正是"兜底清单需要跟着上游核对"的例子。
         exampleModels: <String>['deepseek-flash', 'deepseek-v4-pro'],
       ),
+      // ── OpenCode Go（2026-10-17 用户要求「增加一个 opencode go 的设置页面」）──
+      //
+      // 端点依据（不是猜的）：DSH 内置的 pi-ai 里，`opencode-go` 这个 provider 的
+      // 端点是 **`https://opencode.ai/zen/go/v1`**（免费那档 zen 是 `/zen/v1`），
+      // 定义在 `@earendil-works/pi-ai/dist/providers/opencode-go.js`。
+      // 它支持三种协议（openai-completions / anthropic-messages / openai-responses），
+      // 本 App 的厂家卡片只走 openai-completions —— 那正好覆盖 23 个模型（含 deepseek / GLM 全套）。
+      ModelProvider(
+        id: 'opencode-go',
+        name: tr('OpenCode Go'),
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+        keyHint: tr('OpenCode API Key（同一个 Key 也用于免费那档）'),
+        keyUrl: 'https://opencode.ai/auth',
+        note: tr(
+            '端点是 /zen/go/v1（免费那档是 /zen/v1，两个别混）。它同时支持 OpenAI 与 Anthropic 两种协议，这里走 OpenAI 兼容。'),
+        intro: tr(
+            'OpenCode 的 Go 套餐：一个 Key 就能用 DeepSeek V4/V4.1、GLM 5.x、Qwen3.8、Grok 4.x 这一批模型。'),
+        // 拉取失败时的兜底清单（与 DSH 内置的 opencode-go 模型表对得上）。
+        exampleModels: <String>[
+          'deepseek-v4.1-flash',
+          'deepseek-v4-pro',
+          'glm-5.3',
+          'qwen3.8-flash',
+        ],
+      ),
       ModelProvider(
         id: 'longcat',
         name: tr('LongCat（美团）'),
@@ -226,6 +251,7 @@ ModelProvider get kAgnesModelProvider => ModelProvider(
 const List<String> kMyModelOrder = <String>[
   AgnesBuiltin.providerId, // 'agnes'
   'deepseek',
+  'opencode-go', // OpenCode Go（2026-10-17 新增）
   'com', // Command（聚合）：id 是历史短名，不能改
   'mimo',
   'longcat',

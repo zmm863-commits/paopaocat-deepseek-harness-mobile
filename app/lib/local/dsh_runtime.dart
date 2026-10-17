@@ -900,8 +900,27 @@ class DshRuntime {
     for (final p in providers) {
       buf.writeln('      ${_yamlStr(p.id)}:');
       buf.writeln('        apiKeyEnv: ${p.apiKeyEnv}');
-      buf.writeln('        api: ${p.api}');
-      buf.writeln('        baseURL: ${_yamlStr(p.baseUrl)}');
+      // ⚠️ **opencode-go 故意不写 `api` / `baseURL`**（2026-10-17，用户提醒"有个头的问题"）。
+      //
+      // 原因：DSH 内置的 pi-ai 里，`opencode-go` 这个 provider 被
+      // `withOpenCodeSessionHeader(...)` 包着，每次请求都会补一个
+      // **`x-opencode-session: <会话 id>`** 头（见
+      // `@earendil-works/pi-ai/dist/providers/opencode-headers.js`）——
+      // OpenCode 靠它做**按会话路由**。
+      //
+      // 但只要我们在这里写了 `baseURL`（+ `api: openai-completions`），DSH 就会把它当成
+      // 一个**自定义的 OpenAI 兼容通道**、走通用实现，那层 header 包装就不会生效 →
+      // 请求缺 `x-opencode-session`，OpenCode 那边行为异常。
+      //
+      // 反过来：**只写 `apiKeyEnv` 和 `models`、不写 `api`/`baseURL`**，DSH 就会用
+      // 它**内置**的 opencode-go provider —— header 正确、端点也正确。
+      // 本机 `/dsh/profiles/web/cordis.patch.yml` 里的 `opencode-go` 就是这么写的（只有
+      // displayName / apiKeyEnv / models），而那套配置在本机是能正常出话的。
+      final useBuiltinProvider = p.id == 'opencode-go';
+      if (!useBuiltinProvider) {
+        buf.writeln('        api: ${p.api}');
+        buf.writeln('        baseURL: ${_yamlStr(p.baseUrl)}');
+      }
       buf.writeln('        models:');
       final mine = config.models.where((m) => m.provider == p.id).toList();
       for (final m in mine) {
