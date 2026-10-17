@@ -208,6 +208,17 @@
 ///      profile 内部 app 的参数**，于是 `--patch` 被 web app 当成未知选项拒绝。
 ///      修法：把 `--patch` 挪到 `--no-open` 之前。本机两种顺序都复现验证过。）
 ///
+///      **同一版的后续订正（构建号 81）**：Bot 页面**不再嵌网页**。第一版是用
+///      WebView 打开 dsh web 整页，用户真机反馈「像在手机里新开了一个 DSH 网页版
+///      页面，与我的 APP 风格不搭」「我想要的是在我 APP 会话界面一样的聊天」。
+///      改法回到原点 —— **Bot 本来就是普通会话**（ds-bot 原话：Every Bot is one
+///      root Session），所以只读它的名册（`<DSH_HOME>/bot/state.json`，明文 JSON），
+///      点进去直接用 **App 自己的聊天页**打开那个会话（历史由 `session_transcript`
+///      读会话文件回放）。ds-bot 的宿主仍在后台 node 进程里跑（Bot 才会回话、才会
+///      互相派活），但**对用户完全不可见**。顺带把 Bot 会话从 App 的会话/工作区列表
+///      里排除掉（只隐藏、不删），并修好 Bot 会话里「联网搜索」不可用的问题
+///      （`insert` 的插件按 profile 目录解析，包得放进种子）。）
+///
 /// ⚠️ 发版时**必须同时改两处**，否则装了新版也分不清：
 ///   1. 这里的 [kAppVersion]；
 ///   2. `app/pubspec.yaml` 里的 `version:`（`versionCode` 也要跟着 +1，它决定

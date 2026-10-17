@@ -73,6 +73,10 @@ class MainActivity : FlutterActivity() {
          * 升级后的行为：完整包直接从安装包里取出（**不联网**，见
          * `copyRuntimeAssetTo`），精简包用本地那份（`runtime.json` 一致时同样不下载）。
          *
+         * 2026-10-17：4 → 5。种子里**又补了联网搜索后端**
+         * （`@deepseek-ai/dsh-web-search-anysearch`）—— profile 的 `insert` 是按
+         * profile 目录解析的，包不放进去就 `failed to import`（Bot 会话里联网搜索不可用）。
+         *
          * 2026-10-17：3 → 4。种子里**又多了泡泡猫玻璃主题**
          * （`dsh-client-ui-paopaocat`）——Bot 页面是 WebView 打开 dsh web，
          * 不带主题的话界面与 App 风格完全不搭（用户真机反馈："像强行塞了一个网页"）。
@@ -82,7 +86,7 @@ class MainActivity : FlutterActivity() {
          * ds-bot + dsh-client-ui-mobile）。手机上的「Bot 团队」页靠它把
          * dsh web 与 ds-bot 在本机跑起来（见 `lib/local/bot_server.dart`）。
          */
-        private const val RUNTIME_VERSION = "4"
+        private const val RUNTIME_VERSION = "5"
 
         // **完整包**里带着运行环境（`build.gradle.kts` 的 `DSH_ANDROID_INCLUDE_RUNTIME=1`
         // 时把 `app-assets` 加进 assets），**精简包**里没有 —— 所以下面每一处都要

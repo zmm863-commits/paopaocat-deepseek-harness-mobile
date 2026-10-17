@@ -18,7 +18,7 @@ import '../state/app_settings.dart';
 import '../state/model_store.dart';
 import 'theme/dsh_tokens.dart';
 import 'chat_page.dart';
-import 'pages/bot_page.dart';
+import 'pages/bot_team_page.dart';
 import 'pages/expert_page.dart';
 import 'pages/library_page.dart';
 import 'pages/memory_page.dart';
@@ -547,15 +547,34 @@ class _AppShellState extends State<AppShell> {
     return parts.isEmpty ? path : parts.last;
   }
 
-  /// 打开「Bot 团队」页（本机 dsh web + ds-bot，用 WebView 显示）。
+  /// 打开「Bot 团队」页 —— **原生页面，不嵌网页**。
   ///
-  /// 测试版：验证「把桌面版那套 web 前端搬进手机」这条路。Bot 的服务进程
-  /// 由 BotServer 持有，**离开页面不停**（Bot 要接着在后台干活）。
+  /// 这是用户 2026-10-17 纠正后的做法：他要的是「在我 APP 会话界面一样的聊天」。
+  /// 所以这一页只列 Bot 名册，点进去由 [_openChat] 用**现有的原生聊天页**打开
+  /// （Bot 本来就是普通会话；ACP 的 resume 不回放历史，历史由 App 自己读会话文件
+  /// 回放，见 `local/session_transcript.dart`）。
+  ///
+  /// Bot 的宿主进程由 [BotServer] 在后台持有，**离开页面不停**。
   Future<void> _openBot() async {
-    debugPrint('[dsh-nav] open bot page');
+    debugPrint('[dsh-nav] open bot team page');
     await Navigator.of(context).push<Object?>(
       MaterialPageRoute<Object?>(
-        builder: (_) => BotPage(runtime: _runtime),
+        builder: (ctx) => BotTeamPage(
+          runtime: _runtime,
+          onOpenSession: ({
+            required String sessionId,
+            required String cwd,
+            required String title,
+          }) {
+            // 先把名册页收掉：否则聊天页压在它上面，返回时又回到一个列表。
+            Navigator.of(ctx).pop();
+            // cwd 必须原样传：ACP 的 session/resume 会校验 cwd 与持久化时一致。
+            unawaited(_openChat(
+              resumeSessionId: sessionId,
+              workspacePath: cwd,
+            ));
+          },
+        ),
       ),
     );
   }

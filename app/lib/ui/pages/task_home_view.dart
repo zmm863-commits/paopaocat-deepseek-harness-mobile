@@ -603,7 +603,12 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // Bot 团队入口（测试版）：和工作区入口并排，样式沿用同一个观感。
+              // 工作区入口：图标 + 文字（只用图标用户不知道是干嘛的 —— 上一版
+              // 就是个列表图标 + 角标数字，用户原话"不知道是干嘛的"）。
+              WorkspaceEntryButton(onTap: onOpenWorkspace),
+              const SizedBox(width: 4),
+              // Bot 团队入口：**放在首页顶栏的最右边**（用户 2026-10-17 明确要求
+              // "把 bot 按钮放到首页的右边"）。样式与工作区入口同一观感。
               TextButton.icon(
                 onPressed: onOpenBot,
                 icon: const Icon(Icons.smart_toy_outlined, size: 15),
@@ -615,10 +620,6 @@ class _TopBar extends StatelessWidget {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
-              const SizedBox(width: 4),
-              // 工作区入口：图标 + 文字（只用图标用户不知道是干嘛的 —— 上一版
-              // 就是个列表图标 + 角标数字，用户原话"不知道是干嘛的"）。
-              WorkspaceEntryButton(onTap: onOpenWorkspace),
             ],
           ),
         ),

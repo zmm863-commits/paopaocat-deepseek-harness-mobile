@@ -42,7 +42,19 @@ Future<List<DshSession>> listPersistedSessions(
     var shells = 0;
     var withUsage = 0;
     final out = <DshSession>[];
+    // Bot 团队的会话（ds-bot 把它们统一放在 `<DSH_HOME>/bot/workspace` 下）**不混进
+    // App 的工作区/会话列表**：那是 Bot 自己的内部工作区，对用户没有意义，
+    // 而且这条路径编码成目录名会很长很难看（真机上就冒出来过一串乱名字）。
+    // ⚠️ 这里只是**不显示**：磁盘上的会话一个都不动、也不删（与「空壳会话」同一原则）。
+    final botWorkspace = '${runtime.nodeHome}/bot/workspace';
+    var botSessions = 0;
+
     for (final r in rows) {
+      // 宽松判据：不同版本的 ds-bot 可能把 DSH_HOME 放在别处，按后缀认更稳。
+      if (r.cwd == botWorkspace || r.cwd.endsWith('/bot/workspace')) {
+        botSessions++;
+        continue;
+      }
       final facts = readSessionFacts(
         dshHome: runtime.nodeHome,
         sessionId: r.sessionId,
@@ -58,6 +70,9 @@ Future<List<DshSession>> listPersistedSessions(
         emptyShell: empty,
         totalTokens: facts.totalTokens,
       ));
+    }
+    if (botSessions > 0) {
+      debugPrint('[ws-index] 跳过 $botSessions 条 Bot 团队会话（$botWorkspace；磁盘上仍在，只是不显示）');
     }
     if (shells > 0) {
       debugPrint('[ws-index] 其中 $shells 条是 0 消息空壳（列表里不显示；磁盘上仍在，没删）');
