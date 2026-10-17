@@ -7,6 +7,7 @@ import '../../local/bot_team.dart';
 import '../../local/diagnostics_log.dart';
 import '../../local/dsh_runtime.dart';
 import '../theme/dsh_tokens.dart';
+import 'bot_dialogs.dart';
 
 /// 「Bot 团队」页 —— **不嵌网页**，只用 App 自己的风格列出来，点进去交给原生聊天页。
 ///
@@ -145,6 +146,78 @@ class _BotTeamPageState extends State<BotTeamPage> {
     }
   }
 
+  /// 从 API 返回里抠出人能看懂的错因。
+  String _errText(Map<String, dynamic> res) {
+    final e = res['error'];
+    if (e is Map) return (e['message'] ?? '$e').toString();
+    return e?.toString() ?? '未知原因';
+  }
+
+  /// 新建一个 Bot（走 ds-bot 的 `create-bot`）。模型不传 —— 让它用团队默认的那个，
+  /// 建好后可以在它的会话里改（免得在这里逼用户先选模型）。
+  Future<void> _newBot() async {
+    final server = BotServer.current;
+    if (server == null) {
+      _snack('Bot 服务还没起来，稍后再试');
+      return;
+    }
+    final r = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (_) => const NewBotDialog(),
+    );
+    if (r == null || !mounted) return;
+    final name = r['name'] ?? '';
+    final role = r['role'] ?? '';
+    try {
+      final res = await server.callApi('create-bot', <String, dynamic>{
+        'name': name,
+        if (role.isNotEmpty) 'role': role,
+      });
+      if (res['ok'] == true) {
+        _snack('已建好「$name」');
+        _reload(force: true);
+      } else {
+        _snack('建不了：${_errText(res)}');
+      }
+    } catch (e) {
+      _snack('建不了：$e');
+    }
+  }
+
+  /// 新建群聊（走 `create-room`）。至少选两个成员，否则 ds-bot 也没法建。
+  Future<void> _newRoom() async {
+    final server = BotServer.current;
+    if (server == null) {
+      _snack('Bot 服务还没起来，稍后再试');
+      return;
+    }
+    if (_team.bots.length < 2) {
+      _snack('至少要两个 Bot 才能建群');
+      return;
+    }
+    final r = await showDialog<Map<String, Object>>(
+      context: context,
+      builder: (_) => NewRoomDialog(candidates: _team.bots),
+    );
+    if (r == null || !mounted) return;
+    final members = (r['members'] as List?)?.cast<String>() ?? const <String>[];
+    final name = (r['name'] as String?) ?? '';
+    try {
+      final res = await server.callApi('create-room', <String, dynamic>{
+        'members': members,
+        if (name.isNotEmpty) 'name': name,
+      });
+      if (res['ok'] == true) {
+        _snack('群聊建好了');
+        _reload(force: true);
+      } else {
+        _snack('建不了：${_errText(res)}');
+      }
+    } catch (e) {
+      _snack('建不了：$e');
+    }
+  }
+
   void _snack(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -181,7 +254,7 @@ class _BotTeamPageState extends State<BotTeamPage> {
         automaticallyImplyLeading: false,
         title: const Text('Bot 团队'),
         actions: [
-          if (_phase == _Phase.ready)
+          if (_phase == _Phase.ready) ...[
             IconButton(
               tooltip: '刷新',
               icon: const Icon(Icons.refresh),
@@ -190,6 +263,20 @@ class _BotTeamPageState extends State<BotTeamPage> {
                 setState(() {});
               },
             ),
+            // 新建入口：删掉网页界面之后，这里是**唯一**能加 Bot / 加群的地方。
+            PopupMenuButton<String>(
+              tooltip: '新建',
+              icon: const Icon(Icons.add),
+              onSelected: (v) {
+                if (v == 'bot') unawaited(_newBot());
+                if (v == 'room') unawaited(_newRoom());
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'bot', child: Text('新建 Bot')),
+                PopupMenuItem(value: 'room', child: Text('新建群聊')),
+              ],
+            ),
+          ],
         ],
       ),
       body: _buildBody(),
