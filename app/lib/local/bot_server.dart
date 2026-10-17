@@ -118,6 +118,16 @@ class BotServer {
         'NODE_OPTIONS': '--max-old-space-size=1024',
     };
 
+    // ⚠️ 先把运行时要用的目录建好（2026-10-17 真机日志暴露的遗漏）：
+    //   DSH 的 spill-local 插件会在 `<filesDir>/tmp` 下 `mkdtemp('dsh-spill-XXXXXX')`，
+    //   目录不在就报 `ENOENT: mkdtemp .../files/tmp/dsh-spill-XXXXXX`
+    //   → 表现为「1 entry did not activate」（不致命，但日志脏、运行环境也不完整）。
+    //   ACP 那条路径一直有这个 mkdir（见 acp_client.dart），BotServer 当初漏了。
+    for (final d in <String>['${runtime.filesDir}/tmp', runtime.nodeHome]) {
+      final dir = Directory(d);
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+    }
+
     final process = await Process.start(
       runtime.nodeBinary,
       args,

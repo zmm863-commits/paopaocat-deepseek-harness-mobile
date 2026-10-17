@@ -171,7 +171,11 @@ List<ModelProvider> get kModelProviders => <ModelProvider>[
         keyHint: tr('OpenCode API Key（同一个 Key 也用于免费那档）'),
         keyUrl: 'https://opencode.ai/auth',
         note: tr(
-            '端点是 /zen/go/v1（免费那档是 /zen/v1，两个别混）。它同时支持 OpenAI 与 Anthropic 两种协议，这里走 OpenAI 兼容。'),
+            '端点是 /zen/go/v1（免费那档是 /zen/v1，两个别混）。'
+            '⚠️ 「获取模型」拿到的清单里**混有别的套餐的模型**（比如各种 *-free）——'
+            'Go 套餐实际能用的主要是：deepseek-v4.1-flash / deepseek-v4-pro / '
+            'glm-5.3 / glm-5.3-flash / kimi-k2.7-code / qwen3.8-flash / mimo-v2.6-pro。'
+            '选到套餐外的会报「没有访问该模型的权限」，那不是 Key 坏了。'),
         intro: tr(
             'OpenCode 的 Go 套餐：一个 Key 就能用 DeepSeek V4/V4.1、GLM 5.x、Qwen3.8、Grok 4.x 这一批模型。'),
         // 拉取失败时的兜底清单（与 DSH 内置的 opencode-go 模型表对得上）。
