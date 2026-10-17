@@ -88,6 +88,24 @@ adb shell run-as com.dshmobile.dsh_mobile rm -rf files/dshhome/profiles/bottest
 
 ---
 
+---
+
+## 8. 真机排查对照表（本机已逐项验过的分支）
+
+| 症状 | 本机结论 / 原因 | 怎么办 |
+|---|---|---|
+| 界面报「Bot 服务没能起来」，日志有 `unknown option '--patch'` | 启动参数顺序（`--patch` 被 web app 当成未知选项）—— **已在构建号 78 修掉** | 装 78 及以上 |
+| 界面报「Bot 服务没能起来」，日志是别的错 | 看日志里 `[dsh-bot]` / `[dsh-bot:err]` 开头那几行 | 把日志导出来（设置页） |
+| 界面报「运行时里没有 Bot 种子」 | 装的是 **lite 包**，而远端 `runtime.json` 还没更新 → 拉到的旧运行时 | 装 **full 包**；正式发版时要补 runtime.json + 上传 runtime |
+| 能进页面，但**左侧边栏没有 Bot 区域** | 大概率 ds-bot 没激活 —— 日志里会有 `did not activate` | 把日志导出来 |
+| 页面能开、Bot 也在，但**发消息不回** | Bot 没选模型（`state.json` 里 `waiting:true`），或免费通道被限流 | 在侧边栏给主 Bot 选个模型；换 zen/polli 另一条 |
+| 启动时会有一行 `web-search-anysearch: failed to import` | 该插件依赖 `launch-environment`/`schemastery`，bottest 最小组合没加载它们 → **Bot 会话里联网搜索不可用**，**不阻塞**任何主流程 | 可忽略（后续版本再补） |
+| App 的「工作区/会话」列表里多出一个很长的路径，底下有 7+ 个会话 | 那是 **bot 自己的工作区**（`<DSH_HOME>/bot/workspace`，编码成 `--…-bot-workspace--`）。Bot 就是普通会话，和 App 共用同一个 `DSH_HOME` | 可忽略（属正常）；后续可考虑在列表里过滤 |
+
+**已在真机真实参数下复验通过的两件（本机）**：
+- web（bot）与 acp（会话）两个进程**同时**用同一个 `DSH_HOME`：互不干扰，web 仍正常服务（http=303）。
+- 手机上的完整参数组合（`--expose-internals` + 两个 shim + `--patch` + `--no-open --port 0` + `NODE_OPTIONS`）能正常起来。
+
 ## 7. 涉及的文件
 
 - `app/lib/local/bot_server.dart` —— 起/停 web 服务、建 profile、解析 token URL
