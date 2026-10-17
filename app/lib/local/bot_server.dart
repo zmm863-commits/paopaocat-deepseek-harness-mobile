@@ -95,11 +95,17 @@ class BotServer {
       '--require', runtime.execShimPath,
       runtime.dshBin,
       '--profile', profileName,
-      // 下面两个是 web app 的参数（launcher 认不出的 token 起 inner arguments）。
+      // ⚠️ **--patch 必须留在 --no-open 之前**（0.77 测试包在真机上就栽在这里）：
+      //    dsh 的 launcher 只认自己的参数，**一旦出现它不认识的 token，后面全部
+      //    算作 profile 内部 app 的参数**。--no-open 正是那个 token —— 所以写反
+      //    顺序时 `--patch` 会被 web app 当成未知选项，直接
+      //    `error: unknown option '--patch'` 退出（退出码 1，界面报「Bot 服务
+      //    没能起来」）。本机两种顺序都复现过，见 docs/BOT-TEST.md §3。
+      if (runtime.hasModelConfig) ...['--patch', runtime.overlayPath],
+      // 下面两个是 web app 的参数。
       // --no-open：手机上不能去拉系统浏览器；--port 0：让系统挑空闲端口。
       '--no-open',
       '--port', '0',
-      if (runtime.hasModelConfig) ...['--patch', runtime.overlayPath],
     ];
 
     onLog?.call('[dsh-bot] 启动：--profile $profileName --no-open --port 0');

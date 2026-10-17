@@ -37,6 +37,7 @@ Bot 的界面不是我们写的，是第三方插件 **`ds-bot`**（[Fei2411/Dee
 | 种子位置 | 运行时包内 `app/profiles-seed/bottest/` → 手机解压后 `<filesDir>/dsh/profiles-seed/bottest` | `MainActivity.unpack` **只认 `app/` 和 `shims/` 两个前缀**，其余丢弃 |
 | ds-bot 放哪 | **profile 自己的 `node_modules/`** | DSH 插件名解析锚定 profile 目录，放别处解析不到 |
 | 启动参数 | `--expose-internals` 必加 | `node-addon-require-builtin` 的 Android shim 要 `require('internal/modules/esm/loader')` |
+| **`--patch` 的位置** | **必须排在 `--no-open` 之前** | dsh launcher 一旦遇到它不认识的 token（`--no-open` 就是），**后面全部算 profile 内部 app 的参数** → 写反顺序就 `error: unknown option '--patch'` 退出（0.77 测试包真机报错原文） |
 | 端口 | `--port 0` 让系统挑，再解析 stdout | 就绪行格式：`dsh web: http://127.0.0.1:<port>/?token=<43字符>` |
 | 认证 | 带 token 打开 → 303 下发 cookie → 之后 /api 可用 | 不带 token 访问是 **401** |
 

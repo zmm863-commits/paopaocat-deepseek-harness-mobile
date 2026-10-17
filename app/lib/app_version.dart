@@ -202,6 +202,12 @@
 ///      服务跑在本机、不用联网；Bot 是普通会话，名册与群聊在 `bot/state.json`。
 ///      详见 `docs/BOT-TEST.md`；要弃用只需删 `profiles/bottest`。）
 ///
+/// → 0.77（构建号 78，**修首个 0.77 测试包的 Bot 启动 Bug**：真机上报「Bot 服务没能起来」，
+///      日志原文 `error: unknown option '--patch'`。根因是启动参数顺序 ——
+///      dsh 的 launcher 一旦遇到它不认识的 token（`--no-open`），**后面全部算作
+///      profile 内部 app 的参数**，于是 `--patch` 被 web app 当成未知选项拒绝。
+///      修法：把 `--patch` 挪到 `--no-open` 之前。本机两种顺序都复现验证过。）
+///
 /// ⚠️ 发版时**必须同时改两处**，否则装了新版也分不清：
 ///   1. 这里的 [kAppVersion]；
 ///   2. `app/pubspec.yaml` 里的 `version:`（`versionCode` 也要跟着 +1，它决定
