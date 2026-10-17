@@ -19,6 +19,39 @@
 
 ---
 
+## 0. 现在的实现（构建号 87 起，**以此为准**）
+
+```
+【用户看到的】
+  底部导航「Bot」（在首页右边）
+    └→ Bot 团队页（原生 Flutter 列表，非网页）
+         ├─ 「主 Bot」/「Bot（N）」/「群聊（N）」 三组
+         ├─ 点任一条 → **App 现有的聊天页**（ACP resume + 读会话文件回放历史）
+         ├─ 右上角「＋」→ 新建 Bot / 新建群聊
+         └─ 群条目右侧按钮 → 在「只由主持人点名 ⇄ 全员都会回答」之间切换
+
+【后台（用户看不见）】
+  BotServer 起一个 `dsh --profile bottest` 的 node 进程（= ds-bot 宿主）
+    ├─ **必须有它**：Bot 会不会回话、会不会互相派活，全靠这个进程
+    ├─ 它同时开一个 loopback HTTP 端口，但 App **不**用它显示界面；
+    │   App 只用它的 `POST /api/bot` 做「写」操作（新建 Bot/群、切群模式）
+    └─ 页面退出**不停**；被系统杀掉后，下次进页自动重启
+
+【数据流】
+  <DSH_HOME>/bot/state.json  ← 名册/群聊（明文 JSON，ds-bot 自己维护）
+        │ 只读（App 每 3 秒看一次，文件 mtime 没变就跳过解析）
+        ↓
+  Bot 团队页的列表
+
+  写操作一律走 `POST /api/bot`（create-bot / create-room / update-room），
+  **绝不直接改 state.json** —— 否则两套写入方打架。
+```
+
+**关键判断依据**：Bot 就是普通会话（ds-bot 原话 `Every Bot is one root Session`），
+所以"看 Bot"这件事根本不需要网页界面，用 App 自己的聊天页打开那个会话即可。
+
+---
+
 ## 1. 一句话
 
 手机 App 首页顶栏多了一个 **Bot** 入口；点进去，App 在本机起一个
