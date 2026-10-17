@@ -106,9 +106,28 @@ class _BotTeamPageState extends State<BotTeamPage> {
     }
   }
 
+  /// 上次读到的 `state.json` 修改时间（用于跳过无变化的轮询）。
+  DateTime? _lastMtime;
+
   void _reload({bool force = false}) {
+    // ⚠️ 先拿**文件修改时间**做闸门，再决定要不要解析。
+    // 为什么：`state.json` 里的 `rooms[].log` 是**累积**的（每条群消息都留下），
+    // 所以这个文件会随着使用一直变大（本机现在还只有几 KB，但长期能到几百 KB 甚至 MB）。
+    // 每 3 秒把它整份读进来 + `jsonDecode`，在文件大的时候纯属白烧 CPU ——
+    // 而绝大多数轮询间隔里它根本没变。
+    final f = BotTeam.stateFileOf(widget.runtime);
+    DateTime? mtime;
+    try {
+      mtime = f.existsSync() ? f.lastModifiedSync() : null;
+    } catch (_) {
+      // 读不到 mtime（少见）就当"有变化"走完整路径，宁可多解析一次也不要漏更新。
+      mtime = null;
+    }
+    if (!force && mtime != null && mtime == _lastMtime) return;
+    _lastMtime = mtime;
+
     final t = BotTeam.read(widget.runtime);
-    // 内容没变就不 setState（3 秒一次的轮询不该把整页反复重建）。
+    // 内容没变就不 setState（避免整页反复重建）。
     final same = t.bots.length == _team.bots.length &&
         t.rooms.length == _team.rooms.length &&
         _sameIds(t);
