@@ -24,7 +24,11 @@ SRC="${1:-/dsh/profiles/web/node_modules}"
 OUT="${2:-/tmp/seed-bottest}"
 
 # 直属于 profile/node_modules 的插件（裸包名 + 第三方）
-PLUGINS=(ds-bot dsh-client-ui-mobile dsh-client-ui-paopaocat)
+# ⚠️ 2026-10-17 用户明确要求「**不需要品牌主题**」——从种子里去掉
+#    `dsh-client-ui-paopaocat`（泡泡猫玻璃主题，那是 79 版为修"像塞了个网页"加的）。
+#    保留 `dsh-client-ui-mobile`：它是**窄屏布局增强**（悬浮导航 + 窄屏 CSS），
+#    去掉它手机上排版会散。
+PLUGINS=(ds-bot dsh-client-ui-mobile)
 
 # 带 @deepseek-ai scope 的插件：**也必须放 profile 自己的 node_modules**。
 # ⚠️ 这是本机实测出来的关键区别：profile 的 `package.json` 里 bundles 能按**主包**解析
@@ -71,8 +75,7 @@ cat > "$OUT/package.json" <<'JSON'
       "bundles": [
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
-        "dsh-client-ui-mobile",
-        "dsh-client-ui-paopaocat"
+        "dsh-client-ui-mobile"
       ]
     }
   }
