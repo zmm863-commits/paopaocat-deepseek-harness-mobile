@@ -190,7 +190,11 @@ class ProviderKeys {
       // ACP `initialize` 成功、但 `session/new` / `session/resume` 全报 Internal error、
       // 进程随即退出（真机日志就是这串现象）。
       // 所以这里两个名字都给：App 自己的（给自定义路径）+ 内置那个（给内置 provider）。
-      if (p.id == 'opencode-go') env['OPENCODE_API_KEY'] = k;
+      // opencode 与 opencode-go 都走 DSH 内置 provider，而内置 provider 的 auth
+      // 把变量名硬编码成 OPENCODE_API_KEY（pi-ai 两个 provider 都是这么写的）。
+      if (p.id == 'opencode-go' || p.id == 'opencode') {
+        env['OPENCODE_API_KEY'] = k;
+      }
     }
     // 向后兼容：老 overlay / 老调用点还在用这几个固定变量名。
     final primary = cfg.providers.isEmpty ? null : cfg.providers.first;

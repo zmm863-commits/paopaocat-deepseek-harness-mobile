@@ -916,7 +916,11 @@ class DshRuntime {
       // 它**内置**的 opencode-go provider —— header 正确、端点也正确。
       // 本机 `/dsh/profiles/web/cordis.patch.yml` 里的 `opencode-go` 就是这么写的（只有
       // displayName / apiKeyEnv / models），而那套配置在本机是能正常出话的。
-      final useBuiltinProvider = p.id == 'opencode-go';
+      // 这两个都走 DSH 内置 provider（pi-ai 里各有一个同名 provider，
+      // 且都被 withOpenCodeSessionHeader 包着 —— 必须保住那个头）：
+      //   opencode-go → OpenCode Go（37 个）
+      //   opencode    → OpenCode Zen 免费档（85 个）
+      final useBuiltinProvider = p.id == 'opencode-go' || p.id == 'opencode';
       if (!useBuiltinProvider) {
         buf.writeln('        api: ${p.api}');
         buf.writeln('        baseURL: ${_yamlStr(p.baseUrl)}');
