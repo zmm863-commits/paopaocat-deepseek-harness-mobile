@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 
+import '../data/configured_models.dart';
 import 'diagnostics_log.dart';
 import 'dsh_runtime.dart';
 
@@ -48,6 +49,17 @@ class BotServer {
 
   static BotServer? _current;
 
+  /// Bot 服务地址变化通知。
+  ///
+  /// 为什么需要（2026-10-18 真机 bug，而且是我自己上一版引入的）：
+  /// 我给"模型变更"加了自动重启，而重启会**重新分配端口**（`--port 0`）。
+  /// 但 Bot 页的 WebView 只在打开时 `loadRequest` 一次，之后永远指着旧端口 →
+  /// 服务一重启，页面就打不开了（真机日志：46393 就绪 → 退出 → 34415 就绪，
+  /// 而 WebView 仍连 46393）。
+  /// 所以这里把「当前服务」本身做成可监听的值，页面订阅它、地址一变就重新加载。
+  static final ValueNotifier<BotServer?> live =
+      ValueNotifier<BotServer?>(null);
+
   /// 已经起着的那个（没有就是 null）。页面据此决定要不要等。
   static BotServer? get current => _current;
 
@@ -69,14 +81,29 @@ class BotServer {
   static Future<void> _ensureOverlay(DshRuntime runtime) async {
     if (runtime.hasModelConfig) return;
     try {
-      // ⚠️ 必须用 writeMinimalOverlay 而不是 writeOverlayFromConfig：
-      // 后者在"没有任何带模型的厂家"时**会主动拒绝写**（怕写坏 overlay），
-      // 那正是"没配模型的用户根本没有 overlay"的原因。
+      // ⚠️ 先看 App 的 models.json：**有模型就写完整 overlay，别只写权限段**。
+      //
+      // 2026-10-18 真机暴露：用户的 `models.json` 里有 3 个模型，但 overlay 不存在
+      //（升级/清数据后 overlay 会丢，而 models.json 还在），于是一路走到下面的
+      // "最小 overlay" 分支 → Bot 拿到的是**只有权限、没有 providers** 的配置 →
+      // 它当然看不到任何模型。这里补上：有配置就照配置生成。
+      final cfg = ConfiguredModels.readConfig(runtime.filesDir);
+      if (cfg.models.isNotEmpty) {
+        await runtime.writeOverlayFromConfig(
+          config: cfg,
+          activeRoute: cfg.selected ?? '',
+        );
+        DiagnosticsLog.add('dsh-bot',
+            'overlay 原本不存在，但 models.json 有 ${cfg.models.length} 个模型 → 已按配置重建完整 overlay');
+        return;
+      }
+      // 真的一个模型都没配 → 只写权限段（必须用 writeMinimalOverlay：
+      // writeOverlayFromConfig 在"没有任何带模型的厂家"时会主动拒绝写）。
       await runtime.writeMinimalOverlay();
       DiagnosticsLog.add('dsh-bot',
-          'overlay 原本不存在 → 已写最小 overlay（关键是权限预设 danger-full-access）');
+          'overlay 原本不存在且没有模型 → 已写最小 overlay（关键作用：权限预设 danger-full-access）');
     } catch (e) {
-      DiagnosticsLog.add('dsh-bot', '写最小 overlay 失败（会影响权限审批）：$e');
+      DiagnosticsLog.add('dsh-bot', '写 overlay 失败（会影响模型与权限审批）：$e');
     }
   }
 
@@ -232,6 +259,7 @@ class BotServer {
       if (_current?.process == process) {
         _current!._exited = true;
         _current = null;
+        live.value = null;
       }
       if (!urlCompleter.isCompleted) {
         urlCompleter.completeError(StateError(
@@ -255,6 +283,7 @@ class BotServer {
       port: url.port,
     );
     _current = server;
+    live.value = server;
     DiagnosticsLog.add('dsh-bot', 'Bot 服务已就绪：端口 ${server.port}');
     return server;
   }
@@ -347,7 +376,10 @@ class BotServer {
 
   /// 停掉服务（页面要收掉、或用户手动停）。
   Future<void> stop() async {
-    if (_current == this) _current = null;
+    if (_current == this) {
+      _current = null;
+      live.value = null;
+    }
     _exited = true;
     try {
       process.kill(ProcessSignal.sigterm);

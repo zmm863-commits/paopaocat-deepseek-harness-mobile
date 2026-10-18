@@ -33,6 +33,19 @@ enum _Phase { starting, ready, failed }
 
 class _BotPageState extends State<BotPage> {
   _Phase _phase = _Phase.starting;
+
+  /// 当前 WebView 里加载的地址（用于和服务最新地址比对）。
+  String? _loadedUrl;
+
+  /// 服务地址变了（通常是重启换了端口）→ 用新地址重新加载。
+  void _onServerChanged() {
+    final s = BotServer.live.value;
+    if (!mounted || s == null) return;
+    if (s.url == _loadedUrl) return;
+    debugPrint('[dsh-bot] 服务地址变化 → 重新加载：${s.url}');
+    _loadedUrl = s.url;
+    _web?.loadRequest(Uri.parse(s.url));
+  }
   WebViewController? _web;
   String? _error;
   String _lastLine = '';
@@ -45,6 +58,7 @@ class _BotPageState extends State<BotPage> {
 
   @override
   void dispose() {
+    BotServer.live.removeListener(_onServerChanged);
     // ⚠️ 刻意**不**停 [BotServer]：Bot 团队要接着在后台干活。
     super.dispose();
   }
@@ -85,11 +99,16 @@ class _BotPageState extends State<BotPage> {
         ),
       );
       await controller.loadRequest(Uri.parse(server.url));
+      _loadedUrl = server.url;
       if (!mounted) return;
       setState(() {
         _web = controller;
         _phase = _Phase.ready;
       });
+      // ⚠️ 订阅「服务地址变化」：模型配置变更会让 Bot 服务重启、**端口随之改变**
+      //（`--port 0` 每次重新分配），而 WebView 只加载一次 —— 不跟着换就会白屏/打不开。
+      BotServer.live.removeListener(_onServerChanged);
+      BotServer.live.addListener(_onServerChanged);
     } catch (e) {
       DiagnosticsLog.add('dsh-bot', '启动失败：$e');
       if (!mounted) return;
