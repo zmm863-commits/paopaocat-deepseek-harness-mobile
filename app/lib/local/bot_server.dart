@@ -93,6 +93,30 @@ class BotServer {
     DiagnosticsLog.add('dsh-bot', '已布置 profile：${target.path}');
   }
 
+  /// 模型配置变了 → **如果 Bot 服务正在跑，就把它重起一次**，让它带上新的 overlay。
+  ///
+  /// 为什么必须这么做（2026-10-18 用户报「bot 没有读取出 app 的模型设置」）：
+  /// ds-bot 的模型清单来自 `rt.cachedCatalog()` —— 也就是 **DSH 进程启动那一刻**
+  /// 算出的模型目录；而 Bot 服务是**常驻单例进程**，启动之后就**再也不会重读** overlay。
+  /// 于是用户在「设置 → 模型」里加/改的模型，Bot 那边永远看不到 ——
+  /// 除非冷启动 App（下一次 ensureStarted 才会带上新 overlay）。
+  ///
+  /// 注意只在该服务**本来就在跑**时重起：没跑就别去惊动它（用户可能根本没用 Bot）。
+  static Future<void> restartIfRunning({
+    required DshRuntime runtime,
+    void Function(String line)? onLog,
+  }) async {
+    final running = _current;
+    if (running == null || !running.alive) return;
+    try {
+      await running.stop();
+      await ensureStarted(runtime: runtime, onLog: onLog);
+      DiagnosticsLog.add('dsh-bot', '模型配置已变更 → Bot 服务已重启（带上新的 overlay）');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '模型配置变更后重启 Bot 服务失败：$e');
+    }
+  }
+
   /// 起服务（已起着就直接复用）。
   ///
   /// [onLog] 收启动过程的原始行，供调用方显示"卡在哪一步"。

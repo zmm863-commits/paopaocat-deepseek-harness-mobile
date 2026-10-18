@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../data/configured_models.dart';
 import '../data/schedule_store.dart';
 import '../data/workspace_store.dart';
+import '../local/bot_server.dart';
 import '../local/dsh_runtime.dart';
 import '../local/local_model_server.dart';
 import '../local/rotation_proxy.dart';
@@ -1055,6 +1056,10 @@ Future<void> applyModelSelection({
     subagentProvider: subagentProvider,
     subagentModel: subagentModel,
   );
+
+  // 配置改了就顺手把 Bot 服务重起（否则 Bot 那边读的还是启动时那份模型清单，
+  // 见 BotServer.restartIfRunning 的注释）。
+  unawaited(BotServer.restartIfRunning(runtime: runtime));
   debugPrint(
     '[dsh-model] overlay 已重写：默认=$route，${cfg.providers.length} 个厂家 / '
     '${cfg.models.length} 个模型 / ${cfg.groups.length} 个轮换组'
@@ -1193,6 +1198,9 @@ Future<String?> ensureModelConfig({
       subagentProvider: subagentProvider,
       subagentModel: subagentModel,
     );
+
+    // 同上：模型清单变了，Bot 服务（如果开着）需要重启才会重新读取。
+    unawaited(BotServer.restartIfRunning(runtime: runtime));
     debugPrint(
       '[dsh-model] overlay 已生成/升级：默认=$active，'
       '注册 $wanted 项（写入前 $registered 项）'
