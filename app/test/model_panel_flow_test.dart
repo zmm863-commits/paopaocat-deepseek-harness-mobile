@@ -17,7 +17,7 @@ import 'package:dsh_mobile/ui/theme/dsh_tokens.dart';
 /// 「我的模型 → 会话模型面板」这条链路的**离线**验收测试（本轮新增，不改别人的测试）。
 ///
 /// 它证明的是用户在真机上反馈过、也最容易被悄悄改坏的三件事：
-///   1. 内置 5 张卡的**顺序**是 Agnes（免费）→ DeepSeek → Command（聚合）→ MiMo → LongCat；
+///   1. 内置 6 张卡的**顺序**是 Agnes（免费）→ DeepSeek → OpenCode Go → Command（聚合）→ MiMo → LongCat；
 ///      Agnes 那张卡**没有**「获取模型」、也**不显示**图形/视频端点；
 ///   2. 「测试并保存」即使**拉不到真实模型列表**（本测试里 HTTP 被 flutter_test 拦成 400，
 ///      等价于断网/接口挂了），也必须把 `ModelProvider.exampleModels` 登记进 `models.json`
@@ -156,11 +156,12 @@ void main() {
   // ------------------------------------------------------- ① 内置卡的定义
 
   group('内置卡定义（models.json 之外的那份静态真相）', () {
-    test('5 张卡的顺序：Agnes → DeepSeek → Command → MiMo → LongCat', () {
+    test('6 张卡的顺序：Agnes → DeepSeek → OpenCode Go → Command → MiMo → LongCat', () {
       final list = myModelProviders();
       expect(list.map((p) => p.id).toList(), <String>[
         'agnes',
         'deepseek',
+        'opencode-go',
         'com',
         'mimo',
         'longcat',
@@ -168,6 +169,7 @@ void main() {
       expect(list.map((p) => p.name).toList(), <String>[
         'Agnes（免费）',
         'DeepSeek 官方',
+        'OpenCode Go',
         'Command（聚合，推荐）',
         'MiMo（小米）',
         'LongCat（美团）',
@@ -200,7 +202,7 @@ void main() {
   // ------------------------------------------------------- ② 设置页：我的模型
 
   group('设置页「我的模型」', () {
-    testWidgets('5 张卡按顺序渲染；Agnes 展开有介绍/去注册/只需填 Key/测试并保存，且没有「获取模型」',
+    testWidgets('内置卡按顺序渲染；Agnes 展开有介绍/去注册/只需填 Key/测试并保存，且没有「获取模型」',
         (tester) async {
       await setSurface(tester);
       final s = seedPanel();

@@ -31,7 +31,7 @@ class _ConstProbe extends StatelessWidget {
 
 void main() {
   group('三张表', () {
-    test('条目数一致，且规模对得上（1892 条界面文案）', () {
+    test('条目数一致，且规模对得上（1896 条界面文案）', () {
       // 994 这个数不是随手写的：2026-10-09 按审计 P0-11/P1-5 清过一轮漂移
       // （补 48 条漏翻 / 删 77 条陈旧 / 修 17 条换行错，三张表各自）。
       // 清理的依据是 `install/i18n/check-tables.mjs` —— 那个脚本以前**不存在**，
@@ -166,12 +166,15 @@ void main() {
       //    全部改成 tr('...') 并翻译；同批还有 zen 免 Key 通道的新文案与地区封锁那条。
       //    另删 1 条陈旧（自检弹层的说明改写了："只做读探测"不再成立 —— 免 Key 那条
       //    要真发一句对话，否则只看清单会把"用不了"报成"好的"）。
+      // ⚠️ 2026-10-19 1893 → 1896：OpenCode Go 卡片那三句（Key 提示 / 套餐说明 /
+      //    端点与 *-free 的说明）在 2026-10-17 加进 model_providers.dart 时**只写了中文**，
+      //    check-tables 一直在报「漏翻 3 条」。本轮补上 en/ja/ko。
       // ⚠️ 2026-10-17 1892 → 1893：新增「这个模型在你所在地区不可用」——
       //    实测 OpenCode 的 beam-free 会回 403 RegionError（not available in your country），
       //    原来被笼统翻成"没有访问该模型的权限"，把人往 Key/套餐方向带。
       // ⚠️ 2026-10-16 1883 → 1892：创作台补了「做 PPT / 幻灯片」入口（用户问
       //    「ppt 这个功能放哪了」）—— 入口标题/说明 + 弹层说明 + 4 个可点的例子。
-      expect(kEnTable.length, 1893);
+      expect(kEnTable.length, 1896);
       expect(kJaTable.length, kEnTable.length);
       expect(kKoTable.length, kEnTable.length);
     });

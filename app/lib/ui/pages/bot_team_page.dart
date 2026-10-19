@@ -598,7 +598,8 @@ class _BotTeamPageState extends State<BotTeamPage> {
                                     horizontal: 6, vertical: 1.5),
                                 decoration: BoxDecoration(
                                   color: DshColors.accentDim,
-                                  borderRadius: BorderRadius.circular(6),
+                                  borderRadius:
+                                      BorderRadius.circular(DshMetrics.radius(6)),
                                 ),
                                 child: Text(
                                   badge,

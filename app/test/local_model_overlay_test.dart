@@ -391,13 +391,19 @@ void main() {
         final idm = RegExp(r'^-?\s*- id:\s*(\S+)').firstMatch(line);
         if (idm != null) {
           final v = idm.group(1)!;
-          // 启动项那几个 `- id: llm-pi-ai` 是 DSH 自己的常量，不带引号
+          // 启动项那几个 `- id: llm-pi-ai` 是 DSH 自己的常量，不带引号。
+          // 判据是「这个 id 会不会被 YAML 当成数字/布尔」：下面这些是 cordis 里的
+          // **固定条目名**（纯字母，合法 YAML 字符串），而模型 id 可能是 `001`、
+          // `yes` 这种会被 YAML 改写的值 —— 所以**模型 id 必须一律加引号**，
+          // 这里只放行这些常量名。`bot` 是 2026-10-19 新增的那条（让 ds-bot 与 App
+          // 共用工作区），它同样是固定条目名。
           const consts = <String>{
             'llm-pi-ai',
             'agent-default-model',
             'acp',
             'sandbox-policy',
             'permission',
+            'bot',
           };
           if (!v.startsWith('"') && !consts.contains(v)) {
             bad.add('模型 id 未加引号 → $line');

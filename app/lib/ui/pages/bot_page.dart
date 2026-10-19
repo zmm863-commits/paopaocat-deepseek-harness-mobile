@@ -36,30 +36,41 @@ enum _Phase { starting, ready, failed }
 class _BotPageState extends State<BotPage> {
   _Phase _phase = _Phase.starting;
 
-  /// 手机适配 CSS：把「桌面尺寸的弹层」压进视口内并可滚动。
+  /// 手机适配 CSS：把「桌面尺寸的浮层」压回手机视口内。
   ///
-  /// 为什么需要（2026-10-19 用户报「点 + 只能看到几个图标，看不到建群」）：
-  /// Bot 页跑的是 ds-bot 的**桌面网页 UI**，它的弹窗/菜单按桌面宽度排版，
-  /// 在手机上超出视口就被裁掉了。这里用**宽泛选择器**兜底（不改 ds-bot 源码）：
-  /// 常见弹层容器的最大高度限制到 85vh、溢出可滚动；并保证底部操作区可见。
+  /// 为什么需要（2026-10-19 用户报「点 + 只看到几个图标、看不到建群」）：
+  /// Bot 页跑的是 ds-bot 的**桌面网页 UI**。最先撞上的就是它的右侧浮层 `.bt-pane`：
+  /// 宽度是按「对话列右边 → 屏幕右边」算的（`usePaneLeft()` 取
+  /// `[class*="_footArea"]` 父元素的 `getBoundingClientRect().right`，写进 inline
+  /// `left`，而 CSS 里还有 `right:0`）。桌面上那个差有几百像素，手机上几乎为 0
+  /// → 面板被挤到一百来像素，`.bt-option-label` 的文字被 `text-overflow:ellipsis`
+  /// 吃干净，**只剩一排图标** —— 这正是用户看到的现象。
+  ///
+  /// 所以这一版不再用「宽泛选择器兜底」，而是按**真实类名**精确改宽度（仍然不碰
+  /// ds-bot 源码，因为它随 runtime 分发、由 App 侧注入最省事）：
+  ///   * `.bt-pane` → 右侧固定宽（手机上=满宽），把被算没的宽度还回来；
+  ///   * `.bt-pane .bt-drop` → 跟着面板宽度走（它自己是 `width:min(550px,
+  ///     calc(100% - 64px))`，面板窄时会被算成几十像素）；
+  ///   * 选项文字不再省略号截断（宽度够了就让它正常排版）；
+  ///   * 其余弹层/菜单统一加上限高度，超出可滚（不改上限，避免把原本 400px 的
+  ///     菜单「放宽」到 85vh 反而顶出屏幕）。
+  ///
+  /// ⚠️ 这段必须是**合法 JS**。108 版在 `].join('` 后面写入了一个真换行（本意是
+  /// `'\n'`）→ `node --check` 直接报 SyntaxError，整段没执行、一个 `<style>` 都没插
+  /// 进去（表面看就是"改了没用"）。现在改用反引号模板字符串承载多行 CSS，Dart 原始
+  /// 字符串里不需要任何 JS 转义，也就不会再犯。**改动后用 `node --check` 验一遍。**
   static const String _mobileFitCss = r"""
   (function () {
     if (document.getElementById('dsh-mobile-fit')) return;
     var st = document.createElement('style');
     st.id = 'dsh-mobile-fit';
-    st.textContent = [
-      '[role="dialog"], [role="menu"], [role="listbox"], [role="alertdialog"],',
-      '[class*="dialog"], [class*="Dialog"], [class*="modal"], [class*="Modal"],',
-      '[class*="popover"], [class*="Popover"], [class*="dropdown"], [class*="Dropdown"],',
-      '[class*="menu"], [class*="Menu"], [class*="sheet"], [class*="Sheet"] {',
-      '  max-height: 85vh !important;',
-      '  max-width: 96vw !important;',
-      '  overflow: auto !important;',
-      '  -webkit-overflow-scrolling: touch !important;',
-      '}',
-      'body { overscroll-behavior-y: contain; }'
-    ].join('
-');
+    st.textContent = `
+.bt-pane { left: auto !important; right: 0 !important; width: min(100vw, 440px) !important; max-width: 100vw !important; }
+.bt-pane .bt-drop { left: 8px !important; width: calc(100% - 16px) !important; max-height: min(420px, 55vh) !important; }
+[role="menu"], [role="listbox"], .bt-menu, .bt-drop { max-height: min(420px, 60vh) !important; overflow-y: auto !important; }
+[role="dialog"] { max-width: 100vw !important; }
+body { overscroll-behavior-y: contain; }
+`;
     document.head.appendChild(st);
   })();
   """;
@@ -79,6 +90,15 @@ class _BotPageState extends State<BotPage> {
   WebViewController? _web;
   String? _error;
   String _lastLine = '';
+
+  /// 一次性提示。WebView 回调里出错时**必须让用户看得见**：
+  /// 否则表现就是"点了没反应"，连是不是我们的问题都分不出来。
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+    );
+  }
 
   @override
   void initState() {
@@ -116,23 +136,36 @@ class _BotPageState extends State<BotPage> {
       await controller.setBackgroundColor(DshColors.bg);
 
       // ── ① 文件选择（2026-10-19 用户报「Bot 页添加文件无法添加」）──────────────
-      // 网页里 `<input type=file>` 只会向**宿主**发起请求（onShowFileChooser）；
-      // 宿主不接管就永远没反应。这里用 file_picker 弹出系统选择器，把用户选的
-      // 真实路径回传，网页那边就能正常上传。
+      // 链路（已按源码逐环核对）：输入框左边那个「+」是 ds-bot 的 `ComposerPlus`
+      // （菜单三项：添加文件 / 引用对话 / 定时任务），点「添加文件」它执行的是
+      //   button.closest("[data-composer-card]").querySelector("input[type=file]").click()
+      // 也就是替用户去点 DSH 输入卡片里那个隐藏的 `<input type=file>`；浏览器随即把
+      // 「选文件」交给宿主（`onShowFileChooser`）。宿主不接管就永远没反应 —— 接的就是这段。
+      //
+      // ⚠️ 这里**必须留痕**：进诊断日志（用户会把报告发回来）＋ 失败时给界面提示。
+      // 108 版只写了 `debugPrint`，于是"点了没反应"时既查不到、也看不见，只能靠猜：
+      //   * 日志里出现「网页请求选择文件」= 点击真的到宿主了，问题在选完之后的环节；
+      //   * 日志里什么都没有 = 那一层 `.click()` 压根没发生（属于网页侧）。
       if (controller.platform is AndroidWebViewController) {
         await (controller.platform as AndroidWebViewController)
             .setOnShowFileSelector((FileSelectorParams params) async {
+          DiagnosticsLog.add('dsh-bot', '网页请求选择文件（模式 ${params.mode.name}）');
           try {
             final r = await FilePicker.platform.pickFiles(
               allowMultiple: params.mode == FileSelectorMode.openMultiple,
             );
-            if (r == null) return const <String>[];
-            return <String>[
-              for (final f in r.files)
+            final paths = <String>[
+              for (final f in r?.files ?? const <PlatformFile>[])
                 if (f.path != null && f.path!.isNotEmpty) f.path!,
             ];
+            DiagnosticsLog.add(
+              'dsh-bot',
+              r == null ? '文件选择被取消' : '已选择 ${paths.length} 个文件',
+            );
+            return paths;
           } catch (e) {
-            debugPrint('[dsh-bot] 文件选择失败：$e');
+            DiagnosticsLog.add('dsh-bot', '文件选择失败：$e');
+            _toast('选文件失败：$e');
             return const <String>[];
           }
         });

@@ -72,7 +72,8 @@ class _NewBotDialogState extends State<NewBotDialog> {
               margin: const EdgeInsets.only(bottom: 10),
               decoration: BoxDecoration(
                 color: DshColors.accentDim,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius:
+                    BorderRadius.circular(DshMetrics.radius(8)),
               ),
               child: Text(
                 '👑 这将成为「主 Bot」——团队负责人：它能创建和修改其他 Bot，'

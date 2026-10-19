@@ -1,4 +1,19 @@
 {
+  "OpenCode API Key（同一个 Key 也用于免费那档）": {
+    "en": "OpenCode API Key (the same key also works for the free tier)",
+    "ja": "OpenCode API Key（同じ Key が無料枠でも使えます）",
+    "ko": "OpenCode API Key(같은 키를 무료 등급에도 사용합니다)"
+  },
+  "OpenCode 的 Go 套餐：一个 Key 就能用 DeepSeek V4/V4.1、GLM 5.x、Qwen3.8、Grok 4.x 这一批模型。": {
+    "en": "OpenCode's Go plan: one key covers this batch of models — DeepSeek V4/V4.1, GLM 5.x, Qwen3.8, Grok 4.x.",
+    "ja": "OpenCode の Go プラン：1 つの Key で DeepSeek V4/V4.1、GLM 5.x、Qwen3.8、Grok 4.x といったモデル群が使えます。",
+    "ko": "OpenCode의 Go 요금제: 키 하나로 DeepSeek V4/V4.1, GLM 5.x, Qwen3.8, Grok 4.x 같은 모델을 쓸 수 있습니다."
+  },
+  "端点是 /zen/go/v1（免费那档是 /zen/v1，两个别混）。「获取模型」拉的是这个端点的实时清单（实测约 37 个），里面**含免费模型**（如 beam-free、longcat-2.5-preview-free）——所以看到 *-free 不用吃惊，它们确实属于这档。若某个模型报「没有访问该模型的权限」，那是你这把 Key 在该模型上的权限问题，不是 Key 坏了。": {
+    "en": "The endpoint is /zen/go/v1 (the free tier is /zen/v1 — do not mix the two up). \"Fetch models\" pulls the live list from this endpoint (about 37 models in testing), and it **includes free models** (such as beam-free, longcat-2.5-preview-free) — so a *-free name is no surprise, they really belong to this tier. If a model reports \"you do not have permission to access this model\", that is your key's permission on that model, not a broken key.",
+    "ja": "エンドポイントは /zen/go/v1（無料枠は /zen/v1、混同しないでください）。「モデルを取得」はこのエンドポイントのリアルタイム一覧を取ります（実測 約 37 個）で、その中に**無料モデルが含まれます**（例：beam-free、longcat-2.5-preview-free）——ですので *-free という名前を見ても驚かないでください。本当にこの枠のモデルです。あるモデルで「このモデルへのアクセス権限がありません」と出た場合、それはこの Key のそのモデルに対する権限の問題で、Key が壊れているわけではありません。",
+    "ko": "엔드포인트는 /zen/go/v1(무료 등급은 /zen/v1, 둘을 혼동하지 마세요). 「모델 가져오기」는 이 엔드포인트의 실시간 목록을 가져오며(실측 약 37개) 그 안에 **무료 모델이 포함됩니다**(예: beam-free, longcat-2.5-preview-free) — 그러니 *-free 이름을 보고 놀라지 마세요, 실제로 이 등급에 속합니다. 어떤 모델에서 「이 모델에 접근할 권한이 없습니다」가 나오면 그것은 이 키의 해당 모델 권한 문제이지, 키가 고장 난 것이 아닙니다."
+  },
   "**在图上直接选**：按在空白处拖动 = 拉出一个新框（放哪、多大都随你）；按在框里拖动 = 整块移动；拖**四个角**的圆点 = 改大小。下面这几个只是\"一键放好\"的快捷起点。": {
     "en": "**Select directly on the image**: drag on empty space to pull out a new box (anywhere, any size); drag inside the box to move it whole; drag the **four corner** dots to resize. The choices below are just one-tap starting points.",
     "ja": "**画像上で直接選べます**：何もない所をドラッグ＝新しい枠を引き出す（位置も大きさも自由）、枠の中をドラッグ＝枠ごと移動、**四隅**の丸をドラッグ＝大きさ変更。下の項目は「ワンタップで置く」ための出発点です。",

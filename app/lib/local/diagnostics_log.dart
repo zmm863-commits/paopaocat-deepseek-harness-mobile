@@ -316,10 +316,23 @@ class DiagnosticsLog {
   static Future<void> _openSink() async {
     final path = _logFilePath;
     if (path == null) return;
-    final f = File(path);
-    _fileBytes = f.existsSync() ? f.lengthSync() : 0;
-    if (_fileBytes > maxFileBytes) _rotateOnce(f);
-    _sink = f.openWrite(mode: FileMode.append);
+    // ⚠️ 这里**必须自己兜住**（2026-10-19 补）：
+    //   ① 目录可能在 init 建好之后被清掉（真机清理、测试的临时目录回收都算）；
+    //   ② 这个函数跑在**异步链**上（`await _openSink()` 在 `init` 里，而 `init` 可能
+    //      没被 await），一旦抛出去就是"无人接的异常" —— 表现是测试跑完之后才报
+    //      `PathNotFoundException`（本机全量并发跑时才复现，单独跑一定绿）。
+    //   落盘日志是**诊断手段**，不是功能：任何一步失败都只降级为"只留内存"，不抛。
+    try {
+      final f = File(path);
+      final parent = f.parent;
+      if (!parent.existsSync()) parent.createSync(recursive: true);
+      _fileBytes = f.existsSync() ? f.lengthSync() : 0;
+      if (_fileBytes > maxFileBytes) _rotateOnce(f);
+      _sink = f.openWrite(mode: FileMode.append);
+    } catch (e) {
+      _sink = null;
+      add('dsh-log', '日志落盘不可用（改为只在内存里保留）：$e');
+    }
   }
 
   static void _rotateOnce(File f) {
