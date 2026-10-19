@@ -121,7 +121,39 @@ class _LibraryPageState extends State<LibraryPage> {
       final paths = await DshHost.getPaths();
       final filesDir = (paths['filesDir'] as String?) ?? '';
       final resolved = resolveWorkspaceFromFilesDir(filesDir);
-      final scan = await LibraryScanner.scan(resolved.path);
+      // ⚠️ **同时扫 Bot 团队自己的历史工作区**（2026-10-19 用户报「Bot 生成的文件资料库看不到」）。
+      //
+      // ds-bot 的工作区由它自己维护：`state.json` 里一旦记了 `workspaceId`，它就**只认那个**
+      // （`roster.js` 的 ensureWorkspace：`if (state.workspaceId && registry.get(...)) return ...`），
+      // 完全不看我们 overlay 里配的 `config.workspace`。所以光改配置救不了**已经跑过的设备**。
+      // 与其和它抢工作区，不如在资料库这边**把它的目录也一并列出来**（加 `Bot/` 前缀区分）。
+      final botRoot = '$filesDir/dshhome/bot/workspace';
+      final primary = await LibraryScanner.scan(resolved.path);
+      final botScan = await LibraryScanner.scan(botRoot);
+      final merged = <LibraryEntry>[
+        ...primary.entries,
+        for (final e in botScan.entries)
+          LibraryEntry(
+            name: e.name,
+            relativePath: 'Bot/${e.relativePath}',
+            absolutePath: e.absolutePath,
+            size: e.size,
+            modified: e.modified,
+          ),
+      ];
+      final scan = LibraryScan(
+        root: primary.root,
+        rootExists: primary.rootExists,
+        entries: merged,
+        truncated: primary.truncated || botScan.truncated,
+        dirsVisited: primary.dirsVisited + botScan.dirsVisited,
+        dirsSkipped: primary.dirsSkipped + botScan.dirsSkipped,
+        errors: <String>[...primary.errors, ...botScan.errors],
+        elapsed: primary.elapsed + botScan.elapsed,
+      );
+      if (botScan.entries.isNotEmpty) {
+        debugPrint('[dsh-library] 另从 Bot 工作区并入 ${botScan.entries.length} 个文件（$botRoot）');
+      }
       debugPrint(
         '[dsh-library] 工作区=${resolved.path}（${resolved.source}）'
         ' 文件=${scan.total} 目录=${scan.dirsVisited} 跳过=${scan.dirsSkipped} '
