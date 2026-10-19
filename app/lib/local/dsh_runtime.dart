@@ -1007,6 +1007,17 @@ class DshRuntime {
     buf.writeln('  config:');
     buf.writeln('    defaultPreset: danger-full-access');
 
+    // ⚠️ **让 ds-bot 与 App 共用同一个工作区**（2026-10-19 用户报「生成的资料无法到资料库」）。
+    // ds-bot 的团队工作区默认是 `<DSH_HOME>/bot/workspace`（它自己建的，见 roster.js:
+    // `config.workspace ?? join(home, 'workspace')`），而 App 的「资料库」读的是
+    // `<filesDir>/workspace` —— **两边不是同一个目录**，所以 Bot 产出的文件资料库看不到。
+    // ds-bot 认 `config.workspace`，这里显式指过去（overlay 在 profile 之后应用，
+    // 按 id 覆盖种子 insert 进来的那条 `bot`）。
+    buf.writeln('- id: bot');
+    buf.writeln('  config:');
+    buf.writeln("    workspace: ${_yamlStr('$filesDir/workspace')}");
+
+
     // ── 会话里的两种能力（2026-10-15）：联网搜索的后端、以及子智能体开关 ──
     //
     // 为什么写在这里：overlay 是 App 唯一掌控的 patch 层，而出厂那层把
@@ -1157,6 +1168,17 @@ class DshRuntime {
     buf.writeln('  name: "@deepseek-ai/dsh-permission-presets"');
     buf.writeln('  config:');
     buf.writeln('    defaultPreset: danger-full-access');
+
+    // ⚠️ **让 ds-bot 与 App 共用同一个工作区**（2026-10-19 用户报「生成的资料无法到资料库」）。
+    // ds-bot 的团队工作区默认是 `<DSH_HOME>/bot/workspace`（它自己建的，见 roster.js:
+    // `config.workspace ?? join(home, 'workspace')`），而 App 的「资料库」读的是
+    // `<filesDir>/workspace` —— **两边不是同一个目录**，所以 Bot 产出的文件资料库看不到。
+    // ds-bot 认 `config.workspace`，这里显式指过去（overlay 在 profile 之后应用，
+    // 按 id 覆盖种子 insert 进来的那条 `bot`）。
+    buf.writeln('- id: bot');
+    buf.writeln('  config:');
+    buf.writeln("    workspace: ${_yamlStr('$filesDir/workspace')}");
+
     writeStringAtomicSync(File(overlayPath), buf.toString());
     debugPrint('[dsh-runtime] 已写最小 overlay（权限预设 danger-full-access）');
   }
