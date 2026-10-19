@@ -618,6 +618,9 @@ class DshRuntime {
   String get dshBin => paths['dshBin'] as String? ?? '';
   String get nodeHome => paths['nodeHome'] as String? ?? '';
 
+  /// 运行环境的内容版本（原生侧 `RUNTIME_VERSION`）。标记文件就叫 `.dsh-runtime-<它>`。
+  String get runtimeVersion => paths['runtimeVersion'] as String? ?? '';
+
   /// 出厂运行时**解包后**的根目录（`MainActivity.unpack()` 把压缩包里的 `app/`
   /// 解到 `<filesDir>/dsh`）。判断"运行时里有没有某个插件"就看这里。
   String get runtimeRoot => '$filesDir/dsh';

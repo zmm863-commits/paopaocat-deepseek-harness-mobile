@@ -3,6 +3,11 @@
 > <https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/tag/v0.77>
 > 附件三个（full / lite / dsh-runtime.zip）；`update.json` 与 `runtime.json` 已推 main，
 > 应用内「检查更新」可直接生效。
+>
+> **2026-10-19 补发**：先发的是 versionCode 113；随后用户报「更新安装后变成重新安装了」——
+> 真因是运行环境内容版本从 0.76 的 `.dsh-runtime-2` 变成 `.dsh-runtime-5`，老用户升级也会走到
+> 准备页，而那页标题写死「首次使用」。已改成按有没有用户数据区分（老用户显示
+> 「正在更新运行环境」并说明不会清数据），重打为 **114**，同名附件已替换。
 # 泡泡猫 DeepSeek Harness（DSH）手机版 v0.77
 
 > **先把名字写全**：**DSH = DeepSeek Harness** —— DeepSeek 官方的智能体运行环境。
@@ -24,7 +29,7 @@
 | **全新安装**（没装过，或清过应用数据） | **`paopaocat-preview-0.77-20261019-full-arm64-v8a.apk`（完整包，98.7 MiB / 103.5 MB）** —— 装完即用 |
 | **已经装过旧版**（含 0.75 / 0.76 / 0.77 测试包） | 不用手动下：App → 设置 → 关于 →「检查更新」会自动选 **`…-lite-arm64-v8a.apk`（精简包，68.2 MiB / 71.5 MB）** |
 
-两个包的 **versionCode 与签名完全相同**（`113` / `7aaf4448…d3cc17`），可以互相覆盖安装，
+两个包的 **versionCode 与签名完全相同**（`114` / `7aaf4448…d3cc17`），可以互相覆盖安装，
 **数据不会丢**。
 
 > ⚠️ 装过 **0.77 测试包**（文件名带 `20261019a` 到 `g`，versionCode 106–112）的机器：
@@ -90,8 +95,8 @@
 
 | 产物 | 字节 | sha256 |
 |---|---|---|
-| `paopaocat-preview-0.77-20261019-full-arm64-v8a.apk` | 103,494,390 | `005e68794947c87607e2d4af69b72f2903406a3f19451ab87f81804cf9897e33` |
-| `paopaocat-preview-0.77-20261019-lite-arm64-v8a.apk` | 71,472,250 | `29a64bf4d4273265a449ccdd610b7f492d0473205417307812a583194a0c3fdc` |
+| `paopaocat-preview-0.77-20261019-full-arm64-v8a.apk` | 103,496,974 | `d43f19bf92f72f663271212dbbb4fa01b6282fb1b1de6692e269a63aad42db9a` |
+| `paopaocat-preview-0.77-20261019-lite-arm64-v8a.apk` | 71,474,834 | `1c4a4c096694b3dc2ac7ffec8441d487a770a470100ede03ced9d4c94cc47cbc` |
 | `dsh-runtime.zip` | 34,172,075 | `8a8453824861a10bef0a022a88d4aa064de1399f97c6777763183ac940fa10ad` |
 
 签名证书 SHA-256（两个 APK 相同）：`7aaf444815ac78e3396ed5e95bd4e8f483745254559615d1bfd5f20180d3cc17`

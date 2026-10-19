@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../local/apk_downloader.dart' show ApkDownloadProgress, ApkDownloadCancelToken;
@@ -33,6 +35,15 @@ class SetupPage extends StatefulWidget {
 
 class _SetupPageState extends State<SetupPage> {
   bool _busy = false;
+
+  /// 这台机器上**是不是已经用过**（有会话 / 模型配置 / Bot / 工作区任一痕迹）。
+  ///
+  /// 为什么需要（2026-10-19 用户报「为什么更新安装，下载后变成重新安装了」）：
+  /// 运行环境有内容版本（`.dsh-runtime-<版本>` 标记），**一升版本 `isRuntimeReady()`
+  /// 就是 false** —— 于是**升级的用户也会走到这一页**。而这一页原来标题写着「首次使用」，
+  /// 双击用户就以为被重装了。真相：用户数据一个字没动（会话/模型/Bot 都在 `files/dshhome`，
+  /// 解包只写 `files/dsh`）。所以这里判一下，老用户改说「正在更新运行环境」并讲清不会清数据。
+  bool _existing = false;
   bool _downloading = false;
   bool _unpacking = false;
   ApkDownloadProgress? _dl;
@@ -47,6 +58,38 @@ class _SetupPageState extends State<SetupPage> {
   /// 完整包也被要求下 32 MB，而且更新源一超时就卡在这一页）。
   bool _bundled = false;
 
+  /// 有会话 / 有 storages / 有 Bot 状态 / 有模型配置 / 有工作区 —— 任一命中就算用过。
+  bool _looksUsed() {
+    bool has(Directory d, String rel) =>
+        FileSystemEntity.typeSync('${d.path}/$rel') != FileSystemEntityType.notFound;
+    try {
+      final home = Directory(widget.runtime.nodeHome);
+      final files = Directory(widget.runtime.filesDir);
+      return has(home, 'sessions') ||
+          has(home, 'storages') ||
+          has(home, 'bot/state.json') ||
+          has(files, 'models.json') ||
+          has(files, 'workspace');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 清掉旧版本残留的 `.dsh-runtime-<旧版本>` 标记（多份残留只会让以后排查更糊涂）。
+  void _dropStaleMarkers() {
+    try {
+      final dir = Directory(widget.runtime.filesDir);
+      if (!dir.existsSync()) return;
+      final keep = '.dsh-runtime-${widget.runtime.runtimeVersion}';
+      for (final e in dir.listSync()) {
+        final name = e.path.split(Platform.pathSeparator).last;
+        if (name.startsWith('.dsh-runtime-') && name != keep) {
+          try { e.deleteSync(); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +98,9 @@ class _SetupPageState extends State<SetupPage> {
       if (!mounted) return;
       setState(() => _bundled = v);
     }).catchError((Object _) => debugPrint('[dsh-setup] 查随包运行环境失败（按没有处理）')));
+    // 判「老用户还是真首次」：任一路径有东西，就当老用户（宁可按老用户说，也不吓人）。
+    _existing = _looksUsed();
+    debugPrint('[dsh-setup] 走到准备页：${_existing ? '老用户（跨运行环境版本，数据都在）' : '首次安装'}');
     // 解压进度由原生回调（下载进度则是下面 ensureRuntimeZip 的 onProgress）。
     DshHost.bindProgress((done, current) {
       if (!mounted) return;
@@ -115,6 +161,7 @@ class _SetupPageState extends State<SetupPage> {
       if (!widget.runtime.isUnpacked) {
         throw StateError(context.tr('解压完成但仍找不到运行时文件'));
       }
+      _dropStaleMarkers();
       widget.onReady();
     } catch (e) {
       debugPrint('[dsh-setup] unpack failed: $e');
@@ -144,19 +191,29 @@ class _SetupPageState extends State<SetupPage> {
           Icon(Icons.download_for_offline_outlined,
               size: 46, color: scheme.primary),
           const SizedBox(height: 18),
-          Text(context.tr('首次使用：准备运行环境'),
+          Text(
+              _existing
+                  ? context.tr('正在更新运行环境')
+                  : context.tr('首次使用：准备运行环境'),
               style:
                   const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
-          Text(
-            _bundled
-                ? context.tr('运行环境**随这个安装包自带**（约 32 MB）—— **不需要联网**，'
-                    '直接在本机解开（约 26000 个文件）。这一步只做一次，以后更新不用再下。')
-                : context.tr('运行环境（约 32 MB）不在这个安装包里 —— 那样每次更新都要重下它。'
-                    '改成**第一次打开时下这一次**，支持断点续传；下完在本机解开（约 26000 个文件）。'
-                    '这一步只做一次，以后更新不用再下。'),
-            style: TextStyle(color: scheme.outline, height: 1.6, fontSize: 13),
-          ),
+          if (_existing) ...[
+            Text(context.tr('你的会话、模型设置和 Bot 都还在本机 —— 这一步只是把新版的运行环境重新铺一遍，不会清数据。'),
+                style: TextStyle(color: scheme.outline, height: 1.6, fontSize: 13)),
+            const SizedBox(height: 8),
+            Text(context.tr('新版换了运行环境的内容，所以要重新准备一次（约 32 MB，支持断点续传；解开约 26000 个文件，几十秒到一分多钟）。'),
+                style: TextStyle(color: scheme.outline, height: 1.6, fontSize: 13)),
+          ] else
+            Text(
+              _bundled
+                  ? context.tr('运行环境**随这个安装包自带**（约 32 MB）—— **不需要联网**，'
+                      '直接在本机解开（约 26000 个文件）。这一步只做一次，以后更新不用再下。')
+                  : context.tr('运行环境（约 32 MB）不在这个安装包里 —— 那样每次更新都要重下它。'
+                      '改成**第一次打开时下这一次**，支持断点续传；下完在本机解开（约 26000 个文件）。'
+                      '这一步只做一次，以后更新不用再下。'),
+              style: TextStyle(color: scheme.outline, height: 1.6, fontSize: 13),
+            ),
           const SizedBox(height: 10),
           Text(
             context.tr('本机现有的运行环境包：{0}', [localZipLabel(widget.runtime.filesDir)]),
@@ -215,7 +272,7 @@ class _SetupPageState extends State<SetupPage> {
                 ? (_downloading
                     ? context.tr('正在下载运行环境…')
                     : context.tr('正在解压…'))
-                : context.tr('开始准备')),
+                : (_existing ? context.tr('开始更新') : context.tr('开始准备'))),
             style:
                 FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
           ),

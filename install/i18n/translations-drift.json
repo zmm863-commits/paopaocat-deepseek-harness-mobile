@@ -1,4 +1,24 @@
 {
+  "你的会话、模型设置和 Bot 都还在本机 —— 这一步只是把新版的运行环境重新铺一遍，不会清数据。": {
+    "en": "Your sessions, model settings and Bots are all still on this device — this step only lays down the new runtime; nothing is erased.",
+    "ja": "会話・モデル設定・Bot はすべてこの端末に残っています。この手順は新しいランタイムを展開し直すだけで、データは消えません。",
+    "ko": "세션, 모델 설정, Bot은 모두 이 기기에 그대로 있습니다. 이 단계는 새 런타임을 다시 까는 것뿐이며 데이터는 지우지 않습니다."
+  },
+  "开始更新": {
+    "en": "Start updating",
+    "ja": "更新を開始",
+    "ko": "업데이트 시작"
+  },
+  "新版换了运行环境的内容，所以要重新准备一次（约 32 MB，支持断点续传；解开约 26000 个文件，几十秒到一分多钟）。": {
+    "en": "This version ships different runtime contents, so it has to be prepared once more (about 32 MB, resumable; unpacking about 26,000 files takes 30-90 seconds).",
+    "ja": "この版はランタイムの中身が変わったため、もう一度準備します（約 32 MB・レジューム対応。約 26,000 ファイルの展開に 30〜90 秒）。",
+    "ko": "이 버전은 런타임 내용이 바뀌어 한 번 더 준비합니다(약 32 MB, 이어받기 지원, 약 26,000개 파일 해제에 30~90초)."
+  },
+  "正在更新运行环境": {
+    "en": "Updating the runtime",
+    "ja": "ランタイムを更新しています",
+    "ko": "런타임을 업데이트하는 중"
+  },
   "OpenCode API Key（同一个 Key 也用于免费那档）": {
     "en": "OpenCode API Key (the same key also works for the free tier)",
     "ja": "OpenCode API Key（同じ Key が無料枠でも使えます）",
