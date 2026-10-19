@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../data/configured_models.dart';
 import '../data/schedule_store.dart';
 import '../data/workspace_store.dart';
 import '../local/bot_server.dart';
+import '../local/diagnostics_log.dart';
 import '../local/dsh_runtime.dart';
 import '../local/local_model_server.dart';
 import '../local/rotation_proxy.dart';
@@ -644,6 +644,7 @@ class _AppShellState extends State<AppShell> {
     if (last != null && now.difference(last) <= _backTwiceWindow) {
       _lastBackAt = null;
       debugPrint('[dsh-nav] 连续两次返回 → 退到后台');
+      DiagnosticsLog.add('dsh-nav', '连续两次返回 → 退到后台（原生 moveTaskToBack）');
       return true;
     }
     _lastBackAt = now;
@@ -750,8 +751,13 @@ class _AppShellState extends State<AppShell> {
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) return;
-        unawaited(_shouldExitOnBack().then((canExit) {
-          if (canExit) SystemNavigator.pop();
+        unawaited(_shouldExitOnBack().then((canExit) async {
+          if (!canExit) return;
+          // ⚠️ 这里**不能**用 `SystemNavigator.pop()`（那是结束 Activity）：
+          //    本 App 有前台服务/常驻进程，Activity 结束后从任务里回来会是一屏黑，
+          //    用户只能清退。统一走原生那条：退到后台。
+          DiagnosticsLog.add('dsh-nav', '返回（框架兜底路径）→ 退到后台');
+          await DshHost.moveToBackground();
         }));
       },
       child: Scaffold(

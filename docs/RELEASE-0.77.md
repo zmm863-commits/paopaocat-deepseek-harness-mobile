@@ -12,6 +12,10 @@
 > 改成 **进门只看「运行环境能不能用」**（`dsh/lib/bin.js` 在就放行）；要换新就在**启动画面里
 > 静默做**（不弹页面、不用点按钮），并且放在 AppShell 之前（此时 node 没在跑，整目录覆盖才安全）。
 > 代价：升级那一版**第一次打开会多转 20~60 秒**（需要的话还要下一次 34 MB），之后照常。重打为 **115**。
+> ③ 用户报「从屏幕外滑动就黑屏锁死，必须清退 App」。真因：返回有**两条路**，原生那条走
+> `moveTaskToBack`（退后台），而 Dart 的 PopScope 兜底那条走了 `SystemNavigator.pop()`
+> （**结束 Activity**）—— 本 App 挂着前台服务/常驻进程，Activity 结束后从任务里回来就是一屏黑、
+> 还退不掉。已把两条路统一成「退到后台」，并把两条分支都写进诊断日志。重打为 **116**。
 # 泡泡猫 DeepSeek Harness（DSH）手机版 v0.77
 
 > **先把名字写全**：**DSH = DeepSeek Harness** —— DeepSeek 官方的智能体运行环境。
@@ -90,7 +94,7 @@
 
 | 产物 | 字节 | sha256 |
 |---|---|---|
-| `paopaocat-preview-0.77-20261019-full-arm64-v8a.apk` | 103,496,082 | `688a2a910f8bf752c14f4e1fe73e387a4771b47b83a4f8feb041b3c42a9da7af` |
+| `paopaocat-preview-0.77-20261019-full-arm64-v8a.apk` | 103,496,974 | `5e7a8acb49b9336e87a8d0c332134e5bc8617097b75cd5586599c3b936a9d5e0` |
 | `dsh-runtime.zip`（兜底用，普通用户不需要） | 34,172,075 | `8a8453824861a10bef0a022a88d4aa064de1399f97c6777763183ac940fa10ad` |
 
 签名证书 SHA-256：`7aaf444815ac78e3396ed5e95bd4e8f483745254559615d1bfd5f20180d3cc17`

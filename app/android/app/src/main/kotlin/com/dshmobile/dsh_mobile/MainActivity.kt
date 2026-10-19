@@ -316,6 +316,12 @@ class MainActivity : FlutterActivity() {
                     // 起因（用户报两次）：运行环境有内容版本，一升版本标记就变 → 升级的用户也会
                     // 被拦在准备页，看着像"被重装"。正确做法是：**能用就直接进 App**，
                     // 运行环境要换新就在启动画面里静默做（见 main.dart）。
+                    // 2026-10-19（用户报「从屏幕外滑动就黑屏锁死」）：
+                    // Dart 侧原本在 PopScope 兜底里调 `SystemNavigator.pop()` —— 那是**结束 Activity**，
+                    // 而本 App 还挂着前台服务/常驻进程，Activity 结束后从任务里回来就是一屏黑、
+                    // 还退不掉（用户只能清退 App）。原生 onBackPressed 那条走的是 `moveTaskToBack(true)`
+                    // （退到后台）。这里把同一条动作暴露给 Dart，**两条路彻底统一**。
+                    "moveToBackground" -> result.success(moveTaskToBack(true))
                     "hasRuntime" -> result.success(File(dshDir(), "lib/bin.js").exists())
                     "runtimeCurrent" -> result.success(marker().exists())
                     "unpackRuntime" -> unpackRuntimeAsync(result)

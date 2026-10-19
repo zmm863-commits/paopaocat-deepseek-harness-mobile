@@ -118,6 +118,15 @@ class DshHost {
   static Future<bool> runtimeCurrent() async =>
       await channel.invokeMethod<bool>('runtimeCurrent') ?? false;
 
+  /// **退到后台**（不是结束 App）。
+  ///
+  /// 2026-10-19 用户报「从屏幕外滑动就黑屏锁死」：Dart 的 PopScope 兜底里原来调
+  /// `SystemNavigator.pop()`＝**结束 Activity**，而本 App 还挂着前台服务与常驻进程 ——
+  /// Activity 结束后从任务里回来就是一屏黑、还退不掉。原生那条路一直用的
+  /// `moveTaskToBack(true)`（退后台），这里把它暴露出来，两条路统一。
+  static Future<bool> moveToBackground() async =>
+      await channel.invokeMethod<bool>('moveToBackground') ?? false;
+
   /// 解压随包运行时（幂等：已解压会立即返回）。
   static Future<bool> unpackRuntime() async =>
       await channel.invokeMethod<bool>('unpackRuntime') ?? false;
