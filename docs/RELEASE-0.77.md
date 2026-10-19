@@ -1,3 +1,8 @@
+
+> **已发布**：2026-10-19 · GitHub Release `v0.77`
+> <https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/tag/v0.77>
+> 附件三个（full / lite / dsh-runtime.zip）；`update.json` 与 `runtime.json` 已推 main，
+> 应用内「检查更新」可直接生效。
 # 泡泡猫 DeepSeek Harness（DSH）手机版 v0.77
 
 > **先把名字写全**：**DSH = DeepSeek Harness** —— DeepSeek 官方的智能体运行环境。
