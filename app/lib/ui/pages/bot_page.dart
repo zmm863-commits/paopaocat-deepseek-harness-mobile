@@ -115,7 +115,7 @@ class _BotPageState extends State<BotPage> {
   .bt-settings-main { width: 100% !important; flex: 1 1 auto !important; min-height: 0 !important; height: auto !important; }
   .bt-settings-head { padding: 10px 56px 4px 16px !important; }
   /* 2026-10-20（0.78）：再收一批**写死桌面尺寸**的地方 —— 都是窄屏会溢出/被裁的。
-     用量页的月历是最明显的：`.bt-us-month` 252px 宽 + `.bt-us-days` 7×36px 固定格子。 */
+     用量页的月历是最明显的：.bt-us-month 252px 宽 + .bt-us-days 7×36px 固定格子。 */
   .bt-us-month { width: 100% !important; max-width: 100% !important; }
   .bt-us-days { grid-template-columns: repeat(7, minmax(0, 1fr)) !important; }
   .bt-settings-usage { left: 0 !important; width: 100% !important; }
@@ -132,6 +132,22 @@ body { overscroll-behavior-y: contain; }
 `;
       document.head.appendChild(st);
     }
+
+    // ── ①-b 设计令牌：把 App 的配色桥接给网页（2026-10-20，用户「Bot 和 App 风格非常不搭」）
+    //
+    // 做法：ds-bot 的调色板是 body{--bt-…} 与 body[data-ds-dark-theme]{--bt-…} 两组 CSS 变量，
+    // 这里用【同选择器】再写一遍（本 style 在后面 → 后者生效），值全部来自 Flutter 侧的
+    // DshColors（单一真源）。深色两份都写：因为 body[data-ds-dark-theme] 比 body 特异度高，
+    // 只覆盖前者的话深色下仍是 ds-bot 自己的值。
+    // ⚠️ 本段在 CSS 模板字符串**之外**；它自己那对反引号承载 __DSH_TOKENS_CSS__。
+    //    往这段注释里写反引号仍会截断模板（108 版的教训）—— 一律用「」代替。
+    if (!document.getElementById('dsh-app-tokens')) {
+      var tk = document.createElement('style');
+      tk.id = 'dsh-app-tokens';
+      tk.textContent = `__DSH_TOKENS_CSS__`;
+      document.head.appendChild(tk);
+    }
+
 
     // ── ② 网页侧留痕 ─────────────────────────────────────────────────────
     // 为什么必须在网页里做：App 看不见网页内部的点击。"点了 + 没反应"到底卡在
@@ -200,7 +216,7 @@ body { overscroll-behavior-y: contain; }
 
     // ── ④ 藏掉并拦住通往 DSH(Harness) 的入口 ──────────────────────────────
     // 三处显式入口 + **一条通往后门的**：账号菜单里的「切换经典 Agent 模式」
-    //（`actions.setSurface("agent")`）。ds-bot 自己的注释写着 shell 的设置启动器
+    //（actions.setSurface("agent")）。ds-bot 自己的注释写着 shell 的设置启动器
     // 「comes back in Agent mode」—— 切过去 DSH 的设置入口就又冒出来了，所以这条
     // 也必须堵（用户的要求是"不要把 DSH 设置开放给用户"）。
     var HARNESS = ['打开 Harness 设置', 'Open Harness settings', 'Harness 设置', 'Harness settings',
@@ -284,7 +300,7 @@ body { overscroll-behavior-y: contain; }
     }
 
     // ── ⑥ 「+」菜单那条改名为「设置」，并落到设置页的「通用」（用户 2026-10-19）──
-    // ds-bot 里这条菜单项固定调 `openSettings('schedules')` —— 它的 onClick 是 React
+    // ds-bot 里这条菜单项固定调 openSettings('schedules') —— 它的 onClick 是 React
     // 绑在内部组件上的，从外面改不了。所以分三步：
     //   ① 把菜单文案「定时任务」改成「设置」；
     //   ② 设置页里**拿掉「定时任务」这一栏**（手机版没开 DSH 的自动化插件，那页是死路）；
@@ -361,8 +377,44 @@ body { overscroll-behavior-y: contain; }
   """;
 
   /// 按 App 当前深浅色生成要注入的整段 JS。
-  static String _webPatchJs({required bool dark}) =>
-      _webPatchTemplate.replaceFirst('__DSH_APP_DARK__', dark ? 'true' : 'false');
+  static String _webPatchJs({required bool dark}) => _webPatchTemplate
+          .replaceFirst('__DSH_APP_DARK__', dark ? 'true' : 'false')
+          .replaceFirst('__DSH_TOKENS_CSS__', _tokensCss());
+
+  /// 把 App 的设计令牌编译成 CSS（**单一真源是 `DshColors`**）。
+  ///
+  /// 只桥接**颜色**这一层：它决定了两个界面"像不像一家人"的 80%。
+  /// 圆角/字号这层故意先不动 —— ds-bot 的圆角散落在几十个类里，逐个覆盖的收益远小于风险。
+  static String _tokensCss() {
+    String hex(Color c) =>
+        '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+    String rgba(Color c, double a) {
+      final v = c.toARGB32();
+      return 'rgba(${(v >> 16) & 0xFF}, ${(v >> 8) & 0xFF}, ${v & 0xFF}, $a)';
+    }
+
+    final body = '''
+    --bt-main: ${hex(DshColors.bg)};
+    --bt-sidebar: ${hex(DshColors.navBg)};
+    --bt-card: ${hex(DshColors.surface)};
+    --bt-bubble: ${hex(DshColors.surfaceHigh)};
+    --bt-ink: ${hex(DshColors.text)};
+    --bt-ink-2: ${hex(DshColors.textDim)};
+    --bt-ink-3: ${hex(DshColors.textFaint)};
+    --bt-line: ${hex(DshColors.line)};
+    --bt-line-2: ${hex(DshColors.line2)};
+    --bt-line-weak: ${hex(DshColors.line)};
+    --bt-hover: ${rgba(DshColors.accent, 0.08)};
+    --bt-active: ${rgba(DshColors.accent, 0.14)};
+    --bt-tag-bg: ${rgba(DshColors.accent, 0.10)};
+    --bt-tag-ink: ${hex(DshColors.textDim)};
+    --bt-accent: ${hex(DshColors.accent)};
+    --bt-user: ${hex(DshColors.accent)};
+    --bt-user-ink: ${hex(DshColors.onAccent)};
+    ''';
+
+    return 'body{\n$body}\nbody[data-ds-dark-theme]{\n$body}';
+  }
 
   /// **只**做一件事：把 App 的深浅色同步给网页（可反复调用；App 切皮肤时用）。
   ///
@@ -372,12 +424,17 @@ body { overscroll-behavior-y: contain; }
   (function () {
     var dark = ${dark ? 'true' : 'false'};
     window.__dshAppDark = dark;
+    // 令牌跟着重刷：换皮肤/深浅色时，网页的配色要立刻跟上
+    try {
+      var tk = document.getElementById('dsh-app-tokens');
+      if (tk) { tk.textContent = `__DSH_TOKENS_CSS__`; }
+    } catch (e) {}
     try {
       document.documentElement.dataset.dsThemeSource = dark ? 'dark' : 'light';
       if (document.body) document.body.toggleAttribute('data-ds-dark-theme', dark);
     } catch (e) {}
   })();
-  ''';
+  '''.replaceFirst('__DSH_TOKENS_CSS__', _tokensCss());
 
   /// 当前 WebView 里加载的地址（用于和服务最新地址比对）。
   String? _loadedUrl;
