@@ -1,4 +1,34 @@
 {
+  "建议连 Wi-Fi": {
+    "en": "Wi-Fi recommended",
+    "ja": "Wi-Fi 推奨",
+    "ko": "Wi-Fi 권장"
+  },
+  "一句话就能得到真实文件：PPT、文档、表格、图、视频。": {
+    "en": "One sentence gets you real files: slides, documents, spreadsheets, images, video.",
+    "ja": "ひとこと伝えるだけで実ファイルが手に入ります：スライド・文書・表計算・画像・動画。",
+    "ko": "한 문장으로 실제 파일을 받습니다: 슬라이드, 문서, 스프레드시트, 이미지, 영상."
+  },
+  "不用填 Key 就能聊 —— 装完自带免费模型。": {
+    "en": "Chat right away — no API key needed; a free model is built in.",
+    "ja": "API キー不要ですぐに会話できます。無料モデルが最初から入っています。",
+    "ko": "API 키 없이 바로 대화할 수 있습니다. 무료 모델이 기본 포함되어 있습니다."
+  },
+  "底部「Bot」是 Bot 团队：建 Bot、建群聊、派活、看它干活。": {
+    "en": "「Bot」 in the bottom bar is your Bot team: create Bots and group chats, assign work, watch it run.",
+    "ja": "下部の「Bot」は Bot チームです。Bot やグループチャットを作り、仕事を任せて、動くところを見られます。",
+    "ko": "하단 「Bot」은 Bot 팀입니다. Bot과 그룹 채팅을 만들고 일을 맡겨 실행 과정을 볼 수 있습니다."
+  },
+  "开始用": {
+    "en": "Get started",
+    "ja": "はじめる",
+    "ko": "시작하기"
+  },
+  "欢迎使用泡泡猫的 DSH": {
+    "en": "Welcome to Paopaocat's DSH",
+    "ja": "泡泡猫の DSH へようこそ",
+    "ko": "푸둥이 DSH에 오신 것을 환영합니다"
+  },
   "正在更新运行环境（一次性，约半分钟）…": {
     "en": "Updating the runtime (one time, about 30 seconds)…",
     "ja": "ランタイムを更新しています（1 回だけ・約 30 秒）…",

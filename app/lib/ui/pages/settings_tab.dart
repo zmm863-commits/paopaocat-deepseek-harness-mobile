@@ -3330,9 +3330,8 @@ class _UpdateSectionState extends State<_UpdateSection> {
 
   Future<void> _download(UpdateInfo info) async {
     if (_phase == _UpdPhase.downloading) return;
-    // 挑包：手机里**已经有运行时**（老用户更新，绝大多数情况）→ 下精简包，省 32 MB；
-    // **还没有**（全新安装 / 清了数据）→ 下完整包，装完即用、无网也能打开。
-    // 这一句是 0.75 那次"没网就打不开"硬伤的修法。
+    // 挑包：0.78 起**只发完整包**（用户 2026-10-19 决定），所以这里恒定拿到完整包；
+    // 保留 pickVariant 这层是因为旧清单可能只有 url（那时会回退到它）。
     final variant = info.pickVariant(runtimeReady: widget.runtime.isUnpacked);
     final dir = '${widget.runtime.filesDir}/updates';
     final token = ApkDownloadCancelToken();
@@ -3572,6 +3571,9 @@ class _UpdateSectionState extends State<_UpdateSection> {
       if ((info.publishedAt ?? '').isNotEmpty) info.publishedAt!,
       if (info.size != null && info.size! > 0) formatBytes(info.size),
       if (info.notes.isNotEmpty) context.tr('{0} 条说明', ['${info.notes.length}']),
+      // 2026-10-20（0.78）：完整包约 100 MB —— 直接把"建议连 Wi-Fi"写在卡上，
+      // 用户不用自己换算流量（这也是"差分更新先不做"的低配替代）。
+      if ((info.size ?? 0) > 50 * 1024 * 1024) context.tr('建议连 Wi-Fi'),
     ];
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),

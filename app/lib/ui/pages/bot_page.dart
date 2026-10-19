@@ -114,6 +114,18 @@ class _BotPageState extends State<BotPage> {
   .bt-settings-nav[data-glide] .bt-settings-item[aria-current="page"] { background: var(--bt-active) !important; color: var(--bt-ink) !important; }
   .bt-settings-main { width: 100% !important; flex: 1 1 auto !important; min-height: 0 !important; height: auto !important; }
   .bt-settings-head { padding: 10px 56px 4px 16px !important; }
+  /* 2026-10-20（0.78）：再收一批**写死桌面尺寸**的地方 —— 都是窄屏会溢出/被裁的。
+     用量页的月历是最明显的：`.bt-us-month` 252px 宽 + `.bt-us-days` 7×36px 固定格子。 */
+  .bt-us-month { width: 100% !important; max-width: 100% !important; }
+  .bt-us-days { grid-template-columns: repeat(7, minmax(0, 1fr)) !important; }
+  .bt-settings-usage { left: 0 !important; width: 100% !important; }
+  /* 新建 Bot 的卡片（.bt-create-card 有 max-width:400px，窄屏再收一点） */
+  .bt-create-card { max-width: 100% !important; }
+  /* 任务行里两段固定宽（160 / 110）在窄屏会顶出去 → 允许换行 */
+  .bt-task-bot { max-width: 100% !important; min-width: 0 !important; }
+  .bt-task-time { min-width: 0 !important; }
+  /* 账号菜单 / 记忆菜单这类弹层：别比屏幕还宽 */
+  .bt-account-menu, .bt-mem-menu, .bt-us-month { max-width: calc(100vw - 24px) !important; }
 }
 .bt-settings-item.bt-settings-shell { display: none !important; }
 body { overscroll-behavior-y: contain; }

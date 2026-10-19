@@ -9,6 +9,7 @@ import '../data/schedule_store.dart';
 import '../data/workspace_store.dart';
 import '../local/bot_server.dart';
 import '../local/diagnostics_log.dart';
+import 'first_run_guide.dart';
 import '../local/dsh_runtime.dart';
 import '../local/local_model_server.dart';
 import '../local/rotation_proxy.dart';
@@ -359,6 +360,12 @@ class _AppShellState extends State<AppShell> {
     // 以前它挂在 `_onSchedulesChanged` 上（定时任务一变就响），会把页反复推回来 ——
     // 用户 2026-10-12 报的"跳转到本地会话"就是这么来的。
     WidgetsBinding.instance.addPostFrameCallback((_) => _restoreNavOnce());
+    // 首装引导（0.78）：只弹一次，三条「能做什么」，不挡任何操作。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      FirstRunGuideDialog.showOnceIfNeeded(context,
+          filesDir: widget.runtime.filesDir);
+    });
 
     // 把"返回手势/返回键该不该退"接上原生通道（用户第 10 条）。
     // 原生侧在收到手势时会问这里一次（见 MainActivity.dispatchBackToDart）。
