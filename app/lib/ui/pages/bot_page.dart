@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../local/bot_server.dart';
 import '../../local/dsh_runtime.dart';
@@ -33,6 +35,34 @@ enum _Phase { starting, ready, failed }
 
 class _BotPageState extends State<BotPage> {
   _Phase _phase = _Phase.starting;
+
+  /// 手机适配 CSS：把「桌面尺寸的弹层」压进视口内并可滚动。
+  ///
+  /// 为什么需要（2026-10-19 用户报「点 + 只能看到几个图标，看不到建群」）：
+  /// Bot 页跑的是 ds-bot 的**桌面网页 UI**，它的弹窗/菜单按桌面宽度排版，
+  /// 在手机上超出视口就被裁掉了。这里用**宽泛选择器**兜底（不改 ds-bot 源码）：
+  /// 常见弹层容器的最大高度限制到 85vh、溢出可滚动；并保证底部操作区可见。
+  static const String _mobileFitCss = r"""
+  (function () {
+    if (document.getElementById('dsh-mobile-fit')) return;
+    var st = document.createElement('style');
+    st.id = 'dsh-mobile-fit';
+    st.textContent = [
+      '[role="dialog"], [role="menu"], [role="listbox"], [role="alertdialog"],',
+      '[class*="dialog"], [class*="Dialog"], [class*="modal"], [class*="Modal"],',
+      '[class*="popover"], [class*="Popover"], [class*="dropdown"], [class*="Dropdown"],',
+      '[class*="menu"], [class*="Menu"], [class*="sheet"], [class*="Sheet"] {',
+      '  max-height: 85vh !important;',
+      '  max-width: 96vw !important;',
+      '  overflow: auto !important;',
+      '  -webkit-overflow-scrolling: touch !important;',
+      '}',
+      'body { overscroll-behavior-y: contain; }'
+    ].join('
+');
+    document.head.appendChild(st);
+  })();
+  """;
 
   /// 当前 WebView 里加载的地址（用于和服务最新地址比对）。
   String? _loadedUrl;
@@ -84,8 +114,55 @@ class _BotPageState extends State<BotPage> {
       final controller = WebViewController();
       await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       await controller.setBackgroundColor(DshColors.bg);
+
+      // ── ① 文件选择（2026-10-19 用户报「Bot 页添加文件无法添加」）──────────────
+      // 网页里 `<input type=file>` 只会向**宿主**发起请求（onShowFileChooser）；
+      // 宿主不接管就永远没反应。这里用 file_picker 弹出系统选择器，把用户选的
+      // 真实路径回传，网页那边就能正常上传。
+      if (controller.platform is AndroidWebViewController) {
+        await (controller.platform as AndroidWebViewController)
+            .setOnShowFileSelector((FileSelectorParams params) async {
+          try {
+            final r = await FilePicker.platform.pickFiles(
+              allowMultiple: params.mode == FileSelectorMode.openMultiple,
+            );
+            if (r == null) return const <String>[];
+            return <String>[
+              for (final f in r.files)
+                if (f.path != null && f.path!.isNotEmpty) f.path!,
+            ];
+          } catch (e) {
+            debugPrint('[dsh-bot] 文件选择失败：$e');
+            return const <String>[];
+          }
+        });
+      }
       await controller.setNavigationDelegate(
         NavigationDelegate(
+          // ── ② 导航拦截（2026-10-19 用户报「Bot 里的文件无法直接预览」）──────
+          // 本机 Bot 服务的 URL 一律放行；其余（网页里点了文件、点了外链）拦下来，
+          // 不让 WebView 变成一个"打不开的下载页"。
+          // 文件预览的诉求由**资料库**兜住（它本来就带预览，且 107 起已把 Bot 工作区并进来）。
+          onNavigationRequest: (NavigationRequest req) {
+            final base = server.url.split('?').first;
+            if (req.url.startsWith(base) || req.url.startsWith('about:') ||
+                req.url.startsWith('data:') || req.url.startsWith('blob:')) {
+              return NavigationDecision.navigate;
+            }
+            debugPrint('[dsh-bot] 拦截外部导航（不在 App 内打开）：${req.url}');
+            DiagnosticsLog.add('dsh-bot', '拦截外部导航：${req.url}');
+            return NavigationDecision.prevent;
+          },
+          // ── ③ 手机适配 CSS（2026-10-19 用户报「点 + 只看到几个图标、看不到建群」）──
+          // 根因：那是**桌面尺寸**的弹窗/菜单，超出手机视口就被裁掉了。这里在页面
+          // 加载完成后注入一段兜底样式：让弹层最高不超过 85vh、内部可滚动。
+          onPageFinished: (_) async {
+            try {
+              await controller.runJavaScript(_mobileFitCss);
+            } catch (e) {
+              debugPrint('[dsh-bot] 注入适配 CSS 失败：$e');
+            }
+          },
           onWebResourceError: (WebResourceError e) {
             // 只报**主文档**失败：同目录资源拉不到也走这个回调，那不是"打不开"。
             if (e.isForMainFrame != true) return;
