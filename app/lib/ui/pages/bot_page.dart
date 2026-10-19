@@ -59,19 +59,79 @@ class _BotPageState extends State<BotPage> {
   /// `'\n'`）→ `node --check` 直接报 SyntaxError，整段没执行、一个 `<style>` 都没插
   /// 进去（表面看就是"改了没用"）。现在改用反引号模板字符串承载多行 CSS，Dart 原始
   /// 字符串里不需要任何 JS 转义，也就不会再犯。**改动后用 `node --check` 验一遍。**
+  ///
+  /// ② 同一段脚本还负责**网页侧留痕**（用户 2026-10-19 要求「这里的操作都加日志痕迹」）：
+  /// 回报点了什么（「+」/菜单项/「发给：」浮层）、量到的尺寸（浮层与选项列表的宽高、
+  /// 输入卡片里到底有没有那个 `input[type=file]`）、以及网页自己的报错。这些经
+  /// `dshBotLog` 通道进诊断日志 —— App 看不见网页内部的点击，"点了没反应"只能靠
+  /// 网页自报才能分清是哪一环断的。
   static const String _mobileFitCss = r"""
   (function () {
-    if (document.getElementById('dsh-mobile-fit')) return;
-    var st = document.createElement('style');
-    st.id = 'dsh-mobile-fit';
-    st.textContent = `
+    // ── ① 手机适配 CSS ────────────────────────────────────────────────────
+    if (!document.getElementById('dsh-mobile-fit')) {
+      var st = document.createElement('style');
+      st.id = 'dsh-mobile-fit';
+      st.textContent = `
 .bt-pane { left: auto !important; right: 0 !important; width: min(100vw, 440px) !important; max-width: 100vw !important; }
 .bt-pane .bt-drop { left: 8px !important; width: calc(100% - 16px) !important; max-height: min(420px, 55vh) !important; }
 [role="menu"], [role="listbox"], .bt-menu, .bt-drop { max-height: min(420px, 60vh) !important; overflow-y: auto !important; }
 [role="dialog"] { max-width: 100vw !important; }
 body { overscroll-behavior-y: contain; }
 `;
-    document.head.appendChild(st);
+      document.head.appendChild(st);
+    }
+
+    // ── ② 交互/布局留痕（用户 2026-10-19 要求「这里的操作都加日志痕迹」）─────────
+    // 为什么必须在网页里做：App 看不见网页内部的点击。"点了 + 没反应"到底卡在
+    // ①点击没发生 ②点击发生了但 composer 卡片里没有 file input（ds-bot 的
+    // `attach()` 就是找它）③点击到了宿主但选文件失败 —— 只有网页侧自报才能区分。
+    // 只回报**事实**（尺寸、有没有某个元素、点了什么），不猜、不改行为。
+    if (window.__dshBotTrace) return;
+    window.__dshBotTrace = true;
+    function post(s) {
+      try { if (window.dshBotLog) window.dshBotLog.postMessage(String(s).slice(0, 300)); } catch (e) {}
+    }
+    function size(el) {
+      if (!el) return '无';
+      var r = el.getBoundingClientRect();
+      return Math.round(r.width) + 'x' + Math.round(r.height);
+    }
+    function probe(why) {
+      var card = document.querySelector('[data-composer-card]');
+      var inCard = card ? card.querySelector('input[type=file]') : null;
+      post('量尺寸[' + why + '] 发给浮层=' + size(document.querySelector('.bt-pane')) +
+           ' 选项列表=' + size(document.querySelector('.bt-drop')) +
+           ' 输入卡片=' + (card ? '有' : '无') +
+           ' 卡片内文件输入=' + (inCard ? '有' : '无') +
+           ' 全页文件输入=' + (document.querySelector('input[type=file]') ? '有' : '无'));
+    }
+    // 网页自己报错（108 版那段 CSS 注入的语法错就是这样被漏掉的）。
+    window.addEventListener('error', function (e) {
+      post('网页报错：' + (e && e.message) + '（' + (e && e.filename) + ':' + (e && e.lineno) + '）');
+    }, true);
+    // 文件选择器真的选完了没有。
+    document.addEventListener('change', function (e) {
+      var t = e.target;
+      if (t && t.type === 'file') post('文件输入框已选中 ' + (t.files ? t.files.length : 0) + ' 个文件');
+    }, true);
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      if (t.type === 'file') { post('网页点了文件输入框'); return; }
+      var el = t.closest('.bt-plus');
+      if (el) { post('点「+」（输入框左边那个）'); setTimeout(function () { probe('点+ 之后'); }, 260); return; }
+      el = t.closest('.bt-plus-menu button, .bt-menu button, [role="menuitem"]');
+      if (el) {
+        post('点菜单项：' + (el.textContent || '').trim());
+        setTimeout(function () { probe('点菜单项之后'); }, 260);
+        return;
+      }
+      el = t.closest('.bt-pane');
+      if (el) { post('点「发给：」浮层内'); setTimeout(function () { probe('点浮层之后'); }, 260); return; }
+    }, true);
+    // 页面稳定后各量一次：这样即使你什么都不点，报告里也有布局证据。
+    setTimeout(function () { probe('页面加载后 1.2s'); }, 1200);
+    setTimeout(function () { probe('页面加载后 4s'); }, 4000);
   })();
   """;
 
@@ -84,6 +144,8 @@ body { overscroll-behavior-y: contain; }
     if (!mounted || s == null) return;
     if (s.url == _loadedUrl) return;
     debugPrint('[dsh-bot] 服务地址变化 → 重新加载：${s.url}');
+    // 只记"变了"，不记地址（地址里带 token）。
+    DiagnosticsLog.add('dsh-bot', 'Bot 服务地址变化（服务重启/换端口）→ WebView 重新加载');
     _loadedUrl = s.url;
     _web?.loadRequest(Uri.parse(s.url));
   }
@@ -110,10 +172,12 @@ body { overscroll-behavior-y: contain; }
   void dispose() {
     BotServer.live.removeListener(_onServerChanged);
     // ⚠️ 刻意**不**停 [BotServer]：Bot 团队要接着在后台干活。
+    DiagnosticsLog.add('dsh-bot', '离开 Bot 页（服务继续在后台跑，会话不受影响）');
     super.dispose();
   }
 
   Future<void> _boot() async {
+    DiagnosticsLog.add('dsh-bot', '打开 Bot 页：准备服务与本机 web 界面');
     if (mounted) {
       setState(() {
         _phase = _Phase.starting;
@@ -130,10 +194,20 @@ body { overscroll-behavior-y: contain; }
         },
       );
       if (!mounted) return;
+      // ⚠️ 地址里带 token（能力令牌），**不许写进日志** —— 这里只记"已就绪"。
+      DiagnosticsLog.add('dsh-bot', 'Bot 服务已就绪，开始加载本机 web 界面');
 
       final controller = WebViewController();
       await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       await controller.setBackgroundColor(DshColors.bg);
+      // ── ⓪ 网页侧留痕的回传通道 ────────────────────────────────────────────
+      // 注入的脚本把"点了什么 / 量到什么尺寸 / 网页报了什么错"发回这里 → 进诊断日志。
+      // 这是 App 唯一能看见「网页内部发生了什么」的眼睛（用户要求"操作都加日志痕迹"）。
+      await controller.addJavaScriptChannel(
+        'dshBotLog',
+        onMessageReceived: (JavaScriptMessage m) =>
+            DiagnosticsLog.add('dsh-bot:web', m.message),
+      );
 
       // ── ① 文件选择（2026-10-19 用户报「Bot 页添加文件无法添加」）──────────────
       // 链路（已按源码逐环核对）：输入框左边那个「+」是 ds-bot 的 `ComposerPlus`
@@ -186,20 +260,28 @@ body { overscroll-behavior-y: contain; }
             DiagnosticsLog.add('dsh-bot', '拦截外部导航：${req.url}');
             return NavigationDecision.prevent;
           },
-          // ── ③ 手机适配 CSS（2026-10-19 用户报「点 + 只看到几个图标、看不到建群」）──
-          // 根因：那是**桌面尺寸**的弹窗/菜单，超出手机视口就被裁掉了。这里在页面
-          // 加载完成后注入一段兜底样式：让弹层最高不超过 85vh、内部可滚动。
+          // ── ③ 手机适配 CSS + 网页侧留痕（用户报「点 + 只看到几个图标」）─────────
+          // 根因：那是 ds-bot 的右侧浮层 `.bt-pane`，桌面按「对话列右边→屏幕右边」
+          // 算宽度，手机上几乎为 0 → 面板被挤成一条、选项只剩图标。这里在页面加载完成
+          // 后注入按真实类名写的样式把宽度还回来，并同时挂上交互/布局留痕脚本。
           onPageFinished: (_) async {
             try {
               await controller.runJavaScript(_mobileFitCss);
+              DiagnosticsLog.add('dsh-bot',
+                  '页面加载完成：已注入手机适配 CSS + 留痕脚本（${_mobileFitCss.length} 字符）');
             } catch (e) {
-              debugPrint('[dsh-bot] 注入适配 CSS 失败：$e');
+              // ⚠️ 这条以前只写 debugPrint —— 108 版整段 JS 语法错、一个 <style> 都没插
+              //    进去，日志里却什么都看不见，于是"改了没用"查了很久。必须留痕。
+              DiagnosticsLog.add('dsh-bot',
+                  '注入手机适配 CSS 失败（浮层宽度/菜单不会被压回屏内）：$e');
             }
           },
           onWebResourceError: (WebResourceError e) {
             // 只报**主文档**失败：同目录资源拉不到也走这个回调，那不是"打不开"。
             if (e.isForMainFrame != true) return;
             debugPrint('[dsh-bot] 主文档加载失败：${e.errorCode} ${e.description}');
+            DiagnosticsLog.add('dsh-bot',
+                '主文档加载失败：错误码 ${e.errorCode} ${e.description}');
             if (!mounted) return;
             setState(() {
               _phase = _Phase.failed;
@@ -232,6 +314,7 @@ body { overscroll-behavior-y: contain; }
   Future<void> _stopService() async {
     final server = BotServer.current;
     if (server == null) return;
+    DiagnosticsLog.add('dsh-bot', '用户手动停止 Bot 服务');
     await server.stop();
     if (!mounted) return;
     setState(() {
@@ -254,9 +337,12 @@ body { overscroll-behavior-y: contain; }
         if (didPop) return;
         final web = _web;
         if (web != null && await web.canGoBack()) {
+          // 留痕：用户点返回键时是"网页退一层"还是"离开这一页"，看日志一眼就懂。
+          DiagnosticsLog.add('dsh-bot', '按返回键 → 网页后退一层');
           await web.goBack();
           return;
         }
+        DiagnosticsLog.add('dsh-bot', '按返回键 → 离开 Bot 页（已到网页最外层）');
         if (context.mounted) Navigator.of(context).pop();
       },
       child: Scaffold(

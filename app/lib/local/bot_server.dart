@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 
+import '../data/atomic_file.dart';
 import '../data/configured_models.dart';
 import 'diagnostics_log.dart';
 import 'dsh_runtime.dart';
@@ -107,6 +108,52 @@ class BotServer {
     }
   }
 
+  /// 完全权限 patch 的文件名（写在 `nodeHome` 下，和 overlay 并排）。
+  static const String fullAccessPatchName = 'bot-full-access.patch.yml';
+
+  /// **Bot 模式 = 完全权限**：单独一份 patch，起服务时**无条件**传给它。
+  ///
+  /// 用户 2026-10-19 明确要求「bot 模式记得开完全权限」。为什么不让
+  /// `model.overlay.yml` 兼任（它里面本来也有这两段）：**那份 overlay 存不存在取决于
+  /// 「用户配过模型没有 / 覆盖安装或清数据有没有丢」**，而权限一旦丢，Android 上没有
+  /// DSH 需要的沙箱后端 → 每个工具调用都失败并弹「请求执行操作」要用户批准。
+  /// 把权限拆成独立一份、无条件挂上去，这条"配置缺失 → 权限回退"的路就断了。
+  ///
+  /// 内容与 [DshRuntime.writeOverlayFromConfig] 里那两段一致：**两段都要给** ——
+  /// 只设 `defaultPreset` 会撞上 DSH 的组合规则
+  /// （`composed sandbox and approval defaults match no preset`）。
+  static Future<String?> _ensureFullAccessPatch(DshRuntime runtime) async {
+    const body = '# 由 App 生成：Bot 模式 = 完全权限（danger-full-access）。\n'
+        '#\n'
+        '# 为什么要独立一份：model.overlay.yml 可能因为「还没配模型 / 覆盖安装或清数据\n'
+        '# 弄丢」而不存在，而权限预设一旦丢，Android 上没有 DSH 需要的沙箱后端 →\n'
+        '# 每个工具调用都要用户点一次批准（真机原话「一直出现 agent 请求执行操作」）。\n'
+        '# 所以这份由 BotServer 无条件 `--patch` 传给 Bot 服务。\n'
+        '- id: sandbox-policy\n'
+        '  name: "@deepseek-ai/dsh-sandbox-policy"\n'
+        '  config:\n'
+        '    mode: danger-full-access\n'
+        '- id: permission\n'
+        '  name: "@deepseek-ai/dsh-permission-presets"\n'
+        '  config:\n'
+        '    defaultPreset: danger-full-access\n';
+    try {
+      final dir = Directory(runtime.nodeHome);
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final f = File('${dir.path}/$fullAccessPatchName');
+      // 幂等：内容一致就不重写（不为每次进 Bot 页都动文件、也免了 mtime 噪音）。
+      if (!f.existsSync() || f.readAsStringSync() != body) {
+        writeStringAtomicSync(f, body);
+        DiagnosticsLog.add('dsh-bot', '已写完全权限 patch：${f.path}');
+      }
+      return f.path;
+    } catch (e) {
+      // 写不出来也不拦启动：但必须留痕（否则"又要一直点批准"就成了谜）。
+      DiagnosticsLog.add('dsh-bot', '写完全权限 patch 失败（Bot 可能每个调用都要批准）：$e');
+      return null;
+    }
+  }
+
   static Future<void> ensureProfile(DshRuntime runtime) async {
     final target = Directory('${runtime.nodeHome}/profiles/$profileName');
     final seed = Directory('${runtime.runtimeRoot}/profiles-seed/$profileName');
@@ -157,6 +204,25 @@ class BotServer {
 
     await ensureProfile(runtime);
 
+    // ⚠️⚠️ **必须在拼 args 之前**把 overlay 准备好（2026-10-19 修顺序 bug）。
+    //
+    // 为什么（2026-10-17 真机铁证，用户报「一直出现 agent 请求执行操作」）：
+    // 用户那份会话产物里写着 `"sandboxMode": { "val": "workspace-write" }` —— **不是**
+    // `danger-full-access`。因为传 `--patch` 是有条件的：
+    //     if (runtime.hasModelConfig) ...['--patch', runtime.overlayPath]
+    // 而 `hasModelConfig` 的定义就是**「overlay 文件是否存在」** → "用户还没配过模型 /
+    // 刚覆盖安装或清过数据"时 overlay 不存在 → **整个 patch 都没传** → 连里面的
+    // **权限预设**（`defaultPreset: danger-full-access`）一起丢 → DSH 退回默认的
+    // `workspace-write` + `approval: ask`。Android 上**没有 DSH 需要的沙箱后端**，
+    // 于是每个工具调用都失败并弹「请求执行操作」让用户批准（真机日志：
+    // `The sandbox backend isn't usable, so tools fail` 紧跟 `权限请求`）。
+    //
+    // ⚠️ 原来这两行是在 args **之后**才跑的 —— 注释写得再对也没用：那一刻 overlay
+    //    还没写出来，`hasModelConfig` 就是 false。顺序必须在这里。
+    await _ensureOverlay(runtime);
+    // 完全权限单独一份 patch、**永远传**（即使 overlay 因为任何原因仍不存在）。
+    final fullAccessPatch = await _ensureFullAccessPatch(runtime);
+
     final args = <String>[
       // ⚠️ 必须在最前：见类注释「硬约束 1」。
       '--expose-internals',
@@ -173,6 +239,12 @@ class BotServer {
       //    `error: unknown option '--patch'` 退出（退出码 1，界面报「Bot 服务
       //    没能起来」）。本机两种顺序都复现过，见 docs/BOT-TEST.md §3。
       if (runtime.hasModelConfig) ...['--patch', runtime.overlayPath],
+      // ⚠️ 完全权限的 patch **永远传**，而且放在**最后**：`dsh` 的 launcher 是
+      //    可重复收集、**按 argv 顺序叠加**（后者覆盖前者，见 dsh/lib/bin.js
+      //    "Repeatable single-value collector"）→ 放最后 = 权限一定按我们的值生效。
+      //    这样即使 overlay 缺失、或 overlay 是被老版本写的（里面没有权限段），
+      //    Bot 也一定是完全权限（用户 2026-10-19 明确要求「bot模式记得开完全权限」）。
+      if (fullAccessPatch != null) ...['--patch', fullAccessPatch],
       // 下面两个是 web app 的参数。
       // --no-open：手机上不能去拉系统浏览器；--port 0：让系统挑空闲端口。
       '--no-open',
@@ -182,27 +254,40 @@ class BotServer {
     onLog?.call('[dsh-bot] 启动：--profile $profileName --no-open --port 0');
     DiagnosticsLog.add('dsh-bot', '启动 web 服务：--profile $profileName');
 
+    // 留痕：**这次到底挂了几份 patch**。排查「怎么又要我批准」时，这一行是第一现场
+    //（"0 份 patch" 就等于 PermissionPreset 丢了）。
+    final patchKinds = <String>[
+      if (runtime.hasModelConfig) '模型 overlay',
+      if (fullAccessPatch != null) '完全权限',
+    ];
+    DiagnosticsLog.add(
+      'dsh-bot',
+      'Bot 启动参数：profile=$profileName，patch ${patchKinds.length} 份'
+      '${patchKinds.isEmpty ? '（一份都没有 —— 权限会回退成 ask！）' : '（${patchKinds.join(' + ')}）'}',
+    );
+
     final env = <String, String>{
       ...runtime.environment,
       // Bot 团队要长期跑，别让 node 的默认堆把它顶掉。
       if (!runtime.environment.containsKey('NODE_OPTIONS'))
         'NODE_OPTIONS': '--max-old-space-size=1024',
+      // ⚠️ **完全权限的第二道保险**（第一道是上面那份永远传的 patch）。
+      //
+      // 证据（本地 `dsh bottest --patch … --dump-config` 实测）：`dsh-base` 里
+      // `@deepseek-ai/dsh-user-approval` 的 policy 是从这个环境变量算出来的 ——
+      //     (process.env.DSH_PERMISSION_MODE ?? 'workspace-write')
+      //        === 'danger-full-access' ? 'never' : 'ask'
+      // 不设它时算出来是 **'ask'**（= 每个工具调用都弹「请求执行操作」）。
+      // patch 里的 `defaultPreset: danger-full-access` 在运行时也会调
+      // `setApprovalPolicy('never')`（preset 表里写着 "Full file access without
+      // approval prompts"），两条路殊途同归；这里把它显式钉死，任何"预设没解析到"
+      // 的边角情况也不会退回 ask（用户 2026-10-19：「bot 模式记得开完全权限」）。
+      'DSH_PERMISSION_MODE': 'danger-full-access',
     };
 
-    // ⚠️⚠️ **确保 overlay 存在**（2026-10-17 真机铁证，用户报「一直出现 agent 请求执行操作」）。
-    //
-    // 用户那份会话产物里写着 `"sandboxMode": { "val": "workspace-write" }` ——
-    // **不是** `danger-full-access`。原因是下面传 `--patch` 是有条件的：
-    //     if (runtime.hasModelConfig) ...['--patch', runtime.overlayPath]
-    // 而"用户还没配过模型"时 overlay 文件不存在 → **整个 patch 都没传** →
-    // 连里面的**权限预设**（`defaultPreset: danger-full-access`，即 approval=never）
-    // 一起丢 → DSH 退回默认的 `workspace-write` + `approval: ask`。
-    // Android 上**没有 DSH 需要的沙箱后端**，于是每个工具调用都失败并弹出
-    // 「请求执行操作」让用户批准（真机日志：`The sandbox backend isn't usable, so tools fail`
-    // 紧跟 `权限请求`）。桌面版没这现象，因为它 profile 自带权限配置。
-    //
-    // 所以：起服务前**先写一份最小 overlay**（模型为空也没关系，权限预设是关键）。
-    await _ensureOverlay(runtime);
+    // （overlay 与完全权限 patch 都已在**拼 args 之前**准备好 —— 见上面那段说明。
+    //  这里原来有一份重复的 `await _ensureOverlay(runtime);`，而且位置在 args 之后，
+    //  正是"注释写对了、顺序却错了"的那个 bug，已清掉。）
 
     // ⚠️ 先把运行时要用的目录建好（2026-10-17 真机日志暴露的遗漏）：
     //   DSH 的 spill-local 插件会在 `<filesDir>/tmp` 下 `mkdtemp('dsh-spill-XXXXXX')`，
