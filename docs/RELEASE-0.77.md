@@ -16,6 +16,10 @@
 > `moveTaskToBack`（退后台），而 Dart 的 PopScope 兜底那条走了 `SystemNavigator.pop()`
 > （**结束 Activity**）—— 本 App 挂着前台服务/常驻进程，Activity 结束后从任务里回来就是一屏黑、
 > 还退不掉。已把两条路统一成「退到后台」，并把两条分支都写进诊断日志。重打为 **116**。
+> ④ 116 之后仍偶发黑屏，真机日志坐实第三个根因：`PopScope` 是**按路由**注册的，而 Bot 页一直
+> 在壳层 PageView 里保活 —— 用户在**别的页签**上边缘返回时，Bot 页也收到，并执行
+> `Navigator.pop()`（弹的是**根路由**）→ 整屏黑、随后进程重启。改成「壳层问、Bot 页答」
+> （Bot 页只提供 `consumeBack`：网页能退就退并告知，否则交回壳层）。重打为 **117**。
 # 泡泡猫 DeepSeek Harness（DSH）手机版 v0.77
 
 > **先把名字写全**：**DSH = DeepSeek Harness** —— DeepSeek 官方的智能体运行环境。
@@ -94,7 +98,7 @@
 
 | 产物 | 字节 | sha256 |
 |---|---|---|
-| `paopaocat-preview-0.77-20261019-full-arm64-v8a.apk` | 103,496,974 | `5e7a8acb49b9336e87a8d0c332134e5bc8617097b75cd5586599c3b936a9d5e0` |
+| `paopaocat-preview-0.77-20261019-full-arm64-v8a.apk` | 103,499,174 | `04e17b9035788c65ff3238e8bd3f892e6dbc49e38639cf10677796a8e3f4b0f3` |
 | `dsh-runtime.zip`（兜底用，普通用户不需要） | 34,172,075 | `8a8453824861a10bef0a022a88d4aa064de1399f97c6777763183ac940fa10ad` |
 
 签名证书 SHA-256：`7aaf444815ac78e3396ed5e95bd4e8f483745254559615d1bfd5f20180d3cc17`

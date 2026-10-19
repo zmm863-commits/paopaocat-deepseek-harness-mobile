@@ -623,6 +623,27 @@ class _AppShellState extends State<AppShell> {
   Future<bool> _shouldExitOnBack() async {
     if (!mounted) return true;
 
+    // 0) 在 Bot 页签：先问网页能不能自己退一层（Bot 列表 → 聊天 → 群设置…）。
+    //    只有它是"多层"的；它退到底就交回下面的常规判断。
+    //    ⚠️ 2026-10-19 真机日志：原本这一步写在 Bot 页的 PopScope 里，而 PopScope
+    //    是按**路由**注册的 —— 用户在别的页签上边缘返回，Bot 页也收到，并 pop 掉根路由
+    //    → 黑屏。现在改成"壳层问、Bot 页答"，只在一处裁决。
+    if (_index == 1) {
+      final consume = BotPage.consumeBack;
+      if (consume != null) {
+        try {
+          if (await consume()) {
+            DiagnosticsLog.add('dsh-nav', '返回：Bot 网页退了一层（壳层不动）');
+            return false;
+          }
+        } catch (e) {
+          DiagnosticsLog.add('dsh-nav', '返回：问 Bot 页失败（继续常规判断）：$e');
+        }
+      }
+    }
+    // 上面 await 过 → 下面还要用 context，先确认还在树上。
+    if (!mounted) return true;
+
     // 1) 先关掉 push 进来的页面（对话页、资料库预览、工作区…）。
     final nav = Navigator.of(context);
     if (nav.canPop()) {

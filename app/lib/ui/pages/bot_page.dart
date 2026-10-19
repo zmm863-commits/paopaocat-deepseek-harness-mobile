@@ -25,6 +25,15 @@ import '../theme/dsh_tokens.dart';
 class BotPage extends StatefulWidget {
   const BotPage({super.key, required this.runtime});
 
+  /// 壳层在收到「返回」时会先问这里：**网页能不能自己退一层？**
+  ///
+  /// 为什么不用 PopScope（2026-10-19 真机日志坐实的坑）：`PopScope` 是**按路由**
+  /// 注册的，而这个页面一直活在壳层的 PageView 里（保活）。于是用户在**别的页签**
+  /// 上做边缘返回，Bot 页也会收到，并执行 `Navigator.pop()` —— 它弹的是**根路由**
+  /// （这个页面不是 push 出来的），整个主界面被弹掉 → 一屏黑、进程随后重启。
+  /// 现在统一由壳层裁决，这里只提供"吃掉这次返回"的能力。
+  static Future<bool> Function()? consumeBack;
+
   final DshRuntime runtime;
 
   @override
@@ -404,14 +413,32 @@ body { overscroll-behavior-y: contain; }
     }
   }
 
+  /// 网页能退一层就退，并告诉壳层"这次返回我吃掉了"；否则交回壳层。
+  Future<bool> _consumeBack() async {
+    final web = _web;
+    if (web == null) return false;
+    try {
+      if (await web.canGoBack()) {
+        DiagnosticsLog.add('dsh-bot', '返回：网页后退一层');
+        await web.goBack();
+        return true;
+      }
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '返回：网页后退失败（交回壳层）：$e');
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
+    BotPage.consumeBack = _consumeBack;
     unawaited(_boot());
   }
 
   @override
   void dispose() {
+    if (BotPage.consumeBack == _consumeBack) BotPage.consumeBack = null;
     BotServer.live.removeListener(_onServerChanged);
     // ⚠️ 刻意**不**停 [BotServer]：Bot 团队要接着在后台干活。
     DiagnosticsLog.add('dsh-bot', '离开 Bot 页（服务继续在后台跑，会话不受影响）');
@@ -579,23 +606,8 @@ body { overscroll-behavior-y: contain; }
       WidgetsBinding.instance
           .addPostFrameCallback((_) => unawaited(_pushThemeToWeb()));
     }
-    return PopScope(
-      // 手机上 WebView 里可能已经翻了好几层（Bot 列表 → 某个 Bot 的聊天 →
-      // 群设置…）。返回键先让网页自己退，退到底了才离开这一页。
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        final web = _web;
-        if (web != null && await web.canGoBack()) {
-          // 留痕：用户点返回键时是"网页退一层"还是"离开这一页"，看日志一眼就懂。
-          DiagnosticsLog.add('dsh-bot', '按返回键 → 网页后退一层');
-          await web.goBack();
-          return;
-        }
-        DiagnosticsLog.add('dsh-bot', '按返回键 → 离开 Bot 页（已到网页最外层）');
-        if (context.mounted) Navigator.of(context).pop();
-      },
-      child: Scaffold(
+    // ⚠️ 这里**不要**再包 PopScope：见 [BotPage.consumeBack] 的注释（会弹掉根路由 → 黑屏）。
+    return Scaffold(
         backgroundColor: DshColors.bg,
         appBar: AppBar(
           backgroundColor: DshColors.navBg,
@@ -622,8 +634,7 @@ body { overscroll-behavior-y: contain; }
             ),
           ],
         ),
-        body: _buildBody(),
-      ),
+      body: _buildBody(),
     );
   }
 
