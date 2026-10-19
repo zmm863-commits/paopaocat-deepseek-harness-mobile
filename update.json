@@ -1,20 +1,20 @@
 {
-  "version": "0.76",
-  "versionCode": 76,
-  "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.76/paopaocat-preview-0.76-20261016-lite-arm64-v8a.apk",
-  "size": 71420126,
-  "sha256": "d8a1a58b33b56eb499d977a709a566d77cb39cc8eb5acd82e97df5e05d296a9e",
-  "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.76/paopaocat-preview-0.76-20261016-full-arm64-v8a.apk",
-  "sizeFull": 102983482,
-  "sha256Full": "bb3184a40f76e94e08d732a0cd06dd36e4edeb2fba1b483cfeeb39f7fe257cb4",
+  "version": "0.77",
+  "versionCode": 113,
+  "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.77/paopaocat-preview-0.77-20261019-lite-arm64-v8a.apk",
+  "size": 71472250,
+  "sha256": "29a64bf4d4273265a449ccdd610b7f492d0473205417307812a583194a0c3fdc",
+  "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.77/paopaocat-preview-0.77-20261019-full-arm64-v8a.apk",
+  "sizeFull": 103494390,
+  "sha256Full": "005e68794947c87607e2d4af69b72f2903406a3f19451ab87f81804cf9897e33",
   "minVersionCode": 0,
-  "publishedAt": "2026-10-16",
+  "publishedAt": "2026-10-19",
   "notes": [
-    "修好 20 个问题、新增 17 项功能（这条是这一版的总账，逐条见「更新说明」）",
-    "做 PPT 从「能生成」变成「能拿得出手」：12 种版式 + 自动排版，产物是真 .pptx（创作台 → 工具 → 做 PPT / 幻灯片）",
-    "「不用填 Key 就能聊」重新站住：免 Key 免费模型默认开着，会话里还能联网搜索、能分子智能体干活",
-    "会话不再丢：空壳会话不再产生也不再显示；切模型不再偷偷换会话；提问失败会当场说原因",
-    "顺手修好一批真机反馈：换厂家后会话「只剩摘要」、来回切会话后窜出会话页、输入框太透明看不清、长按二维码弹「无法访问」",
-    "**全新安装请下完整包**（含运行环境，装完即用、没网也能打开）；手机里已有运行环境的，更新时自动下精简包"
+    "**Bot 团队住进手机**：底部导航新增「Bot」—— 建 Bot、建群聊、派活、看它干活，和电脑上同一套界面",
+    "修好 13 个问题（这条是总账，逐条见「设置 → 关于 → 更新说明」）：Bot 生成的文件资料库看得到、Bot 页能添加文件、「发给」面板不再只剩图标、Bot 设置页在手机上能用、通往 DSH 设置的入口全关掉、Bot 完全权限不再每次弹批准、Bot 跟得上 App 的模型改动",
+    "「+」菜单里那栏「定时任务」改名为「设置」，点进去直接是通用设置页",
+    "Bot 页面配色开始跟随 App 的深浅色；「Office 预览不可用…启用文档预览服务」改成「请到资料库查看文件」",
+    "模型设置新增「OpenCode Go」；新建 Bot 时讲清是否主 Bot 并可直接选模型",
+    "**全新安装请下完整包**（含运行环境，装完即用；手机没网也能打开）；已装旧版的更新时自动下精简包"
   ]
 }
