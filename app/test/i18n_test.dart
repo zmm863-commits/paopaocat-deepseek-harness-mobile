@@ -31,7 +31,7 @@ class _ConstProbe extends StatelessWidget {
 
 void main() {
   group('三张表', () {
-    test('条目数一致，且规模对得上（1900 条界面文案）', () {
+    test('条目数一致，且规模对得上（1903 条界面文案）', () {
       // 994 这个数不是随手写的：2026-10-09 按审计 P0-11/P1-5 清过一轮漂移
       // （补 48 条漏翻 / 删 77 条陈旧 / 修 17 条换行错，三张表各自）。
       // 清理的依据是 `install/i18n/check-tables.mjs` —— 那个脚本以前**不存在**，
@@ -177,7 +177,9 @@ void main() {
       // ⚠️ 2026-10-19 1896 → 1900：准备页区分「首次使用」与「正在更新运行环境」
       //    （用户报「更新安装后变成重新安装了」—— 运行环境版本跨了，老用户也会走到那一页，
       //    原来标题写死「首次使用」，看着像被重装）。新增 4 条：标题 / 两句解释 / 按钮。
-      expect(kEnTable.length, 1900);
+      // ⚠️ 2026-10-19 1900 → 1903：启动画面里「正在更新运行环境」三句（一次性升级用），
+      //    因为改成"进门只看能不能用、换新在启动画面里静默做"。
+      expect(kEnTable.length, 1903);
       expect(kJaTable.length, kEnTable.length);
       expect(kKoTable.length, kEnTable.length);
     });

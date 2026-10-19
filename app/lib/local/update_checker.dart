@@ -178,23 +178,26 @@ class UpdateInfo {
     );
   }
 
-  /// 按"这台机器上有没有运行时"挑一个包 —— 这是 0.75 那次硬伤的修法。
+  /// 挑这次该下哪个包。
   ///
-  /// * **已经有运行时**（老用户更新，绝大多数情况）→ 拿**精简包**，省 32 MB；
-  /// * **还没有**（全新安装、或用户清了应用数据）→ 拿**完整包**（装完即用，
-  ///   无网也能打开）。清单里没写 `urlFull` 时只能退回精简包 ——
-  ///   那种情况下 App 会在「准备运行环境」那一步现下运行时（有明确提示与进度）。
+  /// **2026-10-19 用户决定：不再发精简包，一律完整包**（内含运行环境）。
+  /// 理由：精简包让"更新运行环境"变成必须联网下载 —— 升级体验不可控（用户连着报
+  /// 「更新后像重装」「装精简包不该直接进页面吗」）。完整包自带运行环境，升级时
+  /// 本地就能铺好，一个下载搞定。
+  ///
+  /// 所以规则简化成：**清单给了完整包（urlFull）就下完整包**；只给了 url 才退回它
+  /// （兼容旧清单，那种情况下 App 会在准备运行环境那一步现下运行时）。
   UpdateVariant pickVariant({required bool runtimeReady}) {
     final full = urlFull;
-    if (runtimeReady || full == null) {
-      return UpdateVariant(url: url, size: size, sha256: sha256, includesRuntime: false);
+    if (full != null) {
+      return UpdateVariant(
+        url: full,
+        size: sizeFull,
+        sha256: sha256Full,
+        includesRuntime: true,
+      );
     }
-    return UpdateVariant(
-      url: full,
-      size: sizeFull,
-      sha256: sha256Full,
-      includesRuntime: true,
-    );
+    return UpdateVariant(url: url, size: size, sha256: sha256, includesRuntime: false);
   }
 
   static String _requireString(Map<Object?, Object?> m, String key) {

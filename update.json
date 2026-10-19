@@ -1,21 +1,21 @@
 {
   "version": "0.77",
-  "versionCode": 114,
-  "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.77/paopaocat-preview-0.77-20261019-lite-arm64-v8a.apk",
-  "size": 71474834,
-  "sha256": "1c4a4c096694b3dc2ac7ffec8441d487a770a470100ede03ced9d4c94cc47cbc",
+  "versionCode": 115,
+  "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.77/paopaocat-preview-0.77-20261019-full-arm64-v8a.apk",
+  "size": 103496082,
+  "sha256": "688a2a910f8bf752c14f4e1fe73e387a4771b47b83a4f8feb041b3c42a9da7af",
   "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.77/paopaocat-preview-0.77-20261019-full-arm64-v8a.apk",
-  "sizeFull": 103496974,
-  "sha256Full": "d43f19bf92f72f663271212dbbb4fa01b6282fb1b1de6692e269a63aad42db9a",
+  "sizeFull": 103496082,
+  "sha256Full": "688a2a910f8bf752c14f4e1fe73e387a4771b47b83a4f8feb041b3c42a9da7af",
   "minVersionCode": 0,
   "publishedAt": "2026-10-19",
   "notes": [
-    "**更新后不再像「重新安装」**：升级跨运行环境版本时，准备页现在会说「正在更新运行环境」并讲清「会话/模型/Bot 都在，不会清数据」（原来写的是「首次使用」，吓人）",
+    "**升级后不再像「重新安装」**：进门只看「运行环境能不能用」—— 能用的**直接进 App**；运行环境要换新就在启动画面里静默做（不弹页面、不用点按钮）。升级那一版第一次打开会多转 20~60 秒，之后照常。你的会话、模型设置、Bot 都在。",
     "**Bot 团队住进手机**：底部导航新增「Bot」—— 建 Bot、建群聊、派活、看它干活，和电脑上同一套界面",
     "修好 13 个问题（这条是总账，逐条见「设置 → 关于 → 更新说明」）：Bot 生成的文件资料库看得到、Bot 页能添加文件、「发给」面板不再只剩图标、Bot 设置页在手机上能用、通往 DSH 设置的入口全关掉、Bot 完全权限不再每次弹批准、Bot 跟得上 App 的模型改动",
     "「+」菜单里那栏「定时任务」改名为「设置」，点进去直接是通用设置页",
     "Bot 页面配色开始跟随 App 的深浅色；「Office 预览不可用…启用文档预览服务」改成「请到资料库查看文件」",
     "模型设置新增「OpenCode Go」；新建 Bot 时讲清是否主 Bot 并可直接选模型",
-    "**全新安装请下完整包**（含运行环境，装完即用；手机没网也能打开）；已装旧版的更新时自动下精简包"
+    "**以后只发完整包**（含运行环境）：不再区分「精简包 / 完整包」，更新也只下这一个 —— 升级时运行环境在本地就能铺好，不用联网另下 34 MB"
   ]
 }

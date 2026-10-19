@@ -1,4 +1,19 @@
 {
+  "正在更新运行环境（一次性，约半分钟）…": {
+    "en": "Updating the runtime (one time, about 30 seconds)…",
+    "ja": "ランタイムを更新しています（1 回だけ・約 30 秒）…",
+    "ko": "런타임을 업데이트하는 중입니다(1회, 약 30초)…"
+  },
+  "正在更新运行环境：{0} / {1} MB": {
+    "en": "Updating the runtime: {0} / {1} MB",
+    "ja": "ランタイムを更新中：{0} / {1} MB",
+    "ko": "런타임 업데이트 중: {0} / {1} MB"
+  },
+  "正在更新运行环境：解开文件（约 2.6 万个）…": {
+    "en": "Updating the runtime: unpacking about 26,000 files…",
+    "ja": "ランタイムを更新中：約 26,000 ファイルを展開しています…",
+    "ko": "런타임 업데이트 중: 약 26,000개 파일을 푸는 중…"
+  },
   "你的会话、模型设置和 Bot 都还在本机 —— 这一步只是把新版的运行环境重新铺一遍，不会清数据。": {
     "en": "Your sessions, model settings and Bots are all still on this device — this step only lays down the new runtime; nothing is erased.",
     "ja": "会話・モデル設定・Bot はすべてこの端末に残っています。この手順は新しいランタイムを展開し直すだけで、データは消えません。",

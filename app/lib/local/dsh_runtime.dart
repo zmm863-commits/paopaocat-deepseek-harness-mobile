@@ -106,6 +106,18 @@ class DshHost {
   static Future<bool> isRuntimeReady() async =>
       await channel.invokeMethod<bool>('isRuntimeReady') ?? false;
 
+  /// **能不能用**：运行环境已经解开（`dsh/lib/bin.js` 在）。
+  ///
+  /// 与 [isRuntimeReady] 的区别（2026-10-19 用户报「装精简包不是应该直接进页面吗」）：
+  /// 后者还要求"内容版本是最新的"，而运行环境**一升版本那个标记就变** → 升级的用户
+  /// 会被拦进准备页，看着像被重装。所以进门只看这个，换新另走 [runtimeCurrent]。
+  static Future<bool> hasRuntime() async =>
+      await channel.invokeMethod<bool>('hasRuntime') ?? false;
+
+  /// **是不是最新版运行环境**（内容版本标记 `.dsh-runtime-<版本>` 在）。
+  static Future<bool> runtimeCurrent() async =>
+      await channel.invokeMethod<bool>('runtimeCurrent') ?? false;
+
   /// 解压随包运行时（幂等：已解压会立即返回）。
   static Future<bool> unpackRuntime() async =>
       await channel.invokeMethod<bool>('unpackRuntime') ?? false;

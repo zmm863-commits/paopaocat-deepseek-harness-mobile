@@ -312,6 +312,12 @@ class MainActivity : FlutterActivity() {
                     "litertlmStats" -> result.success(liteRtLm.statsJson())
                     "getPaths" -> result.success(runtimePaths())
                     "isRuntimeReady" -> result.success(isRuntimeReady())
+                    // ⚠️ 2026-10-19：把「能不能用」和「是不是最新」分开。
+                    // 起因（用户报两次）：运行环境有内容版本，一升版本标记就变 → 升级的用户也会
+                    // 被拦在准备页，看着像"被重装"。正确做法是：**能用就直接进 App**，
+                    // 运行环境要换新就在启动画面里静默做（见 main.dart）。
+                    "hasRuntime" -> result.success(File(dshDir(), "lib/bin.js").exists())
+                    "runtimeCurrent" -> result.success(marker().exists())
                     "unpackRuntime" -> unpackRuntimeAsync(result)
                     // 随包运行环境（完整包）：Dart 侧先问有没有、再决定要不要联网下。
                     "hasRuntimeAsset" -> result.success(hasRuntimeAsset())

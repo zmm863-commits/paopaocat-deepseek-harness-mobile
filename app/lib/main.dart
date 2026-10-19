@@ -16,6 +16,7 @@ import 'local/diagnostics_log.dart';
 import 'data/polli_channel.dart';
 import 'data/zen_channel.dart';
 import 'local/dsh_runtime.dart';
+import 'local/runtime_bootstrap.dart' show ensureRuntimeZip;
 // 「检查更新」：启动后台查一次（结果塞进 AppSettings，设置页自己会读）。
 import 'local/update_checker.dart';
 import 'local/broadcast_feed.dart';
@@ -241,6 +242,9 @@ class _LocalShellState extends State<LocalShell> {
 
   DshRuntime? _runtime;
   bool _ready = false;
+
+  /// 启动画面上的补充说明（运行环境换新时用；不是错误、也不是让人点按钮的页面）。
+  String _bootNote = '';
   bool _loading = true;
   String? _error;
 
@@ -281,6 +285,37 @@ class _LocalShellState extends State<LocalShell> {
     return DshRuntime(paths, apiKey: legacy, apiKeys: env);
   }
 
+  /// 运行环境「能用但不是最新」时的**静默换新**（2026-10-19）。
+  ///
+  /// 为什么必须在 AppShell 之前：解包会整目录覆盖 `files/dsh`，而 ACP / Bot 的 node
+  /// 进程正跑在里面 —— 边跑边换不安全。这里也不需要用户点任何按钮，只是让启动画面
+  /// 多转一会儿；**失败了也不拦人**（旧运行环境照样能用，下次启动再试）。
+  Future<void> _refreshRuntimeQuietly(DshRuntime rt) async {
+    try {
+      setState(() => _bootNote = context.tr('正在更新运行环境（一次性，约半分钟）…'));
+      final r = await ensureRuntimeZip(
+        filesDir: rt.filesDir,
+        onProgress: (pg) {
+          if (!mounted) return;
+          final mb = (pg.received / 1048576).toStringAsFixed(1);
+          final total = pg.total > 0 ? (pg.total / 1048576).toStringAsFixed(1) : '?';
+          setState(() => _bootNote = context.tr('正在更新运行环境：{0} / {1} MB', [mb, total]));
+        },
+      );
+      if (!r.ok) {
+        DiagnosticsLog.add('dsh-boot', '运行环境静默更新：取压缩包失败（继续用旧版）= ${r.errorZh}');
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _bootNote = context.tr('正在更新运行环境：解开文件（约 2.6 万个）…'));
+      final ok = await DshHost.unpackRuntime();
+      DiagnosticsLog.add(
+          'dsh-boot', ok ? '运行环境已静默更新到最新内容版本' : '运行环境静默更新：解包失败（继续用旧版）');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-boot', '运行环境静默更新失败（继续用旧版）：$e');
+    }
+  }
+
   Future<void> _init() async {
     try {
       // 先接上"返回手势/返回键"这条宿主通道（用户第 10 条：边缘侧滑不该一下退出）。
@@ -288,7 +323,12 @@ class _LocalShellState extends State<LocalShell> {
       DshHost.bindBackHandler();
 
       final paths = await DshHost.getPaths();
-      final ready = await DshHost.isRuntimeReady();
+      // ⚠️ 2026-10-19（用户两次反馈）：**进门只看「能不能用」**（运行环境已解开），
+      //    不看「是不是最新」。运行环境有内容版本，一升版本那个标记就变 —— 拿它当门禁，
+      //    升级的人会被拦进准备页，看着像被重装（用户原话：「装精简包不是应该直接进页面吗」）。
+      //    换新改在启动画面里静默做（见下面的 _refreshRuntimeQuietly）。
+      final ready = await DshHost.hasRuntime();
+      final rtCurrent = await DshHost.runtimeCurrent();
 
       // 先载入模型清单。真实来源是设置页写的 `<filesDir>/models.json`
       // （见 data/configured_models.dart）：没配过就是空的，
@@ -448,6 +488,13 @@ class _LocalShellState extends State<LocalShell> {
       }
 
       if (!mounted) return;
+
+      // 能用但不是最新 → 在启动画面里静默换新（不弹页面、不要用户点按钮）。
+      if (ready && !rtCurrent) {
+        await _refreshRuntimeQuietly(runtime);
+        if (!mounted) return;
+      }
+
       setState(() {
         _runtime = runtime;
         _ready = ready;
@@ -598,9 +645,22 @@ class _LocalShellState extends State<LocalShell> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.transparent,
-        body: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(strokeWidth: 2.5),
+              if (_bootNote.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(_bootNote,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12.5, color: DshColors.textDim)),
+              ],
+            ],
+          ),
+        ),
       );
     }
 
