@@ -239,4 +239,4 @@
 ///      能否覆盖安装——Android 只允许装版本码更大的包）。
 library;
 
-const String kAppVersion = '0.77';
+const String kAppVersion = '0.78';
