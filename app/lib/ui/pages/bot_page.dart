@@ -51,6 +51,12 @@ class _BotPageState extends State<BotPage> {
   ///    `calc(var(--bt-set-w) - 198px)`（桌面布局是「198px 页面列表 + 右侧页面」）→
   ///    手机上 342-198 = **144px**，页面被挤爆、标题与右上角关闭按钮叠在一起。
   ///    用户原话：「点 + → 定时任务，弹出的 bot 设置页面几乎无法使用」「顶部按钮重叠」。
+  ///    第二版按用户要求再改：九栏**全部摊成两行**（不要横滑那条杠）；并且给右上角那个
+  ///    `position:absolute;top:12px;right:12px` 的关闭按钮**留出 52px** —— 竖排之后它
+  ///    正好压在导航行右端，这就是「顶部按钮重叠」的真身。
+  /// 1b. **「+」菜单那条「定时任务」改名「设置」，并落到设置页的「通用」**（用户 2026-10-19）：
+  ///    它的 onClick 固定调 `openSettings('schedules')`、是 React 内部绑的，外面改不了 ——
+  ///    所以「改文案 + 拿掉设置页里的『定时任务』一栏 + 万一落到那页就自动点『通用』」三招。
   /// 2. **藏掉并拦住通往 DSH(Harness) 界面的入口**（用户要求：用户改到 DSH 设置会把
   ///    Bot 的模型/插件配置搞乱）。ds-bot 里通往它的显式入口有三处：设置抽屉的
   ///    `Harness 设置`、模型菜单的 `模型和服务商…`、定时任务页的 `打开 Harness 设置`；
@@ -88,8 +94,15 @@ class _BotPageState extends State<BotPage> {
 [role="dialog"] { max-width: 100vw !important; }
 @media (max-width: 720px) {
   .bt-settings { flex-direction: column !important; --bt-set-w: calc(100vw - 16px) !important; --bt-set-h: min(calc(100vh - 24px), 780px) !important; }
-  .bt-settings-nav { width: 100% !important; flex: none !important; flex-direction: row !important; overflow-x: auto !important; overflow-y: hidden !important; border-right: 0 !important; border-bottom: .5px solid var(--bt-line) !important; padding: 8px !important; gap: 6px !important; }
+  /* 九个栏目**全部摊成两行**（用户 2026-10-19：不要顶部那条滑动杠、不要横滑）。
+     右上角要留出 52px 给关闭按钮 —— 它是 position:absolute;top:12px;right:12px，
+     竖排之后正好压在导航行右端（用户报的"按钮重叠"就是它）。 */
+  .bt-settings-nav { width: 100% !important; flex: none !important; flex-direction: row !important; flex-wrap: wrap !important; overflow: visible !important; height: auto !important; border-right: 0 !important; border-bottom: .5px solid var(--bt-line) !important; padding: 10px 52px 10px 10px !important; gap: 6px !important; align-items: center !important; }
   .bt-settings-item { flex: none !important; white-space: nowrap !important; }
+  /* 滑块在换行布局里会飘到错的位置 → 藏掉；选中态改用 item 自己的底色
+     （ds-bot 在 data-glide 时把 item 底色设成透明、靠滑块表示，这里补回来）。 */
+  .bt-settings-nav > .bt-thumb { display: none !important; }
+  .bt-settings-nav[data-glide] .bt-settings-item[aria-current="page"] { background: var(--bt-active) !important; color: var(--bt-ink) !important; }
   .bt-settings-main { width: 100% !important; flex: 1 1 auto !important; min-height: 0 !important; height: auto !important; }
   .bt-settings-head { padding: 10px 56px 4px 16px !important; }
 }
@@ -249,8 +262,63 @@ body { overscroll-behavior-y: contain; }
       }
     }
 
-    // ── ⑥ 扫一遍 + 盯住 DOM（这些元素都是 SPA 按需渲染出来的）─────────────
-    function sweep() { applyTheme(); hideHarness(); fixOfficeHint(); fixAutoHint(); }
+    // ── ⑥ 「+」菜单那条改名为「设置」，并落到设置页的「通用」（用户 2026-10-19）──
+    // ds-bot 里这条菜单项固定调 `openSettings('schedules')` —— 它的 onClick 是 React
+    // 绑在内部组件上的，从外面改不了。所以分三步：
+    //   ① 把菜单文案「定时任务」改成「设置」；
+    //   ② 设置页里**拿掉「定时任务」这一栏**（手机版没开 DSH 的自动化插件，那页是死路）；
+    //   ③ 万一还是落到了定时任务页（比如这次的入口），自动点一下「通用」。
+    function renamePlusMenu() {
+      var labels = document.querySelectorAll('.bt-plus-menu .bt-menu-label, .bt-menu .bt-menu-label');
+      for (var i = 0; i < labels.length; i++) {
+        var t = (labels[i].textContent || '').trim();
+        if (t === '定时任务' || t === 'Scheduled task') {
+          labels[i].textContent = '设置';
+          post('「+」菜单里的「定时任务」已改名为「设置」');
+        }
+      }
+    }
+    function schedulesLabel(el) {
+      var t = (el.textContent || '').trim();
+      return t.indexOf('定时任务') >= 0 || t.indexOf('Scheduled tasks') >= 0;
+    }
+    function dropSchedulesTab() {
+      var items = document.querySelectorAll('.bt-settings-nav .bt-settings-item');
+      for (var i = 0; i < items.length; i++) {
+        if (!schedulesLabel(items[i])) continue;
+        if (items[i].style.display === 'none') continue;
+        items[i].style.display = 'none';
+        post('设置页里已拿掉「定时任务」这一栏');
+      }
+    }
+    function redirectSchedules() {
+      var layer2 = document.querySelector('.bt-settings-layer');
+      if (!layer2) { window.__dshSchedDone = false; return; }
+      if (window.__dshSchedDone) return;
+      var items = document.querySelectorAll('.bt-settings-nav .bt-settings-item');
+      var general = null, onSchedules = false;
+      for (var i = 0; i < items.length; i++) {
+        var t = (items[i].textContent || '').trim();
+        if (t.indexOf('通用') >= 0 || t === 'General') general = items[i];
+        if (schedulesLabel(items[i]) && items[i].getAttribute('aria-current') === 'page') onSchedules = true;
+      }
+      if (onSchedules && general) {
+        window.__dshSchedDone = true;   // 一次只切一次（关掉对话框时复位），别反复点
+        general.click();
+        post('从「+ → 设置」进来时已自动落到「通用」页');
+      }
+    }
+
+    // ── ⑦ 扫一遍 + 盯住 DOM（这些元素都是 SPA 按需渲染出来的）─────────────
+    function sweep() {
+      applyTheme();
+      hideHarness();
+      fixOfficeHint();
+      fixAutoHint();
+      renamePlusMenu();
+      dropSchedulesTab();
+      redirectSchedules();
+    }
     sweep();
     setTimeout(sweep, 900);
     setTimeout(sweep, 2600);
