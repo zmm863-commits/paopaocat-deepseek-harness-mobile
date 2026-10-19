@@ -739,11 +739,43 @@ const LAYOUTS = {
     }
     // ⚠️ 要点页的字号下限是 **12pt**（可读性下限），不是绝对下限 9.5：
     //    内容再多也不缩到看不清 —— 交给 `expandSlides()` 拆续页。
-    const fit = fitBullets(bullets, GRID.contentW, bodyH, {
+    //
+    // 2026-10-20（用户「PPT 做出来非常普通、简陋」）：原来这一页就是**白底黑字一个文本框** ——
+    // 而大多数页都会落到 bullets，于是整份看起来没设计。现在给正文一张**软卡片**
+    // （surface 底 + 细描边 + 圆角）+ 左侧**强调细线**，文字往里收，与标题左侧那根
+    // 强调条是同一套语言。版式逻辑、字体下限、自动拆页都不动。
+    // 2~4 条**并列短句**（全是一级、每条 ≤ 34 个显示宽度）→ 直接排卡片墙。
+    // 这类内容占真实使用的很大比例，排成卡片后整份看起来才不"简陋"。
+    const allTop = bullets.every((b) => b.level === 0);
+    const shortList = bullets.length >= 3 && bullets.length <= 6;
+    const shortText = bullets.every((b) => displayLen(b.text) <= 34);
+    if (allTop && shortList && shortText) {
+      return [...shapes, ...bulletsAsCards(ctx, nextId, bullets, bodyY, bodyH),
+        ...footer(ctx, ctx.pageNo, ctx.totalPages)];
+    }
+    const CARD_PAD = 300000;      // 卡片内边距（EMU，约 24pt）
+    const GUTTER = 150000;        // 卡片内左侧留给强调线的位置
+    const fit = fitBullets(bullets, GRID.contentW - CARD_PAD * 2 - GUTTER, bodyH - CARD_PAD * 2, {
       maxPt: slide.big ? 20 : 18,
       minPt: BULLET_MIN_PT,
     });
-    shapes.push(bulletBlock(ctx, nextId, bullets, fit.size, bodyY, bodyH));
+    shapes.push(shape({
+      id: nextId(), name: '正文卡片',
+      x: GRID.margin, y: bodyY, cx: GRID.contentW, cy: bodyH,
+      fill: theme.surface, line: theme.line, lineWidth: 6350,
+      geom: 'roundRect', adj: 12000,
+    }));
+    shapes.push(shape({
+      id: nextId(), name: '强调线',
+      x: GRID.margin + 140000, y: bodyY + CARD_PAD,
+      cx: 60000, cy: Math.max(240000, bodyH - CARD_PAD * 2),
+      fill: theme.accent, line: null, geom: 'roundRect', adj: 50000,
+    }));
+    shapes.push(bulletBlock(ctx, nextId, bullets, fit.size,
+        bodyY + CARD_PAD, bodyH - CARD_PAD * 2, {
+          x: GRID.margin + CARD_PAD + GUTTER,
+          width: GRID.contentW - CARD_PAD * 2 - GUTTER,
+        }));
     return [...shapes, ...footer(ctx, ctx.pageNo, ctx.totalPages)];
   },
 
@@ -1180,6 +1212,59 @@ function fitSingle(text, widthEmu, maxHeightEmu, maxLines, minPt, startPt = 18) 
 }
 
 /** 项目符号块（要点页与对比 / 图片页共用）。 */
+/** 一串文字的"显示宽度"（中日韩算 2，其余算 1）—— 判断"够不够短"用。 */
+function displayLen(text) {
+  let n = 0;
+  for (const ch of String(text == null ? '' : text).replace(/\*\*/g, '')) {
+    n += ch.codePointAt(0) > 0x2e80 ? 2 : 1;
+  }
+  return n;
+}
+
+/**
+ * 2~4 条**并列短句**排成卡片墙（2026-10-20，用户「PPT 太简陋」）。
+ *
+ * 为什么要有它：真实使用里最常见的一页就是「几条并列的事」，而模型通常写成
+ * `bullets` —— 原来的 bullets 只是**一个文本框**，整页白底黑字，所以整份 PPT 显得简陋。
+ * 这里在 bullets 内部把这类内容排成卡片（和 `cards` 版式同一套几何），
+ * **不改版式契约**：模型仍只需写 `bullets: ['…','…']`。
+ */
+function bulletsAsCards(ctx, nextId, bullets, bodyY, bodyH) {
+  const { theme } = ctx;
+  const shapes = [];
+  const n = bullets.length;
+  const cols = n <= 3 ? n : (n <= 4 ? 2 : 3);
+  const rows = Math.ceil(n / cols);
+  const cellW = (GRID.contentW - (cols - 1) * GRID.gap) / cols;
+  const cellH = (bodyH - (rows - 1) * GRID.gap) / rows;
+  bullets.forEach((b, i) => {
+    const c = i % cols;
+    const r = Math.floor(i / cols);
+    const x = GRID.margin + c * (cellW + GRID.gap);
+    const y = bodyY + r * (cellH + GRID.gap);
+    shapes.push(shape({
+      id: nextId(), name: `并列卡片底 ${i + 1}`,
+      x, y, cx: cellW, cy: cellH,
+      fill: theme.surface, line: theme.line, lineWidth: 0.75,
+      geom: 'roundRect', adj: 8000,
+    }));
+    shapes.push(shape({
+      id: nextId(), name: `并列卡片强调 ${i + 1}`,
+      x: x + 20000, y: y + Math.min(360000, cellH * 0.16), cx: 62000, cy: 260000,
+      fill: theme.accent, line: null,
+    }));
+    const pad = 300000;
+    shapes.push(shape({
+      id: nextId(), name: `并列卡片文字 ${i + 1}`,
+      x: x + pad + 90000, y: y + pad,
+      cx: cellW - pad * 2 - 90000, cy: cellH - pad * 2,
+      text: [{ text: b.text, size: n <= 3 ? 20 : 16, color: theme.ink, bold: true, bullet: false, lineFactor: 1.25 }],
+      anchor: 'ctr',
+    }));
+  });
+  return shapes;
+}
+
 function bulletBlock(ctx, nextId, bullets, size, y, height, o = {}) {
   const { theme } = ctx;
   const x = o.x == null ? GRID.margin : o.x;
