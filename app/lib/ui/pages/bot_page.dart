@@ -217,7 +217,7 @@ body { overscroll-behavior-y: contain; }
 
     // ── ⑤ 两处文案改成实话 ───────────────────────────────────────────────
     var OFFICE_MARK = 'Office 预览不可用';
-    var OFFICE_HINT = 'Bot 页面里看不了这种格式 —— 到 App 底部导航的「资料库」里打开这个文件。';
+    var OFFICE_HINT = '请到资料库查看文件';
     function fixOfficeHint() {
       var els = document.querySelectorAll('span,p,div');
       for (var i = 0; i < els.length; i++) {
