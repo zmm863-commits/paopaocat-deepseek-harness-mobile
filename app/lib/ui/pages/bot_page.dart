@@ -51,10 +51,13 @@ class _BotPageState extends State<BotPage> {
   ///    `calc(var(--bt-set-w) - 198px)`（桌面布局是「198px 页面列表 + 右侧页面」）→
   ///    手机上 342-198 = **144px**，页面被挤爆、标题与右上角关闭按钮叠在一起。
   ///    用户原话：「点 + → 定时任务，弹出的 bot 设置页面几乎无法使用」「顶部按钮重叠」。
-  /// 2. **藏掉并拦住 DSH(Harness) 的设置入口**（用户要求：用户改到 DSH 设置会把 Bot 的
-  ///    模型/插件配置搞乱）。ds-bot 里通往它的一共三处：设置抽屉的 `Harness 设置`、
-  ///    模型菜单的 `模型和服务商…`、定时任务页的 `打开 Harness 设置`。
-  ///    CSS 藏 + **捕获阶段吃掉点击**（双保险）。
+  /// 2. **藏掉并拦住通往 DSH(Harness) 界面的入口**（用户要求：用户改到 DSH 设置会把
+  ///    Bot 的模型/插件配置搞乱）。ds-bot 里通往它的显式入口有三处：设置抽屉的
+  ///    `Harness 设置`、模型菜单的 `模型和服务商…`、定时任务页的 `打开 Harness 设置`；
+  ///    还有一条**后门** —— 账号菜单的 `切换经典 Agent 模式`（`setSurface("agent")`），
+  ///    ds-bot 注释原话是 shell 的设置启动器「comes back in Agent mode」。四条全堵：
+  ///    CSS 藏 + JS 按文案藏（含英文，界面语言不是中文也拦得住）+ **捕获阶段吃掉点击**
+  ///    （`stopPropagation` 之后 React 挂在根节点上的 onClick 收不到，别的路径也走不通）。
   /// 3. **两处文案改成实话**：`Office 预览不可用。…启用文档预览服务。`（DSH 的文件预览
   ///    插件报的）→ 指向 **资料库**（用户要求「产物到资料库查看」）；定时任务页那句
   ///    「去 Harness 设置的插件页启用」→ 说明手机版没开那个插件（按钮被我们藏了，
@@ -161,9 +164,14 @@ body { overscroll-behavior-y: contain; }
     window.__dshAppDark = APP_DARK;
     window.__dshThemePin = applyTheme;
 
-    // ── ④ 藏掉并拦住 DSH(Harness) 的设置入口 ──────────────────────────────
+    // ── ④ 藏掉并拦住通往 DSH(Harness) 的入口 ──────────────────────────────
+    // 三处显式入口 + **一条通往后门的**：账号菜单里的「切换经典 Agent 模式」
+    //（`actions.setSurface("agent")`）。ds-bot 自己的注释写着 shell 的设置启动器
+    // 「comes back in Agent mode」—— 切过去 DSH 的设置入口就又冒出来了，所以这条
+    // 也必须堵（用户的要求是"不要把 DSH 设置开放给用户"）。
     var HARNESS = ['打开 Harness 设置', 'Open Harness settings', 'Harness 设置', 'Harness settings',
-                   '模型和服务商', 'Models and providers'];
+                   '模型和服务商', 'Models and providers',
+                   '切换经典 Agent 模式', 'Switch to classic Agent mode'];
     function harnessEntry(el) {
       if (!el) return false;
       var s = (el.textContent || '').trim();
@@ -179,7 +187,21 @@ body { overscroll-behavior-y: contain; }
         if (!harnessEntry(el)) continue;
         el.style.display = 'none';
         try { el.setAttribute('data-dsh-hidden', '1'); } catch (e) {}
-        post('已隐藏 DSH(Harness) 设置入口：' + (el.textContent || '').trim().slice(0, 24));
+        // 它要是这一组里最后留下的那个（「切换经典 Agent 模式」独占一组），把组前的
+        // 分隔线也收掉，免得菜单底部剩一条光秃秃的横线。
+        try {
+          var prev = el.previousElementSibling;
+          if (prev && (prev.className || '').indexOf('bt-menu-sep') >= 0) {
+            var lonely = true;
+            var sib = el.nextElementSibling;
+            while (sib && (sib.className || '').indexOf('bt-menu-sep') < 0) {
+              if (sib.tagName === 'BUTTON' && sib.style.display !== 'none') { lonely = false; break; }
+              sib = sib.nextElementSibling;
+            }
+            if (lonely) prev.style.display = 'none';
+          }
+        } catch (e) {}
+        post('已隐藏通往 DSH 的入口：' + (el.textContent || '').trim().slice(0, 24));
       }
     }
     // 双保险：即使还有别的路径（菜单/键盘快捷键），点了也不放行 —— 捕获阶段先吃掉
