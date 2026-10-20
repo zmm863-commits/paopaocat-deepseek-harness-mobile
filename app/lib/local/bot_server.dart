@@ -64,6 +64,33 @@ class BotServer {
   /// 已经起着的那个（没有就是 null）。页面据此决定要不要等。
   static BotServer? get current => _current;
 
+  /// 本次 App 生命周期内**固定使用**的端口；0 = 还没挑过。
+  ///
+  /// 为什么不用 `--port 0` 让系统挑：重启会换端口 → WebView 必须整页重载 →
+  /// 用户正在操作的那一页（比如 Bot 设置）会被冲掉，看起来像"一直在重新连接"。
+  /// 固定端口后，重启对页面来说是"服务抖动一下"，ds-bot 自己重连即可。
+  ///
+  /// 为什么是"挑一个空闲端口"而不是写死一个数：写死会跟系统/别的应用撞端口。
+  /// 挑完就记住，重启复用；万一被占用（极少数），重启时再挑一次。
+  static int _pinnedPort = 0;
+
+  /// 挑一个当前空闲的端口（bind 一下再释放）。失败就退回 0（让系统挑）。
+  static Future<int> _pickPort() async {
+    if (_pinnedPort != 0) return _pinnedPort;
+    for (var i = 0; i < 5; i++) {
+      try {
+        final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        final p = s.port;
+        await s.close();
+        _pinnedPort = p;
+        return p;
+      } catch (_) {
+        // 重试几次；实在不行退回系统挑（0）
+      }
+    }
+    return 0;
+  }
+
   static const String profileName = 'bottest';
 
   /// 从种子布置 profile 到 `$DSH_HOME/profiles/bottest`。
@@ -202,6 +229,9 @@ class BotServer {
     if (running != null && running.alive) return running;
     if (running != null) await running.stop();
 
+    // 端口必须在拼 args 之前定好（重启复用同一个，见 [_pinnedPort]）。
+    await _pickPort();
+
     await ensureProfile(runtime);
 
     // ⚠️⚠️ **必须在拼 args 之前**把 overlay 准备好（2026-10-19 修顺序 bug）。
@@ -248,7 +278,12 @@ class BotServer {
       // 下面两个是 web app 的参数。
       // --no-open：手机上不能去拉系统浏览器；--port 0：让系统挑空闲端口。
       '--no-open',
-      '--port', '0',
+      // ⚠️ 2026-10-20 真机：原来固定用 `--port 0`（系统挑）——于是**每次重启都换端口**：
+      //   模型一切换 → 服务重启 → 端口 35575 → 43619 → WebView 整页重载
+      //   → 用户正开着的 Bot 设置页被冲掉，页面上看到的就是「重新连接」。
+      //   改成"这一次 App 生命周期内用同一个端口"：服务重启后端口不变，
+      //   ds-bot 自己会重连，页面状态（打开的设置页、输入框里的字）都还在。
+      '--port', '$_pinnedPort',
     ];
 
     onLog?.call('[dsh-bot] 启动：--profile $profileName --no-open --port 0');

@@ -88,6 +88,17 @@ class _BotPageState extends State<BotPage> {
   ///
   /// `__DSH_APP_DARK__` 是占位符，由 [_webPatchJs] 替换成 `true`/`false`（App 当前是不是
   /// 深色）—— 用占位符替换而不是 Dart 插值，是为了让这段保持 `const` 原始字符串。
+  /// 取一个 URL 的 `scheme://host:port`（取不到就返回空串）。
+  ///
+  /// 为什么需要：Bot 服务的 **token 每次重启都会变**，但页面来自同一个源。
+  /// 判"是不是我们自己的页面"只能比 origin，不能比完整 URL ——
+  /// 比完整 URL 会把"同机不同 token"也拦掉（2026-10-20 真机 bug）。
+  static String _originOf(String url) {
+    final u = Uri.tryParse(url);
+    if (u == null || u.host.isEmpty) return '';
+    return '${u.scheme}://${u.host}:${u.hasPort ? u.port : (u.scheme == 'https' ? 443 : 80)}';
+  }
+
   static const String _webPatchTemplate = r"""
   (function () {
     var APP_DARK = __DSH_APP_DARK__;
@@ -611,8 +622,15 @@ body { overscroll-behavior-y: contain; }
           // 不让 WebView 变成一个"打不开的下载页"。
           // 文件预览的诉求由**资料库**兜住（它本来就带预览，且 107 起已把 Bot 工作区并进来）。
           onNavigationRequest: (NavigationRequest req) {
-            final base = server.url.split('?').first;
-            if (req.url.startsWith(base) || req.url.startsWith('about:') ||
+            // ⚠️ 2026-10-20 真机 bug：这里原来用的是**闭包里捕获的** `server.url`。
+            //    Bot 服务重启换端口后，闭包还指着旧端口 → 新地址（同机、但端口不同）
+            //    被当成"外部链接"拦掉（日志原文：`拦截外部导航：http://127.0.0.1:43619/`），
+            //    页面于是停在一个打不开的状态，用户看到的就是「重新连接」。
+            //    现在每次都读**当前**服务地址；只比 scheme+host+port（token 每次重启都会变）。
+            final live = BotServer.live.value?.url ?? server.url;
+            final base = _originOf(live);
+            final sameOrigin = base.isNotEmpty && _originOf(req.url) == base;
+            if (sameOrigin || req.url.startsWith('about:') ||
                 req.url.startsWith('data:') || req.url.startsWith('blob:')) {
               return NavigationDecision.navigate;
             }
