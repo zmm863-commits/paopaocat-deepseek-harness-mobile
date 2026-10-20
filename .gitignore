@@ -17,6 +17,7 @@ app/android/key.properties
 
 # 构建产物：体积大，不进版本库（交付走文件分发/下载站）
 dist/*.apk
+dist/patches/
 
 # Python 工具的字节码缓存（tools/ 下是开发用脚本，不随 App 分发）
 __pycache__/
