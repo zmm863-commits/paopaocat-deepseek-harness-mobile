@@ -34,6 +34,7 @@ import 'release_notes_page.dart';
 import '../../local/update_checker.dart';
 // 更新包下载（断点续传 + sha256 校验 + 原子落盘）与「交给系统安装」那一步。
 import '../../local/apk_downloader.dart';
+import '../../local/delta_patch.dart';
 import '../../local/apk_installer.dart';
 // 更新源地址常量（默认那两条 + Release 页）。地址口径写在那个文件头部。
 import '../../local/update_source.dart';
@@ -3261,6 +3262,12 @@ class _UpdateSectionState extends State<_UpdateSection> {
   InstallEnv? _env;
   String? _ioNotice;
 
+  /// 这次能用的**差分补丁**（null = 只能用整包）。界面据此显示"增量 5.2 MB"。
+  ///
+  /// 为什么在 `_check()` 之后异步探一次、而不是渲染时算：算它要先哈希已装的 APK
+  /// （~99 MB，1~2 秒），不能放在 build 里。
+  DeltaPatchRef? _deltaRef;
+
   /// 这一次下的是哪个包（精简 / 完整）—— 界面拿它显示大小与"含不含运行环境"。
   /// 下载结束后仍留着，好让"已下载"那一段也能说清下的是哪一个。
   UpdateVariant? _variant;
@@ -3296,6 +3303,8 @@ class _UpdateSectionState extends State<_UpdateSection> {
       customSource: widget.settings.updateSource,
       bypassCache: true,
     );
+    // 顺带探一次「这次能不能走增量」（失败静默：没有补丁就整包，不影响主流程）。
+    if (mounted && r.info != null) unawaited(_probeDelta(r.info!));
     // 成败都记时间戳：那行字说的是"什么时候**试过**"，不是"什么时候成功过"。
     await widget.settings.noteUpdateChecked();
     // 存进内存槽：这样切走再回设置页，"有没有新版"还在（不必重查）。
@@ -3357,6 +3366,26 @@ class _UpdateSectionState extends State<_UpdateSection> {
     return 'paopaocat-update-arm64-v8a.apk';
   }
 
+  /// 探一次：清单里有匹配"当前已装包"的补丁吗？（只用于界面提示，不改变主流程）
+  Future<void> _probeDelta(UpdateInfo info) async {
+    if (info.patches.isEmpty) {
+      if (mounted && _deltaRef != null) setState(() => _deltaRef = null);
+      return;
+    }
+    try {
+      final path = await DshHost.apkPath();
+      if (path.isEmpty) return;
+      final sha = _installedApkSha ?? await DeltaPatch.sha256OfFile(File(path));
+      _installedApkSha = sha;
+      final ref = info.patchFor(sha);
+      if (mounted && ref?.sha256 != _deltaRef?.sha256) {
+        setState(() => _deltaRef = ref);
+      }
+    } catch (e) {
+      DiagnosticsLog.add('dsh-update', '探增量失败（不影响更新）：$e');
+    }
+  }
+
   Future<void> _download(UpdateInfo info) async {
     if (_phase == _UpdPhase.downloading) return;
     // 挑包：0.78 起**只发完整包**（用户 2026-10-19 决定），所以这里恒定拿到完整包；
@@ -3375,6 +3404,28 @@ class _UpdateSectionState extends State<_UpdateSection> {
     });
     final downloader = ApkDownloader(dir: dir);
     try {
+      // ── ① 先试**增量更新**（2026-10-21 新增）────────────────────────────
+      // 规则：清单给了补丁 + 已装包哈希能对上 → 下几 MB 补丁本地拼出新包；
+      // 任何一步不成立都**静默回退整包**（绝不能让"增量失败"变成"更新失败"）。
+      final delta = await _tryDeltaUpdate(
+        info: info,
+        downloader: downloader,
+        dir: dir,
+        token: token,
+      );
+      if (delta != null) {
+        if (!mounted) return;
+        setState(() {
+          _phase = _UpdPhase.downloaded;
+          _apkPath = delta.path;
+          _progress = null;
+          _cancel = null;
+        });
+        await _checkSignature(delta.path);
+        return;
+      }
+
+      // ── ② 整包 ────────────────────────────────────────────────────────
       final res = await downloader.download(
         url: variant.url,
         fileName: _fileNameFor(variant.url),
@@ -3422,6 +3473,85 @@ class _UpdateSectionState extends State<_UpdateSection> {
       });
     } finally {
       downloader.close();
+    }
+  }
+
+  /// 已装 APK 的 sha256（算一次就够：同一次运行里它不会变）。
+  static String? _installedApkSha;
+
+  /// 试一次差分更新。成功返回拼好的新包；**任何一步不成立都返回 null**（调用方走整包）。
+  ///
+  /// 为什么把"失败"设计成返回值而不是异常：增量只是**省流量**，它的失败不该影响
+  /// "能不能更新"。所以这里把异常都吞掉、写进诊断日志，让调用方无脑回退。
+  Future<File?> _tryDeltaUpdate({
+    required UpdateInfo info,
+    required ApkDownloader downloader,
+    required String dir,
+    required ApkDownloadCancelToken token,
+  }) async {
+    if (info.patches.isEmpty) return null;
+    final sw = Stopwatch()..start();
+    File? patchFile;
+    try {
+      final apkPath = await DshHost.apkPath();
+      if (apkPath.isEmpty) {
+        DiagnosticsLog.add('dsh-update', '增量：拿不到已装包路径 → 走整包');
+        return null;
+      }
+      var sha = _installedApkSha;
+      if (sha == null) {
+        // 只算一次（~99 MB，约 1~2 秒），之后同一次运行里直接用。
+        sha = await DeltaPatch.sha256OfFile(File(apkPath));
+        _installedApkSha = sha;
+      }
+      final ref = info.patchFor(sha);
+      if (ref == null) {
+        DiagnosticsLog.add('dsh-update',
+            '增量：清单里没有匹配当前包（${sha.substring(0, 12)}…）的补丁 → 走整包');
+        return null;
+      }
+
+      // 下补丁（复用整包那套下载器：进度、断点、sha 校验都一样）
+      final res = await downloader.download(
+        url: ref.url,
+        fileName: 'delta-${ref.fromSha256.substring(0, 8)}.patch',
+        expectSha256: ref.sha256,
+        expectBytes: ref.size,
+        cancel: token,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _progress = p);
+        },
+      );
+      patchFile = File(res.path);
+
+      // 拼装（进度另算：阶段从"下载"切到"拼装"）
+      final out = File('$dir/${_fileNameFor(info.url)}');
+      if (!mounted) return null;
+      setState(() {
+        _progress = null;
+        _ioNotice = context.tr('正在把补丁拼成新安装包（约几秒）…');
+      });
+      final head = await DeltaPatch.apply(
+        oldApk: File(apkPath),
+        patchFile: patchFile,
+        outApk: out,
+      );
+      DiagnosticsLog.add('dsh-update',
+          '增量更新成功：补丁 ${(await patchFile.length()) ~/ 1024} KB → 新包 ${head.newSize ~/ 1024} KB'
+          '（${sw.elapsedMilliseconds}ms，省下 ${(head.newSize - (await patchFile.length())) ~/ 1048576} MB）');
+      if (mounted) setState(() => _ioNotice = null);
+      return out;
+    } on ApkDownloadCancelled {
+      rethrow; // 用户取消 ≠ 回退，如实告诉界面
+    } catch (e) {
+      // 增量失败 → 记一笔、清理，然后**静默回退整包**。
+      DiagnosticsLog.add('dsh-update', '增量更新失败（回退整包）：$e');
+      try {
+        if (patchFile != null && await patchFile.exists()) await patchFile.delete();
+      } catch (_) {}
+      if (mounted) setState(() => _ioNotice = null);
+      return null;
     }
   }
 
@@ -3602,6 +3732,8 @@ class _UpdateSectionState extends State<_UpdateSection> {
       if (info.notes.isNotEmpty) context.tr('{0} 条说明', ['${info.notes.length}']),
       // 2026-10-20（0.78）：完整包约 100 MB —— 直接把"建议连 Wi-Fi"写在卡上，
       // 用户不用自己换算流量（这也是"差分更新先不做"的低配替代）。
+      // 有匹配的补丁就告诉用户「这次只要几 MB」——这正是差分更新的用户价值。
+      if (_deltaRef?.size != null) context.tr('增量 {0}', [formatBytes(_deltaRef!.size!)]),
       if ((info.size ?? 0) > 50 * 1024 * 1024) context.tr('建议连 Wi-Fi'),
     ];
     return Container(

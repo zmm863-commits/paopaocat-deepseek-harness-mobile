@@ -59,6 +59,24 @@ class UpdateManifestError implements Exception {
 ///
 /// 字段与 `update.json` 一一对应；只有 [version] 和 [url] 是必需的 ——
 /// 少了 `size`/`sha256` 只影响"能不能精确显示与校验"，不该让整次检查失败。
+/// 一条**差分补丁**的引用（清单里的 `patches[]` 一项）。
+///
+/// `fromSha256` 是这个补丁**认**的旧包哈希 —— App 先算自己装着的那个 APK 的哈希，
+/// 命中才用补丁；不命中（测试包、被改过、或我们没留这个基准）→ 直接下整包。
+class DeltaPatchRef {
+  const DeltaPatchRef({
+    required this.fromSha256,
+    required this.url,
+    required this.sha256,
+    this.size,
+  });
+
+  final String fromSha256;
+  final String url;
+  final String sha256;
+  final int? size;
+}
+
 /// 这次更新该下**哪个包**（[UpdateInfo.pickVariant] 的结果）。
 ///
 /// 有它之后，"下哪个包"只在**一处**决定 —— 界面不自己拼 URL、也不自己猜大小，
@@ -86,6 +104,7 @@ class UpdateInfo {
   const UpdateInfo({
     required this.version,
     required this.url,
+    this.patches = const <DeltaPatchRef>[],
     this.urlFull,
     this.sizeFull,
     this.sha256Full,
@@ -108,6 +127,9 @@ class UpdateInfo {
   ///
   /// 为什么要有它：精简包在**没有运行时**的机器上连界面都进不去 ——
   /// 所以"新装 / 清了数据"这种情况必须拿完整包，不能只给精简包。
+  /// 差分补丁列表（可以为空 = 只能用整包）。按旧包哈希挑，命中哪个用哪个。
+  final List<DeltaPatchRef> patches;
+
   final String? urlFull;
 
   /// 完整包的大小与哈希（显示与校验用；与 [size]/[sha256] 各管一个包）。
@@ -166,6 +188,7 @@ class UpdateInfo {
     return UpdateInfo(
       version: version,
       url: url,
+      patches: _parsePatches(decoded['patches']),
       urlFull: _optString(decoded, 'urlFull'),
       sizeFull: _optInt(decoded, 'sizeFull'),
       sha256Full: _optString(decoded, 'sha256Full')?.toLowerCase(),
@@ -198,6 +221,37 @@ class UpdateInfo {
       );
     }
     return UpdateVariant(url: url, size: size, sha256: sha256, includesRuntime: false);
+  }
+
+  /// 解析 `patches[]`。**容错**：任何一项不合规就跳过它（宁可下整包，也不要用坏补丁）。
+  static List<DeltaPatchRef> _parsePatches(Object? raw) {
+    if (raw is! List) return const <DeltaPatchRef>[];
+    final out = <DeltaPatchRef>[];
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final from = _optString(e.cast<Object?, Object?>(), 'fromSha256');
+      final url = _optString(e.cast<Object?, Object?>(), 'url');
+      final sha = _optString(e.cast<Object?, Object?>(), 'sha256');
+      if (from == null || url == null || sha == null) continue;
+      if (from.length != 64 || sha.length != 64) continue;
+      out.add(DeltaPatchRef(
+        fromSha256: from.toLowerCase(),
+        url: url,
+        sha256: sha.toLowerCase(),
+        size: _optInt(e.cast<Object?, Object?>(), 'size'),
+      ));
+    }
+    return out;
+  }
+
+  /// 按「已装包的哈希」挑一个补丁；挑不到返回 null。
+  DeltaPatchRef? patchFor(String installedSha256) {
+    final want = installedSha256.trim().toLowerCase();
+    if (want.isEmpty) return null;
+    for (final p in patches) {
+      if (p.fromSha256 == want) return p;
+    }
+    return null;
   }
 
   static String _requireString(Map<Object?, Object?> m, String key) {

@@ -127,6 +127,13 @@ class DshHost {
   static Future<bool> moveToBackground() async =>
       await channel.invokeMethod<bool>('moveToBackground') ?? false;
 
+  /// **手机里装着的那个 APK 的路径**（差分更新的基准）。
+  ///
+  /// 为什么必须问原生：`applicationInfo.sourceDir` 才是系统记录的真实位置，
+  /// 自己按包名拼路径在 split/多用户/系统优化过的安装方式下都会错。
+  static Future<String> apkPath() async =>
+      await channel.invokeMethod<String>('apkPath') ?? '';
+
   /// 解压随包运行时（幂等：已解压会立即返回）。
   static Future<bool> unpackRuntime() async =>
       await channel.invokeMethod<bool>('unpackRuntime') ?? false;

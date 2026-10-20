@@ -322,6 +322,9 @@ class MainActivity : FlutterActivity() {
                     // 还退不掉（用户只能清退 App）。原生 onBackPressed 那条走的是 `moveTaskToBack(true)`
                     // （退到后台）。这里把同一条动作暴露给 Dart，**两条路彻底统一**。
                     "moveToBackground" -> result.success(moveTaskToBack(true))
+                    // 2026-10-21：差分更新要用「手机里装着的那份 APK 本身」当基准。
+                    // applicationInfo.sourceDir 是它唯一的可靠来源（不要自己拼路径）。
+                    "apkPath" -> result.success(applicationInfo.sourceDir)
                     "hasRuntime" -> result.success(File(dshDir(), "lib/bin.js").exists())
                     "runtimeCurrent" -> result.success(marker().exists())
                     "unpackRuntime" -> unpackRuntimeAsync(result)

@@ -1,4 +1,14 @@
 {
+  "增量 {0}": {
+    "en": "Delta {0}",
+    "ja": "差分 {0}",
+    "ko": "델타 {0}"
+  },
+  "正在把补丁拼成新安装包（约几秒）…": {
+    "en": "Assembling the new package from the patch (a few seconds)…",
+    "ja": "パッチから新しいパッケージを組み立てています（数秒）…",
+    "ko": "패치로 새 패키지를 조립하는 중입니다(몇 초)…"
+  },
   "关掉后只点底部标签切换 —— 在 Bot 页里不会误触": {
     "en": "Off: switch tabs with the bottom bar only — no accidental swipes in the Bot page",
     "ja": "オフ：下のタブでのみ切り替え。Bot ページで誤ってスワイプしません",
