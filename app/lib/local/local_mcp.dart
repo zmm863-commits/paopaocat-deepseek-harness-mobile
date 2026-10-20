@@ -55,6 +55,9 @@ class LocalMcp {
   /// 去探活太贵；而这个服务能不能起来在一次 App 生命周期内基本不会变。
   static bool? _probeOk;
 
+  /// 诊断探针是否已经跑过（每个进程只跑一次，别拖慢后面每次建会话）。
+  static bool _diagnosed = false;
+
   /// **挂之前先探活**：真的 spawn 一次 `libnode.so mcp-office.mjs`，发 MCP 的
   /// `initialize` + `tools/list`，5 秒内拿到带 `"tools"` 的回包才算能用。
   ///
@@ -78,9 +81,28 @@ class LocalMcp {
     };
 
     Process? proc;
+    final sw = Stopwatch()..start();
     try {
-      proc = await Process.start(command, args, environment: env);
+      // ⚠️ 必须跟 `acp_client` 那次 spawn **一模一样**（2026-10-20 真机第二次教训）：
+      //    ACP 用的是 `includeParentEnvironment: true` + 一个可写的 workingDirectory，
+      //    而第一版探活只给了白名单 env、也没设 cwd → 真机上「6s 内 tools/list 没应答」。
+      //    node 在 Android 上起来需要父进程里的一些东西（库路径、系统变量），
+      //    白名单只够"给 MCP 用"，不够"把 node 拉起来"。
+      // ⚠️ 这里**刻意不加** `includeParentEnvironment`：探活必须与运行时真正用的
+      //    环境（白名单）**完全一致**，否则"探活通过"就是自欺 —— 运行时那边照样挂。
+      //    缺的系统变量应该补进 [_envEntries] 的白名单里（见那里）。
+      proc = await Process.start(
+        command,
+        args,
+        environment: env,
+        workingDirectory: runtime.filesDir,
+      );
       final stderrBuf = StringBuffer();
+      // 进程提前退出（ENOENT/EACCES/import 失败）要能立刻知道，别干等超时。
+      final exited = Completer<int>();
+      proc.exitCode.then((c) {
+        if (!exited.isCompleted) exited.complete(c);
+      });
       proc.stderr.transform(utf8.decoder).listen((chunk) {
         // 只留前 800 字符：够看 Node 的报错头（ERR_MODULE_NOT_FOUND / EACCES 之类），
         // 又不至于让日志文件被刷爆。
@@ -114,7 +136,7 @@ class LocalMcp {
           final result = msg['result'];
           final tools = result is Map ? result['tools'] : null;
           if (tools is List) {
-            DiagnosticsLog.add('dsh-mcp', '探活通过：$serverName 可用（${tools.length} 个工具）');
+            DiagnosticsLog.add('dsh-mcp', '探活通过：$serverName 可用（${tools.length} 个工具，${sw.elapsedMilliseconds}ms）');
             completer.complete(true);
           } else {
             DiagnosticsLog.add('dsh-mcp', '探活失败（tools/list 没有 tools 数组）：$line');
@@ -125,17 +147,33 @@ class LocalMcp {
           if (stderrBuf.length < 800) stderrBuf.write('[stdout] $line; ');
         }
       });
-      final ok = await completer.future.timeout(
-        const Duration(seconds: 6),
+      // 谁先来算谁：正常应答 / 进程提前退出 / 超时。
+      final ok = await Future.any<bool>(<Future<bool>>[
+        completer.future,
+        exited.future.then((code) {
+          if (!completer.isCompleted) {
+            DiagnosticsLog.add('dsh-mcp', '探活失败：node 提前退出 exit=$code'
+                '${stderrBuf.isEmpty ? '' : ' | stderr=${stderrBuf.toString().trim()}'}');
+            completer.complete(false);
+          }
+          return false;
+        }),
+      ]).timeout(
+        const Duration(seconds: 12),
         onTimeout: () {
+          // ⚠️ 超时也要带 stderr —— 第一版这里漏了，结果真机上什么都看不到。
           DiagnosticsLog.add('dsh-mcp',
-              '探活超时（6s 内 tools/list 没应答）'
+              '探活超时（12s 内 tools/list 没应答，已用 ${sw.elapsedMilliseconds}ms）'
               '${stderrBuf.isEmpty ? '' : ' | stderr=${stderrBuf.toString().trim()}'}');
           return false;
         },
       );
       await sub.cancel();
       _probeOk = ok;
+      if (!ok && !_diagnosed) {
+        _diagnosed = true;
+        unawaited(diagnose(runtime: runtime));
+      }
       return ok;
     } on TimeoutException {
       // 超时往往意味着进程起来了但卡住（例如 import 挂在一个不存在的模块上不会卡，
@@ -151,6 +189,55 @@ class LocalMcp {
       try {
         proc?.kill();
       } catch (_) {}
+    }
+  }
+
+  /// **诊断用**：主探活失败时，再用「带父环境」的方式跑一次，**只记结果、绝不用于挂载**。
+  ///
+  /// 为什么要它：主探活与运行时用同一份白名单 env（这样结论才可信），
+  /// 但一旦失败，我们就分不清是"缺环境变量"还是"脚本/权限问题"。
+  /// 这个诊断跑一次、把两种结论都写进日志，下次就能直接对着日志改，不用再猜一轮。
+  static Future<void> diagnose({required DshRuntime runtime}) async {
+    try {
+      final servers = mcpServers(runtime: runtime);
+      if (servers.isEmpty) return;
+      final cfg = servers.first;
+      final env = <String, String>{
+        for (final e in (cfg['env'] as List<Object?>))
+          (e as Map)['name'] as String: e['value'] as String,
+      };
+      final proc = await Process.start(
+        cfg['command'] as String,
+        (cfg['args'] as List<Object?>).cast<String>(),
+        environment: env,
+        includeParentEnvironment: true, // ← 只在诊断里开
+        workingDirectory: runtime.filesDir,
+      );
+      final err = StringBuffer();
+      proc.stderr.transform(utf8.decoder).listen((c) {
+        if (err.length < 600) err.write(c);
+      });
+      proc.stdin.write('{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n');
+      await proc.stdin.flush();
+      var got = false;
+      final sub = proc.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((l) {
+        if (l.contains('"result"')) got = true;
+      });
+      await Future<void>.delayed(const Duration(seconds: 6));
+      await sub.cancel();
+      try {
+        proc.kill();
+      } catch (_) {}
+      DiagnosticsLog.add('dsh-mcp',
+          got
+              ? '诊断：带父环境能起来 → 说明缺的是环境变量（白名单还要补）'
+              : '诊断：带父环境也起不来 → 不是环境问题'
+                  '${err.isEmpty ? '' : ' | stderr=${err.toString().trim()}'}');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-mcp', '诊断探针本身失败：$e');
     }
   }
 
@@ -193,6 +280,25 @@ class LocalMcp {
       {'name': 'DSH_ANDROID_TOOLBOX', 'value': runtime.toolboxDir},
       {'name': 'DSH_ANDROID_TMPDIR', 'value': '${runtime.filesDir}/tmp'},
     ];
+
+    // 2026-10-20 真机第二次教训：只给上面那 7 项时，探活「12s 内 tools/list 没应答」。
+    // node 在 Android 上要起来，除了 LD_LIBRARY_PATH 还需要几个**系统级**变量
+    // （Android 运行时会注入它们，但白名单把这层抹掉了）。
+    // 这里从 App 自己的环境里**按名字**挑一批安全的补进去 ——
+    // 规则写死：只认白名单里的名字，绝不带任何 `*_API_KEY` / `*_TOKEN` / `*_SECRET`。
+    const safeNames = <String>{
+      'ANDROID_ROOT', 'ANDROID_DATA', 'ANDROID_STORAGE', 'ANDROID_ASSETS',
+      'ANDROID_ART_ROOT', 'ANDROID_I18N_ROOT', 'ANDROID_TZDATA_ROOT',
+      'BOOTCLASSPATH', 'SYSTEMSERVERCLASSPATH',
+      'LANG', 'LC_ALL', 'TZ',
+    };
+    final have = entries.map((e) => e['name']).toSet();
+    for (final name in safeNames) {
+      if (have.contains(name)) continue;
+      final v = Platform.environment[name];
+      if (v == null || v.isEmpty) continue;
+      entries.add({'name': name, 'value': v});
+    }
     return entries;
   }
 }
