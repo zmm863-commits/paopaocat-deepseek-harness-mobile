@@ -351,6 +351,63 @@ class MainActivity : FlutterActivity() {
                         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         result.success(nm.areNotificationsEnabled())
                     }
+                    // ---- 系统日历：定时任务 → 系统日历事件（见 SystemCalendar.kt）----
+                    // 现状：能不能写 / 有没有可写日历。
+                    "calendarStatus" -> {
+                        val canWrite = SystemCalendar.hasPermission(this, true)
+                        result.success(
+                            mapOf(
+                                "read" to SystemCalendar.hasPermission(this, false),
+                                "write" to canWrite,
+                                "writableCalendar" to
+                                    (canWrite && SystemCalendar.writableCalendarId(this) != null)
+                            )
+                        )
+                    }
+                    // 写（或更新）一条事件。返回 {ok, eventId, reason}。
+                    // reason: no_permission（没授权）/ no_calendar（没有可写日历）。
+                    "calendarWriteEvent" -> {
+                        if (!SystemCalendar.hasPermission(this, true)) {
+                            result.success(mapOf("ok" to false, "reason" to "no_permission"))
+                        } else {
+                            val id = call.argument<Number>("eventId")?.toLong()
+                            val newId = SystemCalendar.writeEvent(
+                                this,
+                                id,
+                                call.argument<String>("title") ?: "",
+                                call.argument<String>("description") ?: "",
+                                call.argument<Number>("start")?.toLong() ?: 0L,
+                                call.argument<Int>("durationMinutes")
+                                    ?: SystemCalendar.DEFAULT_DURATION_MINUTES,
+                                call.argument<String>("rrule"),
+                                call.argument<Int>("reminderMinutes") ?: 0,
+                            )
+                            if (newId == null) {
+                                result.success(mapOf("ok" to false, "reason" to "no_calendar"))
+                            } else {
+                                result.success(mapOf("ok" to true, "eventId" to newId))
+                            }
+                        }
+                    }
+                    // 删掉我们自己写的那条事件。
+                    "calendarRemoveEvent" -> {
+                        val id = call.argument<Number>("eventId")?.toLong()
+                        result.success(
+                            mapOf("ok" to (id != null && SystemCalendar.removeEvent(this, id)))
+                        )
+                    }
+                    // 读未来一段时间的日历事件（要 READ 权限）。
+                    "calendarListUpcoming" -> {
+                        result.success(
+                            SystemCalendar.listUpcoming(
+                                this,
+                                call.argument<Number>("from")?.toLong()
+                                    ?: System.currentTimeMillis(),
+                                call.argument<Int>("days") ?: 7,
+                                call.argument<Int>("limit") ?: 50,
+                            )
+                        )
+                    }
                     // ---- 附件与语音（全部走系统 Intent，零第三方依赖）----
                     // 返回：选中的文件**绝对路径**（拍照返回照片路径）；取消返回 null。
                     "pickFile" -> launchPicker(result, "file")
@@ -1062,6 +1119,12 @@ class MainActivity : FlutterActivity() {
             ),
             "photos" to photos,
             "notifications" to notif,
+            // 日历：定时任务要写进系统日历（到点由系统自己响）。
+            // 读权限一并申请（读出来的事件可以当"资料"喂给模型）。
+            "calendar" to listOf(
+                Manifest.permission.READ_CALENDAR,
+                Manifest.permission.WRITE_CALENDAR,
+            ),
         )
     }
 

@@ -93,6 +93,7 @@ class Schedule {
     this.lastOk,
     this.nextRunAt,
     this.lastSummary,
+    this.calendarEventId,
   }) : createdAt = createdAt ?? DateTime.now();
 
   final String id;
@@ -110,6 +111,14 @@ class Schedule {
   bool? lastOk;
   DateTime? nextRunAt;
   String? lastSummary;
+
+  /// 这条任务在**系统日历**里的事件 id（见 `local/system_calendar.dart`）。
+  ///
+  /// 记它是为了两件事：① 下次同步时**更新**同一条事件，而不是每次新建一条
+  /// （新建会在用户的日历里堆出一串重复项）；② 任务被删/停用时能把它撤掉。
+  ///
+  /// null = 还没写进日历（或者用户没授权 / 设备上没有可写日历）。
+  int? calendarEventId;
 
   /// 中文描述，如「每个工作日 08:00」
   String get ruleLabel {
@@ -153,6 +162,7 @@ class Schedule {
         'lastOk': lastOk,
         'nextRunAt': nextRunAt?.toIso8601String(),
         'lastSummary': lastSummary,
+        'calendarEventId': calendarEventId,
       };
 
   static Schedule fromJson(Map<String, dynamic> j) => Schedule(
@@ -174,6 +184,7 @@ class Schedule {
         lastOk: j['lastOk'] as bool?,
         nextRunAt: DateTime.tryParse(j['nextRunAt'] as String? ?? ''),
         lastSummary: j['lastSummary'] as String?,
+        calendarEventId: (j['calendarEventId'] as num?)?.toInt(),
       );
 }
 
@@ -191,11 +202,19 @@ class ScheduleStore extends ChangeNotifier {
   bool _loaded = false;
   String? _error;
 
+  /// 要不要把任务**同步到系统日历**（见 `local/system_calendar.dart`）。
+  ///
+  /// 默认关着：往用户的日历里写东西要**用户自己点头**，不能默认就写。
+  bool _calendarSync = false;
+
   List<Schedule> get schedules => List<Schedule>.unmodifiable(_schedules);
   List<ScheduleRun> get runs => List<ScheduleRun>.unmodifiable(_runs);
   bool get loaded => _loaded;
   String? get error => _error;
   int get enabledCount => _schedules.where((s) => s.enabled).length;
+
+  /// 是否开着「同步到系统日历」。
+  bool get calendarSync => _calendarSync;
 
   File get _file => File('$filesDir/schedules.json');
 
@@ -219,6 +238,7 @@ class ScheduleStore extends ChangeNotifier {
                 .map((e) => ScheduleRun.fromJson(Map<String, dynamic>.from(e)))
                 .toList();
           }
+          _calendarSync = raw['calendarSync'] == true;
         }
         _error = null;
       }
@@ -238,6 +258,7 @@ class ScheduleStore extends ChangeNotifier {
       final payload = <String, dynamic>{
         'schedules': _schedules.map((s) => s.toJson()).toList(),
         'runs': _runs.map((r) => r.toJson()).toList(),
+        'calendarSync': _calendarSync,
       };
       await writeStringAtomic(_file, jsonEncode(payload));
     } catch (e) {
@@ -298,6 +319,25 @@ class ScheduleStore extends ChangeNotifier {
 
   Future<void> clearRuns() async {
     _runs = <ScheduleRun>[];
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 记下这条任务在系统日历里的事件 id。
+  ///
+  /// ⚠️ **刻意不 `notifyListeners()`**：同步流程是
+  /// 「同步 → 落盘事件 id → 又触发一次同步 → …」，
+  /// 通知一次就会自激成死循环。所以这里只落盘。
+  Future<void> setCalendarEventId(Schedule s, int? id) async {
+    if (s.calendarEventId == id) return;
+    s.calendarEventId = id;
+    await _persist();
+  }
+
+  /// 开关「同步到系统日历」。
+  Future<void> setCalendarSync(bool on) async {
+    if (_calendarSync == on) return;
+    _calendarSync = on;
     await _persist();
     notifyListeners();
   }

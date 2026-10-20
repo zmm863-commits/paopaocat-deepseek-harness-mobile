@@ -15,6 +15,7 @@ import '../local/local_model_server.dart';
 import '../local/rotation_proxy.dart';
 import '../local/schedule_runner.dart';
 import '../local/session_index.dart';
+import '../local/system_calendar.dart';
 import '../state/session_registry.dart';
 import '../state/app_settings.dart';
 import '../state/model_store.dart';
@@ -365,6 +366,8 @@ class _AppShellState extends State<AppShell> {
     _schedules.load().then((_) async {
       await _runner.start();
       await _syncSchedulerService();
+      // 启动时也同步一次：用户昨天开过开关、今天才装回 App，日历里那条还在。
+      await _syncSystemCalendar();
     });
 
     // 导航恢复（上次的 Tab / 取图回来该落哪页）**每个进程只做一次**。
@@ -432,7 +435,45 @@ class _AppShellState extends State<AppShell> {
     //    本地会话这个页面」—— 每一次调度变动都重新推一次页。
     //    现在这两件事挪到 [_restoreNavOnce]（**每个进程只做一次**，见 initState）。
     _syncSchedulerService();
+    // 任务变了 → 系统日历里那条也得跟着变（见 [_syncSystemCalendar]）。
+    _syncSystemCalendar();
     if (mounted) setState(() {});
+  }
+
+  /// 把定时任务同步进**系统日历**（见 `local/system_calendar.dart`）。
+  ///
+  /// 为什么放在这里而不是定时任务页里：任务的增删改在哪儿都能发生
+  /// （新建/编辑/开关），同步必须**全局一致**。
+  ///
+  /// 失败不抛：没授权 / 设备上没有可写的日历都是**环境事实**，
+  /// 不该让界面崩，也不该假装同步成功。
+  Future<void> _syncSystemCalendar() async {
+    final store = _schedules;
+    final plan = planCalendarSync(store.schedules, enabled: store.calendarSync);
+    if (plan.isEmpty) return;
+
+    final status = await SystemCalendar.status();
+    if (!status.canWrite) {
+      // 没授权 → 什么都不做。**特别是不清掉记着的事件 id**：
+      // 万一用户之前授权过、后来在系统里撤销了，我们还欠着一条要撤的事件。
+      debugPrint('[dsh-nav] 同步系统日历跳过：没有日历写入权限');
+      return;
+    }
+    for (final id in plan.removeEventIds) {
+      final ok = await SystemCalendar.removeTask(id);
+      if (!ok) continue; // 没删掉就还留着 id，下次再试
+      for (final s in store.schedules) {
+        if (s.calendarEventId == id) await store.setCalendarEventId(s, null);
+      }
+    }
+    for (final s in plan.write) {
+      final r = await SystemCalendar.syncTask(s);
+      if (r.ok && r.eventId != null) {
+        await store.setCalendarEventId(s, r.eventId);
+      } else {
+        debugPrint('[dsh-nav] 同步任务「${s.name}」到系统日历失败：${r.reason}');
+      }
+    }
   }
 
   /// 冷启动/进程重建时**只做一次**的导航恢复。

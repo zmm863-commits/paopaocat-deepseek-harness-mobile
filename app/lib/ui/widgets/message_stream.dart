@@ -8,6 +8,8 @@ import '../theme/dsh_tokens.dart';
 import 'common.dart';
 
 import '../../i18n/dsh_i18n.dart';
+import '../cards/card_renderer.dart';
+import '../cards/card_schema.dart';
 
 enum ChatRole { user, assistant, thought, tool }
 
@@ -24,11 +26,23 @@ class ChatMsg {
     this.toolCommand,
     this.toolStatus,
     this.toolOutput,
+    this.startedAt,
+    this.endedAt,
   });
 
   String text;
   final ChatRole role;
   final bool failed;
+
+  /// 思考块**开始**的时刻（只有 thought 消息有值）。
+  ///
+  /// 用来在回合结束后给一句「思考了 N 秒」（见 [_ThoughtRow]）。
+  /// 拿不到就退回旧行为（留 4 行正文），**不编时间**。
+  DateTime? startedAt;
+
+  /// 思考块**结束**的时刻：被下一段思考 / 正式回答 / 工具调用打断，
+  /// 或者回合结束时定下来。
+  DateTime? endedAt;
 
   /// **技术细节**（原始报错）。
   ///
@@ -127,7 +141,12 @@ class MessageStream extends StatelessWidget {
         }
         final msg = messages[i - 1];
         final block = switch (msg.role) {
-          ChatRole.thought => _ThoughtRow(msg: msg, mode: thinkingMode),
+          // 这一轮还没结束、并且它是最新一条 → 这段思考**还在长**，先别折叠。
+          ChatRole.thought => _ThoughtRow(
+              msg: msg,
+              mode: thinkingMode,
+              streaming: running && i == messages.length,
+            ),
           ChatRole.tool => ToolCallCard(msg: msg),
           ChatRole.user => _UserBubble(msg: msg),
           ChatRole.assistant => _AssistantBlock(
@@ -357,12 +376,19 @@ class _ThoughtRow extends StatefulWidget {
   const _ThoughtRow({
     required this.msg,
     this.mode = 'collapsed',
+    this.streaming = false,
   });
 
   final ChatMsg msg;
 
   /// `collapsed` / `expanded` / `hidden`（见 `AppSettings.kThinkingModeIds`）。
   final String mode;
+
+  /// 这一段**还在长**（这一轮没结束，且它是最新一条）。
+  ///
+  /// 流式期间不折叠：思考每长一点都可能跨过折叠阈值，一折叠就是"字突然消失"
+  /// 的跳变，观感上就是"卡一下"。等这一轮结束再收起来。
+  final bool streaming;
 
   @override
   State<_ThoughtRow> createState() => _ThoughtRowState();
@@ -372,66 +398,189 @@ class _ThoughtRowState extends State<_ThoughtRow> {
   /// 思考默认折到几行：给个"看见有这么一段"的量，又不至于把版面顶开。
   static const int _collapsedLines = 4;
 
+  /// 超过这个长度才值得折叠（短思考直接显示全文，不给一个点了没反应的按钮）。
+  static const int _collapseThreshold = 160;
+
   /// 用户点了「展开」——只对**这一条**生效（不是全局改设置）。
   bool _expandedHere = false;
+
+  /// 这一段思考花了多久。
+  ///
+  /// 拿不到（回放的老会话没有时间戳 / 页面被销毁时没收尾）就返回 null ——
+  /// 那时界面退回旧行为，**不编一个时间出来**。
+  Duration? get _duration {
+    final s = widget.msg.startedAt;
+    final e = widget.msg.endedAt;
+    if (s == null || e == null) return null;
+    final d = e.difference(s);
+    return d.isNegative ? Duration.zero : d;
+  }
+
+  /// 结束后要不要给「展开/收起」按钮（流式中不给：那时已经全文铺开了）。
+  bool get _showToggle =>
+      widget.mode == 'collapsed' &&
+      !widget.streaming &&
+      widget.msg.text.length > _collapseThreshold;
 
   @override
   Widget build(BuildContext context) {
     if (widget.mode == 'hidden') return const SizedBox.shrink();
 
     final text = widget.msg.text;
-    // 短思考（没到 4 行）没什么可折的，别给一个点了没反应的「展开」。
-    final needCollapse = text.length > 160;
-    final showAll = widget.mode == 'expanded' ||
+    // 短思考（没到阈值）没什么可折的，别给一个点了没反应的「展开」。
+    final needCollapse = text.length > _collapseThreshold;
+    // 回合结束后，长思考收成**一行摘要**（对标 WorkBuddy 的
+    // `tool_call_process_preview`：结束后只留一行，点开才看全文）。
+    final canOneLine = needCollapse && !widget.streaming && widget.mode == 'collapsed';
+    final oneLine = canOneLine && !_expandedHere;
+    final showAll = widget.streaming ||
+        widget.mode == 'expanded' ||
         _expandedHere ||
         !needCollapse;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SelectionArea(
-            child: Text(
-              text,
-              maxLines: showAll ? null : _collapsedLines,
-              overflow: showAll ? null : TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: DshColors.textFaint, fontSize: 11.5, height: 1.45),
-            ),
-          ),
-          if (needCollapse && widget.mode == 'collapsed')
-            Semantics(
-              button: true,
-              label: _expandedHere ? context.tr('收起思考') : context.tr('展开思考'),
-              child: InkWell(
-                onTap: () => setState(() => _expandedHere = !_expandedHere),
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 2, bottom: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        _expandedHere ? context.tr('收起') : context.tr('展开'),
-                        style: TextStyle(
-                            color: DshColors.textFaint,
-                            fontSize: 11,
-                            height: 1.2),
-                      ),
-                      Icon(
-                        _expandedHere
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
-                        size: 14,
-                        color: DshColors.textFaint,
-                      ),
-                    ],
-                  ),
-                ),
+    // AnimatedSize：折叠/展开、以及流式时长高变化都走同一段 160ms 的补间，
+    // 不再"瞬移"。这是"看起来顺不顺"最直接的一处。
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: oneLine
+            ? _oneLineRow(context)
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SelectionArea(child: _body(context, text, showAll)),
+                  if (_showToggle) _toggle(context, inline: false),
+                ],
               ),
-            ),
-        ],
       ),
+    );
+  }
+
+  /// 正文。流式时套一层底部渐隐（见 [_BottomFade]）。
+  Widget _body(BuildContext context, String text, bool showAll) {
+    final t = Text(
+      text,
+      maxLines: showAll ? null : _collapsedLines,
+      overflow: showAll ? null : TextOverflow.ellipsis,
+      style: TextStyle(
+          color: DshColors.textFaint, fontSize: 11.5, height: 1.45),
+    );
+    // 只有**正在长**的时候才渐隐：结束后文字是完整的，淡掉反而像缺字。
+    if (!widget.streaming) return t;
+    return _BottomFade(child: t);
+  }
+
+  /// 结束后的单行摘要：「思考了 12 秒 · 展开」。
+  ///
+  /// 时长不足 1 秒（或者根本没有时间戳）就只写「思考」——
+  /// **宁可少说，也不要编一个"思考了 0 秒"**。
+  Widget _oneLineRow(BuildContext context) {
+    final d = _duration;
+    final label = (d == null || d.inSeconds < 1)
+        ? context.tr('思考')
+        : _durationLabel(context, d);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Text(
+          label,
+          style: TextStyle(
+              color: DshColors.textFaint, fontSize: 11.5, height: 1.2),
+        ),
+        const SizedBox(width: 8),
+        _toggle(context, inline: true),
+      ],
+    );
+  }
+
+  /// 「思考了 12 秒」/「思考了 1 分 05 秒」。
+  String _durationLabel(BuildContext context, Duration d) {
+    final s = d.inSeconds < 0 ? 0 : d.inSeconds;
+    if (s < 60) return context.tr('思考了 {0} 秒', [s]);
+    return context.tr('思考了 {0} 分 {1} 秒', [s ~/ 60, s % 60]);
+  }
+
+  /// 「展开 / 收起」按钮。[inline] = 放在摘要那一行里（而不是正文下面）。
+  Widget _toggle(BuildContext context, {required bool inline}) {
+    return Semantics(
+      button: true,
+      label: _expandedHere ? context.tr('收起思考') : context.tr('展开思考'),
+      child: InkWell(
+        onTap: () => setState(() => _expandedHere = !_expandedHere),
+        child: Padding(
+          padding: inline
+              ? const EdgeInsets.symmetric(vertical: 1)
+              : const EdgeInsets.only(top: 2, bottom: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                _expandedHere ? context.tr('收起') : context.tr('展开'),
+                style: TextStyle(
+                    color: DshColors.textFaint,
+                    fontSize: 11,
+                    height: 1.2),
+              ),
+              Icon(
+                _expandedHere
+                    ? Icons.keyboard_arrow_up
+                    : Icons.keyboard_arrow_down,
+                size: 14,
+                color: DshColors.textFaint,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 底部渐隐：流式时"新字从雾里出来"。
+///
+/// 做法：`ShaderMask` + `BlendMode.dstIn` —— 让最后 [_fade] 像素的 alpha 归零，
+/// 底下透出页面背景，看上去就是"字从雾里浮出来"。
+///
+/// 为什么不用 Lottie：WorkBuddy 那边跑的是 `deep_thinking.json`，
+/// 但**新增依赖要动 pubspec 的资产清单**（见 MASTER §F.1），观感差别却就在这一层——
+/// 渐隐便宜得多，也不占帧。
+class _BottomFade extends StatelessWidget {
+  const _BottomFade({required this.child});
+
+  final Widget child;
+
+  /// 渐隐的高度（逻辑像素）。
+  static const double _fade = 28;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (bounds) {
+        final h = bounds.height;
+        // 文字比渐隐区还短 → 整段都不淡（否则最后一行会淡到看不见）。
+        if (h <= _fade) {
+          return const LinearGradient(
+            colors: <Color>[Colors.white, Colors.white],
+          ).createShader(bounds);
+        }
+        // 前 (h - fade) 像素全不透明，最后 fade 像素线性淡到 0。
+        final start = (h - _fade) / h;
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: const <Color>[
+            Colors.white,
+            Colors.white,
+            Colors.transparent,
+          ],
+          stops: <double>[0, start, 1],
+        ).createShader(bounds);
+      },
+      child: child,
     );
   }
 }
@@ -735,6 +884,58 @@ class _ArtifactRow extends StatelessWidget {
 ///
 /// 改造前是 Card + 状态文字；这里改成设计稿的形态：
 /// 状态图标 + 标题 + 状态文字（`已完成` / `进行中`…），命令与输出默认折叠。
+/// 把一条工具调用消息编译成**卡片规格**（`CardSpec`）。
+///
+/// 为什么需要它（2026-10-20 接收 CHG-04 时补的）：交付包里的 `card_schema_test.dart`
+/// 直接调用了 `toolCardSpec(...)`，但**补丁没有带上这个定义** —— 也就是说
+/// 「工具卡改走协议」这半句只到了协议层，没到落地层。这里按协议把工具卡的数据补全：
+/// 类型 / 标题 / 状态文字 / 状态色 / 头部图标 / 展开区（命令与输出），
+/// 与改动前的 `ToolCallCard` 外观**逐项对应**（命令行不加边框、输出超 1500 字截断）。
+///
+/// 状态色与图标是**这一次的属性**（✓ / ! / ⟳），所以由这里给，而不是由类型档位给。
+CardSpec toolCardSpec(ChatMsg msg, BuildContext context) {
+  final done = msg.toolStatus == 'completed';
+  final failed = msg.toolStatus == 'failed';
+  final tone = done
+      ? CardStatusTone.ok
+      : (failed ? CardStatusTone.err : CardStatusTone.busy);
+  final icon = done
+      ? Icons.check_circle_outline
+      : (failed ? Icons.error_outline : Icons.autorenew);
+  final statusLabel = switch (msg.toolStatus) {
+    'completed' => context.tr('已完成'),
+    'failed' => context.tr('失败'),
+    'in_progress' => context.tr('进行中'),
+    _ => msg.toolStatus ?? '',
+  };
+  final command = msg.toolCommand?.trim();
+  final output = msg.toolOutput?.trim();
+  // 输出超长时截断 —— 与旧实现同一口径（同一句话，不另写文案）：
+  // 长输出塞进卡片会把整条消息撑爆，用户真正要看的那几行反而找不到。
+  final outputText = (output != null && output.length > 1500)
+      ? context.tr('{0}\n…（已截断）', [output.substring(0, 1500)])
+      : output;
+
+  return CardSpec(
+    type: 'tool',
+    title: msg.toolTitle ?? context.tr('工具'),
+    status: statusLabel.isEmpty ? null : statusLabel,
+    statusTone: tone,
+    icon: icon,
+    // ⚠️ `expandable` 必须显式置真：协议里「能不能展开」的判据是
+    //    `expandable && expandedFields.any((f) => !f.isEmpty)` —— 只填 expandedFields
+    //    不置这个标志，卡片就永远展不开（这条被 card_schema_test 抓到过）。
+    expandable: true,
+    // 命令与输出都是**展开后**才看的东西（默认折叠是旧行为，别改成常驻）。
+    expandedFields: <CardField>[
+      if (command != null && command.isNotEmpty)
+        CardField(value: command, kind: CardFieldKind.mono),
+      if (outputText != null && outputText.isNotEmpty)
+        CardField(value: outputText, kind: CardFieldKind.mono),
+    ],
+  );
+}
+
 class ToolCallCard extends StatefulWidget {
   const ToolCallCard({super.key, required this.msg});
 
@@ -747,33 +948,13 @@ class ToolCallCard extends StatefulWidget {
 class _ToolCallCardState extends State<ToolCallCard> {
   bool _open = false;
 
-  String get _statusLabel {
-    switch (widget.msg.toolStatus) {
-      case 'completed':
-        return context.tr('已完成');
-      case 'failed':
-        return context.tr('失败');
-      case 'in_progress':
-        return context.tr('进行中');
-      default:
-        return widget.msg.toolStatus ?? '';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final msg = widget.msg;
-    final done = msg.toolStatus == 'completed';
-    final failed = msg.toolStatus == 'failed';
-    final color =
-        done ? DshColors.ok : (failed ? DshColors.err : DshColors.busy);
-    final icon = done
-        ? Icons.check_circle_outline
-        : (failed ? Icons.error_outline : Icons.autorenew);
-
-    final hasDetail = (msg.toolCommand?.isNotEmpty ?? false) ||
-        (msg.toolOutput?.isNotEmpty ?? false);
-
+    // 2026-10-20（CHG-04）：工具卡改走**卡片协议** —— 外观全部由 `toolCardSpec()`
+    // 产出的数据决定，这里只负责外面的框与折叠状态。渲染器里没有任何
+    // `if (type == 'tool')` 分支，所以以后加卡片类型不用改这里。
+    final spec = toolCardSpec(msg, context);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
@@ -782,86 +963,14 @@ class _ToolCallCardState extends State<ToolCallCard> {
         borderRadius: BorderRadius.circular(DshMetrics.cardRadius),
         border: Border.all(color: DshColors.divider, width: 0.8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: hasDetail ? () => setState(() => _open = !_open) : null,
-            borderRadius: BorderRadius.circular(DshMetrics.cardRadius),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Icon(icon, size: 15, color: color),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      msg.toolTitle ?? context.tr('工具'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: DshColors.text,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Text(_statusLabel,
-                      style: TextStyle(fontSize: 11, color: color)),
-                  if (hasDetail) ...[
-                    const SizedBox(width: 6),
-                    Icon(
-                      _open ? Icons.expand_less : Icons.expand_more,
-                      size: 16,
-                      color: DshColors.textFaint,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          if (_open && hasDetail)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (msg.toolCommand?.isNotEmpty ?? false)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(9),
-                      decoration: BoxDecoration(
-                        color: Colors.transparent,
-                        borderRadius: BorderRadius.circular(DshMetrics.radius(7)),
-                      ),
-                      child: SelectableText(
-                        msg.toolCommand!,
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                          color: DshColors.textDim,
-                        ),
-                      ),
-                    ),
-                  if (msg.toolOutput?.isNotEmpty ?? false) ...[
-                    const SizedBox(height: 8),
-                    SelectableText(
-                      msg.toolOutput!.length > 1500
-                          ? context.tr('{0}\n…（已截断）',
-                              [msg.toolOutput!.substring(0, 1500)])
-                          : msg.toolOutput!,
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 10.5,
-                        height: 1.4,
-                        color: DshColors.textDim,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-        ],
+      child: CardRenderer(
+        spec: spec,
+        expanded: _open,
+        onToggle: () => setState(() => _open = !_open),
+        headerPadding: const EdgeInsets.all(12),
+        bodyPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        titleSize: 12.5,
+        titleMaxLines: 1,
       ),
     );
   }

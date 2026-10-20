@@ -1368,6 +1368,7 @@ class _PermissionsSectionState extends State<_PermissionsSection> {
         'location': tr('定位'),
         'photos': tr('相册'),
         'notifications': tr('通知'),
+        'calendar': tr('日历'),
       };
 
   static Map<String, String> get _stateText => {

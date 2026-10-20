@@ -6,7 +6,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../local/diagnostics_log.dart';
 import '../../local/acp_client.dart';
+import '../../local/android_toolbox.dart';
 import '../../local/dsh_runtime.dart';
+import '../../local/local_mcp.dart';
 import '../../local/local_model_server.dart';
 import '../../local/rotate_log.dart';
 import '../../local/session_failure_store.dart';
@@ -281,6 +283,31 @@ class _ChatPageState extends State<ChatPage> {
   final Map<String, ChatMsg> _byMessageId = {};
   final Map<String, ChatMsg> _toolById = {};
 
+  /// 当前**还没收尾**的思考块（key 形式 `t:<messageId>`）。
+  ///
+  /// 用来给思考块记时长：下一段思考 / 正式回答 / 工具调用来了，
+  /// 或者回合结束，就把这一段的结束时刻定下来（见 [_closeOpenThought]）。
+  ///
+  /// 为什么单独记：ACP 里思考、正式回答、工具调用是**三条不同的流**，
+  /// 但界面上它们都属于"同一轮"。要给出"思考了 N 秒"，就得知道
+  /// 哪一段思考在什么时候结束 —— 回合总时长是不行的（那里面混着工具时间）。
+  String? _openThoughtKey;
+
+  /// 流式文本的**合并缓冲**：`key → 还没上屏的字`。
+  ///
+  /// 为什么要它：模型一个 chunk 一条通知（几十毫秒一条），旧实现是**每条都
+  /// setState + 滚一次** —— 滚动动画被反复重置、正文每帧重排，长回答（尤其
+  /// 思考块）读起来就是"一顿一顿的"。这里按帧合并成一次上屏，滚动也只跟一次。
+  ///
+  /// 顺序保护：任何**结构事件**（工具卡片、回合结束）之前先 [_flushPendingText]，
+  /// 否则攒着的字会落到后到的工具卡片下面。
+  final Map<String, StringBuffer> _pendingText = <String, StringBuffer>{};
+  Timer? _flushTimer;
+
+  /// 合并间隔：一帧（60fps 下一帧只画一次）。再小没有意义；
+  /// 再大就会有"字是一块一块蹦出来"的观感。
+  static const Duration _flushEvery = Duration(milliseconds: 16);
+
   /// 工具**首次**通知里的完整 `rawInput`，按 toolCallId 缓存。
   ///
   /// 为什么必须缓存：ACP 的 `tool_call`（首次通知）带 `rawInput`，而
@@ -376,6 +403,21 @@ class _ChatPageState extends State<ChatPage> {
   void dispose() {
     _input.removeListener(_onInputChanged);
     widget.models.removeListener(_onModelStoreChanged);
+    // 页面要拆了：把缓冲里剩下的字**直接写进数据**（不 setState）。
+    // 消息表是壳层 [SessionRegistry] 持有的，回来还在 —— 若在这里把缓冲丢掉，
+    // 那最后几十毫秒的字就永久少一截。
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    _pendingText.forEach((key, buf) {
+      final add = buf.toString();
+      if (add.isEmpty) return;
+      final existing = _byMessageId[key];
+      if (existing != null) existing.text = '${existing.text}$add';
+    });
+    _pendingText.clear();
+    // 页面没了，但消息表还在（壳层持有）：把开着的那段思考收尾，
+    // 这样回来时它显示的是"思考了 N 秒"，而不是一个没有结束时刻的孤儿。
+    _closeOpenThought(DateTime.now());
     // ⚠️ 这里**不再 close()**。进程归壳层的 [SessionRegistry] 所有：
     // 用户点底部别的 Tab 会把这个页面 pop 掉，若照旧收尸，正在生成的回答会被
     // 当场打断（这正是用户意见①背后的真问题）。现在只是"人走了"——
@@ -447,19 +489,44 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  /// 这次会话要挂哪些 MCP 服务器（现在是联网搜索那一个）。
+  /// 这次会话要挂哪些 MCP 服务器。
+  ///
+  /// 现在是**两个**：
+  ///   1. `dsh-office` —— 我们自己的本地 MCP（模型能直接读写 xlsx/docx），
+  ///      见 `local/local_mcp.dart`。**总是挂**（挂不上就少三个工具，不影响会话）；
+  ///   2. `anysearch` —— 联网搜索（可关），见 `data/anysearch.dart`。
   ///
   /// 读 Key 的路径与端侧对话的 🔍 同一个命名空间（`search-anysearch`）——
   /// 将来两边共用一把 Key，不会互相"看不见"。
   Future<List<Map<String, dynamic>>> _mcpServers() async {
-    if (!widget.anysearchEnabled) return const <Map<String, dynamic>>[];
+    final servers = <Map<String, dynamic>>[];
+
+    // ── 本地 MCP（我们自己的 Office 工具）────────────────────────────
+    // ⚠️ 顺序在前面：它是**本机**能力，不依赖网络，也不受任何设置影响。
+    // 挂不上（运行时尚未就绪 / 脚本没落盘）就**跳过** —— 绝不能因为它让会话开不起来
+    // （运行时对 MCP 是 `failOnStartupError: true`，起不来会连累整个会话）。
+    if (widget.runtime.isUnpacked) {
+      try {
+        await AndroidToolbox.ensureInstalled(widget.runtime.filesDir);
+        final local = LocalMcp.mcpServers(runtime: widget.runtime);
+        if (local.isNotEmpty) {
+          servers.addAll(local);
+          debugPrint('[chat] 会话挂上本地 MCP ${LocalMcp.serverName}'
+              '（${LocalMcp.mcpServers(runtime: widget.runtime).length} 个）');
+        }
+      } catch (e) {
+        debugPrint('[chat] 本地 MCP 挂不上（不致命，会话照开）：$e');
+      }
+    }
+
+    if (!widget.anysearchEnabled) return servers;
     // ⚠️ 运行时里若已经带了 **原生** 的 AnySearch 搜索后端（overlay 会把
     //    `web.searchProvider` 钉到它），这里就**不要再挂 MCP** —— 否则会话里会同时
     //    出现"原生 web_search"和"AnySearch 的 MCP 工具"两个搜索入口，模型容易乱选。
     //    这正是"新运行包走原生、老运行包退回 MCP"的分工。
     if (widget.runtime.runtimeHasAnysearchPlugin) {
       debugPrint('[chat] 运行时自带 AnySearch 原生后端 → 不重复挂 MCP');
-      return const <Map<String, dynamic>>[];
+      return servers;
     }
     String? key;
     try {
@@ -467,7 +534,7 @@ class _ChatPageState extends State<ChatPage> {
     } catch (e) {
       debugPrint('[chat] 读联网搜索的 Key 失败（按匿名用）：$e');
     }
-    final servers = AnySearch.mcpServers(apiKey: key);
+    servers.addAll(AnySearch.mcpServers(apiKey: key));
     debugPrint('[chat] 会话挂上联网搜索 ${AnySearch.serverName}'
         '（${(key ?? '').trim().isEmpty ? "匿名" : "带 Key"}）');
     return servers;
@@ -940,13 +1007,26 @@ class _ChatPageState extends State<ChatPage> {
     // 放在这里是因为 `_autoScroll` 每次"消息有变化"都会被调一次，而它**总在 build 之外**。
     _maybePromptRollover();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOut,
-        );
+      if (!mounted || !_scroll.hasClients) return;
+      final pos = _scroll.position;
+      final gap = pos.maxScrollExtent - pos.pixels;
+      // 已经贴底：不用动。
+      if (gap <= 0.5) return;
+      // 落后不多（流式输出的常态）：**直接跟手**。
+      //
+      // 旧实现是每次都 `animateTo(150ms)`：chunk 一密集（几十毫秒一条），
+      // 上一个动画还没走完就被下一个重置，观感就是"一抽一抽、追不上"。
+      // jumpTo 不产生新动画，只是把视口移到新底部 —— 这正是聊天流式该有的样子。
+      if (gap <= 120) {
+        pos.jumpTo(pos.maxScrollExtent);
+        return;
       }
+      // 落后很多（换会话、刚展开很长的历史）：才值得给一段平滑动画。
+      _scroll.animateTo(
+        pos.maxScrollExtent,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -965,12 +1045,76 @@ class _ChatPageState extends State<ChatPage> {
         _onTextChunk(update, isThought: true);
         break;
       case 'tool_call':
+        // 工具卡片插到消息流之前，先把攒着的字落盘：否则"思考块在前、
+        // 工具卡片在后"的顺序会被缓冲打乱。
+        _flushPendingText();
         _onToolCall(update);
         break;
       case 'tool_call_update':
+        _flushPendingText();
         _onToolResult(update);
         break;
+      default:
+        // 其它结构事件（plan / usage / snapshot…）同理：先落盘再交给上层。
+        _flushPendingText();
     }
+  }
+
+  /// 把缓冲里的字**一次性**写进消息表（每帧最多一次，见 [_flushEvery]）。
+  ///
+  /// 与旧实现的差别只在"什么时候 setState"，写入语义完全一致：
+  /// key 不存在就新建一条，存在就往后追加。
+  void _flushPendingText() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    if (_pendingText.isEmpty) return;
+
+    // 先把缓冲取走再 setState：flush 期间新到的 chunk 会进新的 buffer，
+    // 不会被这次一起写掉（也就不需要重入保护）。
+    final batch = <String, String>{
+      for (final e in _pendingText.entries) e.key: e.value.toString(),
+    };
+    _pendingText.clear();
+    if (!mounted) return;
+
+    setState(() {
+      // 同一批里可能既有思考又有正式回答：按到达顺序处理，
+      // 上一段思考到这里就收尾（见 [_closeOpenThought]）。
+      final now = DateTime.now();
+      batch.forEach((key, add) {
+        final existing = _byMessageId[key];
+        if (existing == null) {
+          final isThought = key.startsWith('t:');
+          // 上一段思考到此为止：模型切段了，或者开始写正式回答了。
+          _closeOpenThought(now);
+          if (isThought) _openThoughtKey = key;
+          final m = ChatMsg(
+            text: add,
+            role: isThought ? ChatRole.thought : ChatRole.assistant,
+            startedAt: now,
+          );
+          _byMessageId[key] = m;
+          _messages.add(m);
+        } else {
+          existing.text = '${existing.text}$add';
+        }
+      });
+    });
+    _autoScroll();
+  }
+
+  /// 把当前开着的思考块收尾（记下结束时刻）。
+  ///
+  /// 为什么要记：回合结束后思考块会收成一行「思考了 N 秒」
+  /// （对标 WorkBuddy 的 `tool_call_process_preview`）。
+  /// 时长必须来自**真实的时间戳** —— 拿回合总时长来凑是不行的，
+  /// 那一段时间里混着工具执行和正式回答。
+  void _closeOpenThought(DateTime at) {
+    final key = _openThoughtKey;
+    if (key == null) return;
+    final m = _byMessageId[key];
+    if (m != null && m.endedAt == null) m.endedAt = at;
+    _openThoughtKey = null;
   }
 
   void _onTextChunk(Map<String, dynamic> update, {required bool isThought}) {
@@ -984,20 +1128,10 @@ class _ChatPageState extends State<ChatPage> {
 
     // thought 与 message 共用一个 messageId，key 必须带类型前缀
     final key = '${isThought ? 't' : 'm'}:$messageId';
-    setState(() {
-      final existing = _byMessageId[key];
-      if (existing == null) {
-        final m = ChatMsg(
-          text: text,
-          role: isThought ? ChatRole.thought : ChatRole.assistant,
-        );
-        _byMessageId[key] = m;
-        _messages.add(m);
-      } else {
-        existing.text = existing.text.isEmpty ? text : '${existing.text}$text';
-      }
-    });
-    _autoScroll();
+    // 不再每条都 setState：先攒进缓冲，最多 16ms 后合并上屏
+    // （见 [_pendingText] / [_flushPendingText] 的说明）。
+    (_pendingText[key] ??= StringBuffer()).write(text);
+    _flushTimer ??= Timer(_flushEvery, _flushPendingText);
   }
 
   /// 诊断日志里用的短串：压掉换行、截到 60 字。
@@ -1007,6 +1141,8 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _onToolCall(Map<String, dynamic> update) {
+    // 工具调用意味着"想完了、开始动手"：这一段思考到此为止。
+    _closeOpenThought(DateTime.now());
     final id = update['toolCallId'] as String? ?? 'unknown';
     final title = update['title'] as String? ?? context.tr('工具');
     final raw = update['rawInput'];
@@ -1640,6 +1776,10 @@ class _ChatPageState extends State<ChatPage> {
       ));
     }
     if (mounted) {
+      // 回合结束：缓冲里最后那几个字必须先上屏，否则会"少一句"。
+      _flushPendingText();
+      // 最后一段思考到回合结束为止 —— 记下时刻，结束后才有"思考了 N 秒"。
+      _closeOpenThought(DateTime.now());
       setState(() {
         _running = false;
         _turnStartedAt = null;

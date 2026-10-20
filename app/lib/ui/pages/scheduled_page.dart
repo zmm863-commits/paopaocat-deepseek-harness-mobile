@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../data/schedule_store.dart';
+import '../../local/dsh_runtime.dart';
 import '../../local/schedule_runner.dart';
+import '../../local/system_calendar.dart';
 import '../theme/dsh_tokens.dart';
 import '../widgets/common.dart';
 
@@ -39,7 +41,19 @@ class ScheduledPage extends StatefulWidget {
 class _ScheduledPageState extends State<ScheduledPage> {
   bool _historyOpen = false;
 
+  /// 系统日历的能力现状（null = 还没查）。
+  CalendarStatus? _calendarStatus;
+
+  /// 正在申请权限 / 切开关：防止连点。
+  bool _calendarBusy = false;
+
   ScheduleStore get _store => widget.store;
+
+  @override
+  void initState() {
+    super.initState();
+    _reloadCalendarStatus();
+  }
 
   @override
   void didUpdateWidget(covariant ScheduledPage oldWidget) {
@@ -105,6 +119,7 @@ class _ScheduledPageState extends State<ScheduledPage> {
                     if (running != null) _runningBanner(running),
                     if (_store.error != null) _errorBanner(_store.error!),
                     if (_store.enabledCount > 0) _backgroundNote(),
+                    _calendarSection(),
                     for (final s in list) _card(s),
                     const SizedBox(height: 8),
                     _historySection(),
@@ -118,6 +133,122 @@ class _ScheduledPageState extends State<ScheduledPage> {
   }
 
   // --------------------------------------------------------------- 顶部提示
+
+  /// 「同步到系统日历」那块。
+  ///
+  /// 为什么要它：App 内的调度器是**进程内**的（`schedule_runner.dart`）——
+  /// 进程被系统回收，任务就不跑。写进系统日历之后，到点由**系统日历自己**响，
+  /// 不依赖这个 App 还开着（对标 WorkBuddy 的 `WRITE_CALENDAR` + `device_alarm`）。
+  ///
+  /// 状态一律**如实**说：没授权 / 设备上没有可写的日历 / 已同步几个，
+  /// 都不写成"已同步成功"。
+  Widget _calendarSection() {
+    final on = _store.calendarSync;
+    final status = _calendarStatus;
+    final synced = _store.schedules
+        .where((s) => s.calendarEventId != null)
+        .length;
+    final String hint;
+    if (!on) {
+      hint = context.tr(
+          '关着：任务只在这个 App 里跑，App 不在就不会触发。打开后任务会出现在系统日历里，到点由系统提醒。');
+    } else if (status == null) {
+      hint = context.tr('正在检查这台设备的日历能力…');
+    } else if (!status.canWrite) {
+      hint = context.tr(
+          '还没给日历权限：授权后任务才会写进系统日历（系统会弹窗问你）。');
+    } else if (!status.hasWritableCalendar) {
+      hint = context.tr(
+          '这台设备没有可写的日历（很多裸机没有系统日历账号），所以同步不了 —— 任务仍然只在这个 App 里跑。');
+    } else {
+      hint = context.tr(
+          '已把 {0} 个任务写进系统日历：到点由系统提醒，不依赖这个 App 开着。',
+          [synced]);
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(DshMetrics.cardPad),
+      decoration: BoxDecoration(
+        color: DshColors.surface,
+        borderRadius: BorderRadius.circular(DshMetrics.cardRadius),
+        border: Border.all(color: DshColors.divider, width: 0.8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_outlined, size: 15, color: DshColors.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  context.tr('同步到系统日历'),
+                  style: TextStyle(
+                    color: DshColors.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Switch(
+                value: on,
+                onChanged: _toggleCalendarSync,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            hint,
+            style: TextStyle(color: DshColors.textDim, fontSize: 11.5, height: 1.5),
+          ),
+          if (on && status != null && !status.canWrite) ...[
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _calendarBusy ? null : _requestCalendarPermission,
+              child: Text(context.tr('申请日历权限')),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleCalendarSync(bool on) async {
+    if (_calendarBusy) return;
+    setState(() => _calendarBusy = true);
+    try {
+      if (on) {
+        // 先把权限要到手：没有权限就是"没同步"，不能开着开关假装同步了。
+        final st = await SystemCalendar.status();
+        if (!st.canWrite) {
+          await _requestCalendarPermission();
+        }
+      }
+      await _store.setCalendarSync(on);
+      await _reloadCalendarStatus();
+    } finally {
+      if (mounted) setState(() => _calendarBusy = false);
+    }
+  }
+
+  Future<void> _requestCalendarPermission() async {
+    if (_calendarBusy) return;
+    setState(() => _calendarBusy = true);
+    try {
+      await DshHost.requestPermissions(<String>['calendar']);
+      await _reloadCalendarStatus();
+    } catch (e) {
+      debugPrint('[dsh-calendar] 申请日历权限失败: $e');
+    } finally {
+      if (mounted) setState(() => _calendarBusy = false);
+    }
+  }
+
+  Future<void> _reloadCalendarStatus() async {
+    final st = await SystemCalendar.status();
+    if (!mounted) return;
+    setState(() => _calendarStatus = st);
+  }
 
   Widget _runningBanner(String name) => Container(
         margin: const EdgeInsets.only(bottom: 10),

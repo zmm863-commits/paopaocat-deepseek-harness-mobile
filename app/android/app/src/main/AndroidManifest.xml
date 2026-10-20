@@ -21,6 +21,13 @@
          （那一页列的是需要运行时申请的权限，这里刻意不把 VIBRATE 塞进去，免得让人以为要手动开）。
          实现见 MainActivity.vibrate —— 它会**尊重系统振动总开关**，关了就不振、只弹泡泡。 -->
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- 系统日历：把定时任务写进系统日历 —— 用户在系统提醒器里看得到，
+         到点由**系统日历自己**响（不依赖 App 进程还活着）。
+         WRITE 需要用户运行时授权；设备上还得**有可写的日历**（多数有系统日历
+         账号的设备有，裸机没有）—— 没有就如实告诉用户"这台设备没有可写的日历"。
+         READ 是另一件事（把日历事件当"资料"喂给模型），与写分开申请。 -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <uses-permission android:name="android.permission.WRITE_CALENDAR"/>
     <!-- 语音输入：Android 的 SpeechRecognizer（含 12+ 的设备端离线识别）**要求调用方自己
          持有 RECORD_AUDIO**，否则会直接回调 error=9（ERROR_INSUFFICIENT_PERMISSIONS）。
          用户实测反馈「语音依然不能使用」的真因就是这个：0.10 改成直接调设备端识别后，
