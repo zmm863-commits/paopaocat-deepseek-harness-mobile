@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'android_toolbox.dart';
 import 'dsh_runtime.dart';
+import 'diagnostics_log.dart';
 
 /// ACP（Agent Client Protocol）stdio 客户端。
 ///
@@ -177,6 +178,15 @@ class AcpClient {
     onLog?.call(
         '[acp] spawn ${File(runtime.nodeBinary).uri.pathSegments.last} --profile acp'
         '（已挂执行环境 shim${apiKeys.isEmpty ? '' : '，注入 ${apiKeys.length} 个厂家环境变量'}）');
+    // 2026-10-20：模型在 bash 里反复调我们自己的脚本、还先 `echo $DSH_ANDROID_TOOLBOX` 确认 ——
+    // 说明它怀疑这个变量是空的。这里把「关键环境变量到底给没给」记下来（**只记有无，不记值**），
+    // 下次遇到"脚本跑了但什么都没干"，第一眼就能排除这条。
+    DiagnosticsLog.add('dsh-chat',
+        '会话环境：TOOLBOX=${env.containsKey('DSH_ANDROID_TOOLBOX') ? '有' : '无'}'
+        ' TMPDIR=${env.containsKey('DSH_ANDROID_TMPDIR') ? '有' : '无'}'
+        ' LD_LIBRARY_PATH=${env.containsKey('LD_LIBRARY_PATH') ? '有' : '无'}'
+        ' PATH=${env.containsKey('PATH') ? '有' : '无'}'
+        ' 厂家变量=${apiKeys.length}');
     final process = await Process.start(
       runtime.nodeBinary,
       args,

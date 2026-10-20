@@ -1243,27 +1243,39 @@ class _ChatPageState extends State<ChatPage> {
     _autoScroll();
   }
 
+  /// 从一条工具完成通知里取出文本输出（拼多段）。取不到就是空串。
+  static String _toolOutputOf(Map<String, dynamic> update) {
+    final content = update['content'];
+    if (content is! List) return '';
+    return content
+        .map((c) => ((c as Map?)?['content'] as Map?)?['text'] as String? ?? '')
+        .where((s) => s.isNotEmpty)
+        .join('\n');
+  }
+
   void _onToolResult(Map<String, dynamic> update) {
     final id = update['toolCallId'] as String? ?? 'unknown';
     final status = update['status'] as String? ?? '';
     // 结束也记一行（成败一目了然）——与上面 `chat:tool` 成对，便于算耗时/看是否重试。
+    // 输出长度一并记下（2026-10-20）：真机日志里模型为跑通 `make-pptx.mjs` 试了 17 条 bash，
+    // 而日志里只有"开始/结束"，看不到任何输出 —— 只能猜。成功但**输出为 0** 恰恰是
+    // "脚本跑了但什么都没干"的典型信号，这条数字就能区分出来。
+    // 正文只在**失败**时记前 400 字（成功输出可能含用户文件内容，不落盘）。
+    final outForLog = _toolOutputOf(update);
     if (status.isNotEmpty) {
+      final n = outForLog.trim().length;
       DiagnosticsLog.add('chat:tool',
-          '结束 ${_shortTool(_toolById[id]?.toolTitle ?? id)} → $status');
+          '结束 ${_shortTool(_toolById[id]?.toolTitle ?? id)} → $status'
+          '${n == 0 ? '（无输出）' : '（输出 $n 字）'}');
+      if (status != 'completed' && n > 0) {
+        DiagnosticsLog.add('chat:tool',
+            '失败输出：${outForLog.trim().substring(0, n > 400 ? 400 : n)}');
+      }
     }
     // ⚠️ 完成通知通常**不带** rawInput —— 用首次通知里缓存的那份兜底，
     // 否则「写文件」类工具的 path 参数在这里就丢了（产物会漏）。
     final rawInput = update['rawInput'] ?? _toolRawById[id];
-    final content = update['content'];
-
-    var output = '';
-    if (content is List) {
-      output = content
-          .map((c) =>
-              ((c as Map?)?['content'] as Map?)?['text'] as String? ?? '')
-          .where((s) => s.isNotEmpty)
-          .join('\n');
-    }
+    final output = outForLog;
 
     if (!mounted) return;
     // 产物：工具完成后从它的标题/入参/输出里捞**候选名**，但捞到不等于产物 ——
