@@ -86,6 +86,12 @@ class AppSettings extends ChangeNotifier {
   /// 关掉就是"会话不带联网搜索工具"。
   static const String _kAnysearchEnabled = 'dsh_anysearch_enabled';
 
+  /// 「左右滑动切换页面」（默认**开**）。
+  ///
+  /// 关掉之后壳层不接横向拖动 —— 只点底部标签切页。用户 2026-10-20 反馈：
+  /// 在 Bot 页上太容易误触到别的页签（网页里本来就有自己的横滑/滚动）。
+  static const String _kSwipeSwitch = 'dsh_swipe_switch';
+
   /// 「会话里提供子智能体工具」（出厂是提供的）。
   ///
   /// 关掉 = overlay 里把这几个 id 覆盖成 `disabled: true`（见
@@ -181,6 +187,9 @@ class AppSettings extends ChangeNotifier {
 
   /// 「会话里提供子智能体工具」是否开启（见 [_kSubagentEnabled]）。**默认开**。
   bool _subagentEnabled = true;
+
+  /// 左右滑动切换页面（见 [_kSwipeSwitch]）。**默认开**。
+  bool _swipeSwitch = true;
 
   /// 子会话用的模型路由（`provider/model`）；null/空 = 跟随父会话。
   String? _subagentRoute;
@@ -306,6 +315,9 @@ class AppSettings extends ChangeNotifier {
 
   /// 「会话里提供子智能体工具」是否开启 —— **默认 true**，见 [_kSubagentEnabled]。
   bool get subagentEnabled => _subagentEnabled;
+
+  /// 左右滑动切换页面是否开启 —— **默认 true**，见 [_kSwipeSwitch]。
+  bool get swipeSwitch => _swipeSwitch;
 
   /// 子会话用的模型路由（`provider/model`）；空 = 跟随父会话。
   String? get subagentRoute => _subagentRoute;
@@ -479,6 +491,7 @@ class AppSettings extends ChangeNotifier {
       _polliEnabled = prefs.getBool(_kPolliEnabled) ?? true;
       // 同上：默认开（匿名可用，不用填任何东西）。
       _anysearchEnabled = prefs.getBool(_kAnysearchEnabled) ?? true;
+      _swipeSwitch = prefs.getBool(_kSwipeSwitch) ?? true;
       // 出厂就是提供子智能体的，所以默认 true。
       _subagentEnabled = prefs.getBool(_kSubagentEnabled) ?? true;
       final sub = prefs.getString(_kSubagentRoute);
@@ -666,6 +679,19 @@ class AppSettings extends ChangeNotifier {
   ///
   /// ⚠️ 真正的生效点是**下一个会话进程**（`session/new` 时才把 mcpServers 发过去），
   /// 与模型/皮肤那类"立刻生效"的设置不同 —— 界面上的说明要如实写。
+  /// 开关「左右滑动切换页面」。
+  Future<void> setSwipeSwitch(bool v) async {
+    if (v == _swipeSwitch) return;
+    _swipeSwitch = v;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kSwipeSwitch, v);
+    } catch (e) {
+      debugPrint('[dsh-settings] 保存滑动开关失败：$e');
+    }
+  }
+
   Future<void> setAnysearchEnabled(bool v) async {
     if (v == _anysearchEnabled) return;
     _anysearchEnabled = v;

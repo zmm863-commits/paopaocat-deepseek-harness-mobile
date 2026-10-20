@@ -112,7 +112,10 @@ class _BotPageState extends State<BotPage> {
      （ds-bot 在 data-glide 时把 item 底色设成透明、靠滑块表示，这里补回来）。 */
   .bt-settings-nav > .bt-thumb { display: none !important; }
   .bt-settings-nav[data-glide] .bt-settings-item[aria-current="page"] { background: var(--bt-active) !important; color: var(--bt-ink) !important; }
-  .bt-settings-main { width: 100% !important; flex: 1 1 auto !important; min-height: 0 !important; height: auto !important; }
+  /* 2026-10-20：上下排布后 height:auto 让正文区**没了滚动容器** —— 设置页内容一长就滑不动。
+     这里把 main 自己变成可滚动区（并允许内部块收缩），竖滑交还给浏览器。 */
+  .bt-settings-main { width: 100% !important; flex: 1 1 auto !important; min-height: 0 !important; height: auto !important; overflow-y: auto !important; overscroll-behavior-y: contain !important; -webkit-overflow-scrolling: touch !important; }
+  .bt-settings-main > * { flex-shrink: 0 !important; }
   .bt-settings-head { padding: 10px 56px 4px 16px !important; }
   /* 2026-10-20（0.78）：再收一批**写死桌面尺寸**的地方 —— 都是窄屏会溢出/被裁的。
      用量页的月历是最明显的：.bt-us-month 252px 宽 + .bt-us-days 7×36px 固定格子。 */

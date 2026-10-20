@@ -122,7 +122,14 @@ class _AppShellState extends State<AppShell> {
     //
     // 现在：超过阈值就算"甩动"，按方向直接翻一页；否则按距离取最近页。
     // 时长按**剩余距离**算（越近越干脆），并保留减速曲线让停下来的感觉自然。
-    const flingVelocity = 300.0;
+    // ⚠️ 2026-10-20（用户：滑动切换页面太敏感，尤其在 Bot 页一不小心就滑到别的页签）：
+    //   原来只要**手指往某个方向动了一点**就算翻页（`current < _index` 就判右侧滑），
+    //   而 Bot 页是个网页，横滑手势本来就在用 —— 轻轻一碰就切页。
+    //   现在两个门槛**都要**满足其一才翻页：
+    //     * 甩得够快（900 px/s，原来 300）；
+    //     * 或者**真的拖出去** ≥28% 屏宽（原来 0，动一点就算）。
+    const flingVelocity = 900.0;
+    const minDragFraction = 0.28;
     // 方向判据（`current` 是"第几页"的小数形式；手指**向右**拖会让它**变小**）：
     //   * 向右拖/向右甩 → **上一页**；
     //   * 向左拖/向左甩 → 下一页。
@@ -135,16 +142,20 @@ class _AppShellState extends State<AppShell> {
     // 而 `current` 是**手指当前位置**的小数页号 —— 比如停在第 3 页、手指只拖了 40%
     // （current=3.4）再甩一下，`ceil(3.4)-1 = 3` → **原地不动**（"甩了却没反应"）。
     // 现在按**落定的页号 `_index`** 算，一次手势就稳定地前进/后退一页。
-    final swipedRight = vx > flingVelocity ||
-        (vx.abs() <= flingVelocity && current < _index);
-    final swipedLeft = vx < -flingVelocity ||
-        (vx.abs() <= flingVelocity && current > _index);
+    // `dx > 0` = 手指往**下一页**方向拖出去了这么多（以"页"为单位）。
+    final dx = current - _index;
+    final farEnough = dx.abs() >= minDragFraction;
+    final swipedLeft = vx < -flingVelocity || (dx > 0 && farEnough);
+    final swipedRight = vx > flingVelocity || (dx < 0 && farEnough);
 
     var target = current.round();
     if (swipedLeft) {
       target = _index + 1;
     } else if (swipedRight) {
       target = _index - 1;
+    } else {
+      // 两个门槛都没过 → **弹回原页**（这就是"误触不再切页"的关键）。
+      target = _index;
     }
     target = target.clamp(0, _pageTicks.length - 1);
     // 记住停在哪一页（取图/重建后能回到原处）。
@@ -834,9 +845,15 @@ class _AppShellState extends State<AppShell> {
                 padding: const EdgeInsets.symmetric(horizontal: _edgeGutter),
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onHorizontalDragStart: _onPageDragStart,
-                  onHorizontalDragUpdate: _onPageDragUpdate,
-                  onHorizontalDragEnd: _onPageDragEnd,
+                  // 「设置 → 外观 → 左右滑动切换页面」关掉时**完全不接**手势：
+                  // 传 null（而不是在回调里 return），这个 GestureDetector 就彻底不参与
+                  // 手势竞争，网页/列表自己的横滑不会被它吃掉。
+                  onHorizontalDragStart:
+                      widget.appSettings.swipeSwitch ? _onPageDragStart : null,
+                  onHorizontalDragUpdate:
+                      widget.appSettings.swipeSwitch ? _onPageDragUpdate : null,
+                  onHorizontalDragEnd:
+                      widget.appSettings.swipeSwitch ? _onPageDragEnd : null,
                 ),
               ),
             ),

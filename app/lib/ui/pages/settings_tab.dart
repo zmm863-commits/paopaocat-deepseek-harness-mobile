@@ -603,6 +603,34 @@ class _SettingsTabState extends State<SettingsTab> {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        // ── 左右滑动切换页面（2026-10-20 用户：滑动太敏感，尤其在 Bot 页一不小心就滑到别的页签）
+        //
+        //    关掉之后壳层**完全不接**横向手势（见 app_shell 里传 null 那里）——
+        //    不是"接了再忽略"，所以网页/列表自己的横滑不会被吃掉。
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(context.tr('左右滑动切换页面'),
+                      style: TextStyle(fontSize: 13.5, color: DshColors.text)),
+                  const SizedBox(height: 2),
+                  Text(context.tr('关掉后只点底部标签切换 —— 在 Bot 页里不会误触'),
+                      style: TextStyle(fontSize: 11, color: DshColors.textFaint)),
+                ],
+              ),
+            ),
+            Switch.adaptive(
+              value: settings.swipeSwitch,
+              onChanged: (v) {
+                settings.setSwipeSwitch(v);
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
+        ),
         const SizedBox(height: 18),
         Divider(height: 1, thickness: 1, color: DshColors.line),
         const SizedBox(height: 16),

@@ -1,4 +1,14 @@
 {
+  "关掉后只点底部标签切换 —— 在 Bot 页里不会误触": {
+    "en": "Off: switch tabs with the bottom bar only — no accidental swipes in the Bot page",
+    "ja": "オフ：下のタブでのみ切り替え。Bot ページで誤ってスワイプしません",
+    "ko": "끔: 하단 탭으로만 전환합니다. Bot 페이지에서 잘못 스와이프하지 않습니다"
+  },
+  "左右滑动切换页面": {
+    "en": "Swipe to switch pages",
+    "ja": "左右スワイプでページ切り替え",
+    "ko": "좌우 스와이프로 페이지 전환"
+  },
   "建议连 Wi-Fi": {
     "en": "Wi-Fi recommended",
     "ja": "Wi-Fi 推奨",
