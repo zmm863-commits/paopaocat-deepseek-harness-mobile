@@ -142,8 +142,11 @@ body { overscroll-behavior-y: contain; }
     // 这里用【同选择器】再写一遍（本 style 在后面 → 后者生效），值全部来自 Flutter 侧的
     // DshColors（单一真源）。深色两份都写：因为 body[data-ds-dark-theme] 比 body 特异度高，
     // 只覆盖前者的话深色下仍是 ds-bot 自己的值。
-    // ⚠️ 本段在 CSS 模板字符串**之外**；它自己那对反引号承载 __DSH_TOKENS_CSS__。
+    // ⚠️ 本段在 CSS 模板字符串**之外**；它自己那对反引号承载令牌样式。
     //    往这段注释里写反引号仍会截断模板（108 版的教训）—— 一律用「」代替。
+    // ⚠️⚠️ 注释里**也绝不能写出占位符的名字**（2026-10-20 踩过）：替换用的是 replaceFirst，
+    //    它命中的是注释里那一个 → 多行 CSS 被塞进 // 注释，后面几行变成裸代码 →
+    //    整段注入脚本语法错误 → **一条注入都不生效**（+ 菜单改名、设置页排版、文案、配色全没了）。
     if (!document.getElementById('dsh-app-tokens')) {
       var tk = document.createElement('style');
       tk.id = 'dsh-app-tokens';
@@ -380,9 +383,25 @@ body { overscroll-behavior-y: contain; }
   """;
 
   /// 按 App 当前深浅色生成要注入的整段 JS。
-  static String _webPatchJs({required bool dark}) => _webPatchTemplate
-          .replaceFirst('__DSH_APP_DARK__', dark ? 'true' : 'false')
-          .replaceFirst('__DSH_TOKENS_CSS__', _tokensCss());
+  static String _webPatchJs({required bool dark}) =>
+      _fill(_webPatchTemplate, dark: dark);
+
+  /// 把两个占位符填进去，并**校验没有残留**。
+  ///
+  /// 为什么用 replaceAll 而不是 replaceFirst：2026-10-20 的坑 —— 注释里写了占位符的名字，
+  /// `replaceFirst` 命中注释而不是代码，多行 CSS 被塞进 `//` 后面 → 整段脚本语法错误、
+  /// 一条注入都不生效。`replaceAll` + 残留断言让这种"写错位置"当场暴露，而不是静默失效。
+  static String _fill(String template, {required bool dark}) {
+    final js = template
+        .replaceAll('__DSH_APP_DARK__', dark ? 'true' : 'false')
+        .replaceAll('__DSH_TOKENS_CSS__', _tokensCss());
+    if (js.contains('__DSH_')) {
+      // 真出现了说明模板里还有第三个没被替换的占位符（或名字拼错）。
+      DiagnosticsLog.add('dsh-bot', '注入脚本里有未替换的占位符 → 这段注入可能整体失效');
+      debugPrint('[dsh-bot] ⚠️ 未替换的占位符残留');
+    }
+    return js;
+  }
 
   /// 把 App 的设计令牌编译成 CSS（**单一真源是 `DshColors`**）。
   ///
@@ -437,7 +456,7 @@ body { overscroll-behavior-y: contain; }
       if (document.body) document.body.toggleAttribute('data-ds-dark-theme', dark);
     } catch (e) {}
   })();
-  '''.replaceFirst('__DSH_TOKENS_CSS__', _tokensCss());
+  '''.replaceAll('__DSH_TOKENS_CSS__', _tokensCss());
 
   /// 当前 WebView 里加载的地址（用于和服务最新地址比对）。
   String? _loadedUrl;
