@@ -61,8 +61,8 @@
  */
 
 import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, extname, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { basename, dirname, extname, resolve } from 'node:path';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 
@@ -1231,12 +1231,28 @@ function main() {
 const isDirectRun = (() => {
   if (!process.argv[1]) return false;
   try {
-    return pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+    if (pathToFileURL(resolve(process.argv[1])).href === import.meta.url) return true;
+    // ⚠️ 2026-10-20：真机上出现过「命令跑了、什么都没输出」。这里比 URL 相等太脆 ——
+    //    只要 argv[1] 与真实文件路径有细微差别（realpath / 软链 / 不同前缀的同一个文件），
+    //    就判成"不是直接运行"，于是 `main()` 根本不执行、进程静默退出（exit 0）。
+    //    模型只能去翻脚本源码找原因（真机日志里为这一条烧了 12 条 bash）。
+    //    现在补一条**按文件名判定**的兜底：文件名对得上就当直接运行。
+    return basename(process.argv[1]) === basename(fileURLToPath(import.meta.url));
   } catch {
     return false;
   }
 })();
 
-if (isDirectRun) main();
+if (isDirectRun) {
+  main();
+} else if (process.argv.length > 2) {
+  // 兜底也判不出来、但明显带着参数被调用 → **必须大声报错**，
+  // 绝不能像以前那样静默退出 0（静默 = 让模型去读 50KB 源码，最费 token 的行为）。
+  console.error(
+    '[make-pptx] 错误：没能识别为直接运行（argv[1]=' + String(process.argv[1]) + '）。' +
+    '请用 `node "$DSH_ANDROID_TOOLBOX/make-pptx.mjs" outline.json out.pptx` 调用。'
+  );
+  process.exit(2);
+}
 
 export { buildParts, normalizeOutline, ZipWriter, crc32, main, LAYOUT_NAMES };

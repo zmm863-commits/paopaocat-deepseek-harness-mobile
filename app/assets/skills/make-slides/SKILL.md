@@ -115,6 +115,15 @@ node "$DSH_ANDROID_TOOLBOX/make-pptx.mjs" outline.json "输出.pptx"
 成功时最后一行形如：
 `[make-pptx] ok slides=14 notes=0 media=1 parts=42 bytes=35123 out=/.../输出.pptx`
 
+> **⚠️ 看不到任何输出时怎么办（省 token 的规矩，2026-10-20 真机教训）**
+> 先看 `echo "exit=$?"`（0 = 成功；2 = 调用方式不对；1 = 参数/大纲有问题）。
+> **绝对不要**去 `grep` / `readFileSync` 这个脚本的源码 —— 它 50 KB、`pptx-design.mjs` 62 KB，
+> 读一遍就是几万 token，而且真机上那次为了查"为什么没输出"连续用了 **12 条 bash**、把一整轮
+> 的额度都烧在这上面。正确顺序是：
+> 1. `node "$DSH_ANDROID_TOOLBOX/make-pptx.mjs" outline.json 输出.pptx; echo "exit=$?"`
+> 2. 报错原样贴出来（stderr 会以 `[make-pptx] 错误：` 开头），按提示改大纲；
+> 3. 仍然失败就**如实告诉用户**卡在哪一步，不要自己钻源码。
+
 - `slides` 是**真实页数**（含自动拆出来的续页），报页数用它。
 - 有警告（图片找不到、字段类型不对）会打在 stderr，以 `[make-pptx] 警告：` 开头 ——
   **要把警告解决掉**，不要无视。
