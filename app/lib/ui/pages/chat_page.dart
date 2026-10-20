@@ -424,7 +424,11 @@ class _ChatPageState extends State<ChatPage> {
     // detach 掉，进程继续跑，回来时 attach 会把离屏期间攒下的通知回放出来。
     final live = _live;
     if (live != null) {
-      live.running = _running;
+      live.removeListener(_onLiveChanged);
+      // ⚠️ 这里**不要**再写 `live.running = _running`：
+      //    本页可能不是发起这一轮的实例，它的 _running 可能是陈旧的 true ——
+      //    写回去会把已经结束的轮次"复活"成进行中（首页就会一直显示「正在回答」）。
+      //    真值由发起方维护，页面只读。
       live.title ??= _transcript?.title;
       live.detach();
     } else {
@@ -898,6 +902,10 @@ class _ChatPageState extends State<ChatPage> {
         }
         registry.register(live);
         _live = live;
+        // 新会话也要挂同一个监听（与 _adoptLive 一致）：
+        // 这一轮的 running 由本页维护，但**从别处 adopt 回来后**可能换成别的实例，
+        // 两边都挂上才不会出现"一边在跑、一边显示未跑"（或反过来）。
+        live.addListener(_onLiveChanged);
         live.attach(
           onNotification: _onNotification,
           onPermission: _onPermission,
@@ -999,6 +1007,21 @@ class _ChatPageState extends State<ChatPage> {
     return id;
   }
 
+  /// 句柄状态变了（running / turnStartedAt）→ 同步到界面。
+  ///
+  /// 只同步这两个字段：消息内容走 ACP 通知，别在这里重建，否则一次回答会重建很多次。
+  void _onLiveChanged() {
+    final live = _live;
+    if (live == null || !mounted) return;
+    final r = live.running;
+    final t = live.turnStartedAt;
+    if (r == _running && t == _turnStartedAt) return;
+    setState(() {
+      _running = r;
+      _turnStartedAt = t;
+    });
+  }
+
   /// 接上一个**已经在跑**的会话（注册表里已经有它的进程与消息）。
   ///
   /// 不新起进程、不清消息 —— 只是把本页绑回去，并让句柄把"[人不在时]"攒下的
@@ -1009,6 +1032,10 @@ class _ChatPageState extends State<ChatPage> {
     _acp = live.acp;
     _sessionId = live.sessionId;
     _running = live.running;
+    // 2026-10-20 真机 bug 的修法：句柄上的 running 一变就同步到本页。
+    // 为什么必须有它：这一轮可能是**别的页面实例**发起的（切页/重进时换了实例），
+    // 跑完时是那个实例在清状态；本页只抄了一次初值就再也不更新 → 永远显示「正在处理」。
+    live.addListener(_onLiveChanged);
     // 切页回来时接着显示"已等了多久"，而不是归零（审计 P1-1）。
     _turnStartedAt = live.turnStartedAt;
     _spawnedConfigKey = live.spawnConfigKey;

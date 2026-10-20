@@ -35,14 +35,34 @@ class LiveSession extends ChangeNotifier {
   String? sessionId;
 
   /// 是否正在跑一轮回答（首页据此显示"进行中"）。
-  bool running = false;
+  ///
+  /// ⚠️ 2026-10-20 真机 bug：它原来是**裸字段** —— 谁改它都不会通知任何人。
+  /// 于是"离开页面再回来"时，新页面在 `_adoptLive` 里抄一次 `live.running` 就再也不更新；
+  /// 而把这一轮跑完的是**旧页面**（它只清了自己的 `_running` + 这里的字段），
+  /// 新页面就一直卡在「正在处理…」（用户原话：「文件已经生成了，但依然是正在处理」）。
+  /// 现在改成 setter：值真的变了就 notifyListeners → 页面与首页都跟得上。
+  bool get running => _running;
+  set running(bool v) {
+    if (_running == v) return;
+    _running = v;
+    notifyListeners();
+  }
+
+  bool _running = false;
 
   /// 当前这一轮是**什么时候开始的**（审计 P1-1）。
   ///
   /// 为什么放在句柄上而不是页面里：切页不打断回答（见 [attached]），
   /// 页面重建/切回来时必须能接着显示「已等 M:SS」，归零或消失都会误导用户
   /// —— 那个"我到底等了多久"正是这条要解决的问题。
-  DateTime? turnStartedAt;
+  DateTime? get turnStartedAt => _turnStartedAt;
+  set turnStartedAt(DateTime? v) {
+    if (_turnStartedAt == v) return;
+    _turnStartedAt = v;
+    notifyListeners();
+  }
+
+  DateTime? _turnStartedAt;
 
   /// 页面是否挂在上面。
   bool attached = false;
