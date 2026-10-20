@@ -508,14 +508,24 @@ class _ChatPageState extends State<ChatPage> {
     if (widget.runtime.isUnpacked) {
       try {
         await AndroidToolbox.ensureInstalled(widget.runtime.filesDir);
-        final local = LocalMcp.mcpServers(runtime: widget.runtime);
+        // ⚠️ **先探活再挂**（2026-10-20 真机 P0）：运行时的 MCP 是 failOnStartupError，
+        //    服务器起不来会让整个 `session/new` 失败 —— 实测就是「一条消息都发不出去」。
+        //    探活不过就**不挂**：少三个工具，会话照常。
+        final alive = await LocalMcp.probe(runtime: widget.runtime);
+        final local = alive
+            ? LocalMcp.mcpServers(runtime: widget.runtime)
+            : const <Map<String, dynamic>>[];
         if (local.isNotEmpty) {
           servers.addAll(local);
-          debugPrint('[chat] 会话挂上本地 MCP ${LocalMcp.serverName}'
-              '（${LocalMcp.mcpServers(runtime: widget.runtime).length} 个）');
+          debugPrint('[chat] 会话挂上本地 MCP ${LocalMcp.serverName}（${local.length} 个）');
+          DiagnosticsLog.add('dsh-chat', '会话挂上本地 MCP ${LocalMcp.serverName}');
+        } else if (!alive) {
+          debugPrint('[chat] 本地 MCP 探活未通过 → 本次不挂（会话照常）');
+          DiagnosticsLog.add('dsh-chat', '本地 MCP 探活未通过 → 本次不挂（会话照常）');
         }
       } catch (e) {
         debugPrint('[chat] 本地 MCP 挂不上（不致命，会话照开）：$e');
+        DiagnosticsLog.add('dsh-chat', '本地 MCP 挂载异常（会话照开）：$e');
       }
     }
 
@@ -815,8 +825,16 @@ class _ChatPageState extends State<ChatPage> {
       String? sessionId;
       if (wantResume != null && wantResume.isNotEmpty) {
         try {
-          await acp.resumeSession(wantResume, ws,
-              mcpServers: await _mcpServers());
+          final servers = await _mcpServers();
+          try {
+            await acp.resumeSession(wantResume, ws, mcpServers: servers);
+          } on Object catch (e) {
+            // 兜底：万一 MCP 还是把会话带崩了（探活过了也可能在授权/同步阶段失败），
+            // 就去掉 MCP 再试一次 —— **聊天能力优先级高于那三个工具**。
+            if (!_isMcpStartupError(e) || servers.isEmpty) rethrow;
+            DiagnosticsLog.add('dsh-chat', '恢复会话被 MCP 带崩 → 去掉 MCP 重试：$e');
+            await acp.resumeSession(wantResume, ws, mcpServers: const []);
+          }
           sessionId = wantResume;
           _resumed = true;
           _resumeError = null;
@@ -939,10 +957,33 @@ class _ChatPageState extends State<ChatPage> {
     return f;
   }
 
+  /// 这个异常是不是「MCP 起不来」造成的会话失败。
+  ///
+  /// 运行时的返回长这样（2026-10-20 真机原文）：
+  /// `session/new 失败：{"code":-32603,"message":"Internal error",
+  ///   "data":{"details":"mcp-client(dsh-office): initial connection or tool synchronization failed"}}`
+  /// 判据取 `mcp-client`（协议里 MCP 客户端的固定前缀），不绑定具体服务器名 ——
+  /// 以后再加别的 MCP，这条兜底同样生效。
+  static bool _isMcpStartupError(Object e) {
+    final s = e.toString().toLowerCase();
+    return s.contains('mcp-client') ||
+        s.contains('tool synchronization failed') ||
+        s.contains('initial connection');
+  }
+
   Future<String> _createSession() async {
     final acp = _acp;
     if (acp == null) throw StateError('会话进程还没起来');
-    final id = await acp.newSession(_cwd, mcpServers: await _mcpServers());
+    final servers = await _mcpServers();
+    String id;
+    try {
+      id = await acp.newSession(_cwd, mcpServers: servers);
+    } on Object catch (e) {
+      // 兜底（同 resume）：MCP 起不来不该让用户发不出消息。
+      if (!_isMcpStartupError(e) || servers.isEmpty) rethrow;
+      DiagnosticsLog.add('dsh-chat', '建会话被 MCP 带崩 → 去掉 MCP 重试：$e');
+      id = await acp.newSession(_cwd, mcpServers: const []);
+    }
     // 期间页面重建过（进程换了）→ 这个 id 不能算数，让调用方如实报错重来，
     // 否则会把消息发到一个已经没有页面在用的会话上。
     if (_acp != acp) throw StateError('会话进程刚被重建，请再发一次');

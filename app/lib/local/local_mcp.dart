@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'android_toolbox.dart';
+import 'diagnostics_log.dart';
 import 'dsh_runtime.dart';
 
 /// 会话里的**本地 MCP 服务器** —— 我们自己实现的那个（`toolbox/mcp-office.mjs`）。
@@ -43,6 +48,114 @@ class LocalMcp {
 
   /// 脚本在私有目录里的落盘位置（由 [AndroidToolbox.ensureInstalled] 复制过去）。
   static String scriptPath(String filesDir) => '$filesDir/toolbox/mcp-office.mjs';
+
+  /// 探活结果缓存（进程内有效）：null = 还没探过，true/false = 结论。
+  ///
+  /// 为什么要缓存：`session/new` 每次（含 resume）都会问一遍，每次都 spawn 一个 node
+  /// 去探活太贵；而这个服务能不能起来在一次 App 生命周期内基本不会变。
+  static bool? _probeOk;
+
+  /// **挂之前先探活**：真的 spawn 一次 `libnode.so mcp-office.mjs`，发 MCP 的
+  /// `initialize` + `tools/list`，5 秒内拿到带 `"tools"` 的回包才算能用。
+  ///
+  /// 为什么必须探（2026-10-20 真机 P0）：运行时对 MCP 是 `failOnStartupError: true` ——
+  /// 服务器起不来会**连累整个 `session/new`**，日志原文
+  /// `mcp-client(dsh-office): initial connection or tool synchronization failed`
+  /// → 一条消息都发不出去。可选能力不该有这种破坏力，所以宁可少三个工具也不挂坏的。
+  ///
+  /// 失败时把 stderr 写进诊断日志（设备上我们看不到 MCP 进程的报错，这是唯一出口）。
+  static Future<bool> probe({required DshRuntime runtime}) async {
+    final cached = _probeOk;
+    if (cached != null) return cached;
+    final servers = mcpServers(runtime: runtime);
+    if (servers.isEmpty) return _probeOk = false;
+    final cfg = servers.first;
+    final command = cfg['command'] as String;
+    final args = (cfg['args'] as List<Object?>).cast<String>();
+    final env = <String, String>{
+      for (final e in (cfg['env'] as List<Object?>))
+        (e as Map)['name'] as String: e['value'] as String,
+    };
+
+    Process? proc;
+    try {
+      proc = await Process.start(command, args, environment: env);
+      final stderrBuf = StringBuffer();
+      proc.stderr.transform(utf8.decoder).listen((chunk) {
+        // 只留前 800 字符：够看 Node 的报错头（ERR_MODULE_NOT_FOUND / EACCES 之类），
+        // 又不至于让日志文件被刷爆。
+        if (stderrBuf.length < 800) stderrBuf.write(chunk);
+      });
+      proc.stdin.write('{"jsonrpc":"2.0","id":1,"method":"initialize",'
+          '"params":{"protocolVersion":"2024-11-05","capabilities":{},'
+          '"clientInfo":{"name":"dsh-app","version":"0.78"}}}\n'
+          '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
+          '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n');
+      await proc.stdin.flush();
+
+      // ⚠️ 必须按 **id=2（tools/list）** 判，不能只看有没有 "tools" 字样：
+      //    `initialize` 的回包里就带 `"capabilities":{"tools":{}}` —— 用它判会让
+      //    「工具同步失败」被误判成通过（真机 2026-10-20 的失败恰恰发生在同步阶段）。
+      final completer = Completer<bool>();
+      final sub = proc.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        if (completer.isCompleted) return;
+        try {
+          final msg = jsonDecode(line);
+          if (msg is! Map) return;
+          if (msg['id'] != 2) return; // 只认 tools/list 的应答
+          if (msg['error'] != null) {
+            DiagnosticsLog.add('dsh-mcp', '探活失败（tools/list 报错）：$line');
+            completer.complete(false);
+            return;
+          }
+          final result = msg['result'];
+          final tools = result is Map ? result['tools'] : null;
+          if (tools is List) {
+            DiagnosticsLog.add('dsh-mcp', '探活通过：$serverName 可用（${tools.length} 个工具）');
+            completer.complete(true);
+          } else {
+            DiagnosticsLog.add('dsh-mcp', '探活失败（tools/list 没有 tools 数组）：$line');
+            completer.complete(false);
+          }
+        } catch (_) {
+          // 非 JSON 行（比如 node 的警告打到 stdout）→ 记下来，继续等
+          if (stderrBuf.length < 800) stderrBuf.write('[stdout] $line; ');
+        }
+      });
+      final ok = await completer.future.timeout(
+        const Duration(seconds: 6),
+        onTimeout: () {
+          DiagnosticsLog.add('dsh-mcp',
+              '探活超时（6s 内 tools/list 没应答）'
+              '${stderrBuf.isEmpty ? '' : ' | stderr=${stderrBuf.toString().trim()}'}');
+          return false;
+        },
+      );
+      await sub.cancel();
+      _probeOk = ok;
+      return ok;
+    } on TimeoutException {
+      // 超时往往意味着进程起来了但卡住（例如 import 挂在一个不存在的模块上不会卡，
+      // 但等 stdin 的阻塞、或 node 起不来等 dlopen 失败会）。stderr 是第一手线索。
+      DiagnosticsLog.add('dsh-mcp', '探活超时（5s 内没回包）→ 本次不挂 MCP，会话照开');
+      _probeOk = false;
+      return false;
+    } catch (e) {
+      DiagnosticsLog.add('dsh-mcp', '探活抛错 → 本次不挂 MCP，会话照开：$e');
+      _probeOk = false;
+      return false;
+    } finally {
+      try {
+        proc?.kill();
+      } catch (_) {}
+    }
+  }
+
+  /// 把探活结论作废（例如运行环境刚被换过）。
+  static void invalidateProbe() => _probeOk = null;
 
   /// 给 ACP `session/new` / `session/resume` 用的 `mcpServers` 条目（stdio）。
   ///
