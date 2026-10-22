@@ -1,0 +1,37 @@
+{
+  "version": "0.79",
+  "versionCode": 152,
+  "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.79/paopaocat-preview-0.79-20261022a-webui-full-arm64-v8a.apk",
+  "size": 103885603,
+  "sha256": "bce67118ccc178ab80f820d5540c19772e21ca3cc2fe57fe2423c420dc4f21a2",
+  "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.79/paopaocat-preview-0.79-20261022a-webui-full-arm64-v8a.apk",
+  "sizeFull": 103885603,
+  "sha256Full": "bce67118ccc178ab80f820d5540c19772e21ca3cc2fe57fe2423c420dc4f21a2",
+  "minVersionCode": 0,
+  "publishedAt": "2026-10-21",
+  "notes": [
+    "**更新只要下几 MB 了**：以前每次都要下整个 ~99 MB 的包，现在只下差异（这一版 **5.2 MB**），手机上用已装的包拼出新包、校验通过再安装。拼装失败或版本对不上时自动回退整包，不会因此更新不了",
+    "**新增：外观里可以关掉「左右滑动切换页面」** —— 设置 → 外观。关掉后横向手势彻底不接管，只点底部标签切页；开着的话也调钝了：要**甩得快**或**拖过屏宽 28%** 才翻页，不再一碰就跳",
+    "**修好：思考过程又卡又跳字** —— 以前每个字都刷新界面、滚动每次都用动画追（互相打断），长思考一超过阈值就被瞬间截成几行。现在按帧合并上屏、滚动直接跟上；流式时全文铺开不折叠，结束后**收成一行「思考了 N 秒 · 展开」**（时长取真实时间戳，拿不到就只写「思考」）",
+    "**新增：定时任务可以同步到系统日历** —— 任务页有开关，授权后任务变成系统日历事件（带重复与提醒），**到点由系统自己响**，不依赖 App 还开着；任务本身仍由 App 内的调度器执行",
+    "**新增：本机 MCP 服务器（dsh-office）** —— 会话里多了三个工具：读单元格 / 写单元格 / 往 .docx 追加段落，本机跑、不联网。改已有 Office 文件时不用另存新文件",
+    "**修好：Bot 页面** —— 配色跟随 App（不再是另一套灰蓝）；「+」菜单那栏「定时任务」改名为「设置」并落到通用页；设置页在手机上摊开可用、正文能上下滑；切模型导致服务重启时不再换端口，页面不会莫名「重新连接」",
+    "**修好：文件都生成了，界面还一直显示「正在处理」** —— 「正在跑」这个状态原来改它不通知任何界面，切页回来就卡住。现在状态变化会通知页面与首页",
+    "**修好：做出来的 PPT 太朴素** —— 要点页从「一个文本框」改成软卡片 + 强调条；2~6 条并列短句自动排成卡片墙（实测同一份稿：18 个形状 → 48 个）",
+    "**新增：第一次打开有引导** —— 三条要点（能做什么 / 不用填 Key / Bot 在哪），只出现一次"
+  ],
+  "patches": [
+    {
+      "fromSha256": "04e17b9035788c65ff3238e8bd3f892e6dbc49e38639cf10677796a8e3f4b0f3",
+      "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.78/paopaocat-preview-0.77-20261019-full-arm64-v8a__to__paopaocat-preview-0.78-20261021-full-arm64-v8a.patch",
+      "size": 5509367,
+      "sha256": "e88b15efedf7429a7650b3569e2f51ca11b4a3b5b90ebae126369e8df5d47fd2"
+    },
+    {
+      "fromSha256": "af1dda25967aace0b686c2ef29ce9e931b1ab5e3ab021ff589610bed7f170fb6",
+      "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.78/paopaocat-preview-0.78-20261020-full-arm64-v8a__to__paopaocat-preview-0.78-20261021-full-arm64-v8a.patch",
+      "size": 5421896,
+      "sha256": "01ba53ae13f496c2757964cb6e6a18c77a81ed5c46972de0fd5e005485898de5"
+    }
+  ]
+}
