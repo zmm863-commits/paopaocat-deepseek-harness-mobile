@@ -226,6 +226,71 @@ class PhoneAgentBridge {
     return r?['ok'] == true;
   }
 
+  // ── 免装 Shizuku：adb 无线调试通道（2026-10-24）────────────────────────
+  //
+  // 这条路让用户不用另装 Shizuku：App 自己跟手机的 adbd 配对（6 位配对码），
+  // 然后把引擎 dex 起在 shell 身份里。状态与失败原因都从原生侧读。
+
+  /// 免装通道的连接状态（binder 在不在 / dex 版本 / 上一次错误）。
+  Future<Map<String, dynamic>?> vdshellStatus() async {
+    try {
+      final Map<Object?, Object?>? m =
+          await DshHost.channel.invokeMethod<Map<Object?, Object?>>('vdshellStatus');
+      if (m == null) return null;
+      return <String, dynamic>{
+        'binderAlive': m['binderAlive'] == true,
+        'dexVersion': (m['dexVersion'] as num?)?.toInt() ?? 0,
+        'error': m['error']?.toString() ?? '',
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 无线调试配对（[code] 6 位；[port] 留空则自动 mDNS 发现配对端口）。
+  Future<bool> vdshellPair(String code, {int? port}) async {
+    try {
+      final bool? ok = await DshHost.channel.invokeMethod<bool>(
+          'vdshellPair', <String, dynamic>{'code': code, 'port': port});
+      return ok == true;
+    } catch (e) {
+      DiagnosticsLog.add(_logTag, 'vdshellPair 失败：$e');
+      return false;
+    }
+  }
+
+  /// 连接 → 部署 dex → 起 shell 进程 → 等 binder。
+  Future<({bool ok, String error})> vdshellBootstrap() async {
+    try {
+      final Map<Object?, Object?>? m =
+          await DshHost.channel.invokeMethod<Map<Object?, Object?>>('vdshellBootstrap');
+      return (
+        ok: m?['ok'] == true,
+        error: m?['error']?.toString() ?? '',
+      );
+    } catch (e) {
+      return (ok: false, error: '$e');
+    }
+  }
+
+  /// 停掉 shell 进程里的引擎。
+  Future<void> vdshellStop() async {
+    try {
+      await DshHost.channel.invokeMethod<bool>('vdshellStop');
+    } catch (_) {}
+  }
+
+  /// 连上 adbd 后跑一条调试命令（排障用）。
+  Future<String> vdshellShell(String command) async {
+    try {
+      final String? out = await DshHost.channel
+          .invokeMethod<String>('vdshellShell', <String, dynamic>{'command': command});
+      return out ?? '';
+    } catch (e) {
+      return 'ERR:$e';
+    }
+  }
+
   /// 把一段文字敲进虚拟屏（KeyCharacterMap，不弹输入法）。
   Future<bool> inputText(String text) async {
     final Map<String, dynamic>? r =
@@ -337,9 +402,9 @@ class PhoneAgentHeadless {
 
   /// 一句话说清现在能做什么。
   String get hint {
-    if (!shizukuGranted) return '还没授权 Shizuku —— 先授权，引擎才有 shell 身份';
-    if (!engineConnected) return '已授权，但引擎还没连上 —— 点「重连引擎」';
-    if (!hasDisplay) return '引擎就绪，可以建一块看不见的屏了';
-    return '虚拟屏在跑：display=$displayId';
+    if (hasDisplay) return '虚拟屏在跑：display=$displayId';
+    if (engineConnected) return '引擎就绪，可以建一块看不见的屏了';
+    if (shizukuGranted) return '已授权 Shizuku，但引擎还没连上 —— 点「重连引擎」';
+    return '引擎还没起来：上面可授权 Shizuku，或用「免装 Shizuku」无线调试配对';
   }
 }

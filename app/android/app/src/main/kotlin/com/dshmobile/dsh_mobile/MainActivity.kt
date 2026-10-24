@@ -371,6 +371,77 @@ class MainActivity : FlutterActivity() {
                         // 授权回调之后重新 bind —— 授权前那次 bind 一定失败。
                         result.success(phoneAgent.rebindShizuku())
                     }
+                    // ---- 免装 Shizuku：adb 无线调试通道（VdShellManager）----
+                    //
+                    // 配对/连接/部署/起进程全是阻塞操作（adb 握手 + TLS），
+                    // 必须放后台线程，否则主线程 ANR。
+                    "vdshellStatus" -> result.success(VdShellManager.status())
+
+                    // 免装通道要做「无线调试配对」，先得把用户送到那个页面
+                    "openWirelessDebuggingSettings" -> {
+                        val ok = try {
+                            startActivity(
+                                Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            true
+                        } catch (e: Throwable) {
+                            false
+                        }
+                        result.success(ok)
+                    }
+
+                    "vdshellPair" -> {
+                        val code = call.argument<String>("code")?.trim() ?: ""
+                        val port = call.argument<Int>("port")
+                        if (code.length != 6) {
+                            result.error("vdshellPair", "配对码是 6 位数字", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            val ok = try {
+                                VdShellManager.pair(this, code, port)
+                            } catch (e: Throwable) {
+                                false
+                            }
+                            runOnUiThread { result.success(ok) }
+                        }.start()
+                    }
+
+                    "vdshellBootstrap" -> {
+                        Thread {
+                            val ok = try {
+                                VdShellManager.bootstrap(this)
+                            } catch (e: Throwable) {
+                                false
+                            }
+                            runOnUiThread {
+                                result.success(
+                                    mapOf(
+                                        "ok" to ok,
+                                        "error" to VdShellManager.lastError,
+                                    )
+                                )
+                            }
+                        }.start()
+                    }
+
+                    "vdshellStop" -> {
+                        try { VdShellManager.stop() } catch (_: Throwable) {}
+                        result.success(true)
+                    }
+
+                    "vdshellShell" -> {
+                        val command = call.argument<String>("command") ?: "id"
+                        Thread {
+                            val out = try {
+                                VdShellManager.debugShell(this, command)
+                            } catch (e: Throwable) {
+                                "ERR:${e.message}"
+                            }
+                            runOnUiThread { result.success(out) }
+                        }.start()
+                    }
                     "phoneAgentStatus" -> {
                         result.success(
                             mapOf(

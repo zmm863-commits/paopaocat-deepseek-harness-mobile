@@ -49,3 +49,15 @@
     public boolean onTransact(int, android.os.Parcel, android.os.Parcel, int);
 }
 -keep class rikka.shizuku.** { *; }
+
+# ── 免装 Shizuku：adb 通道（VdShellClient / VdShellBridge）──────────────────
+# 1) libadb：内部大量反射 + 内部类名装配，R8 一改类名就崩 → 整包 keep。
+-keep class io.github.muntashirakon.adb.** { *; }
+# 2) Conscrypt：它的 KitKat/PreKitKat 适配器引用了 Android 系统内部类
+#    （com.android.org.conscrypt.* / org.apache.harmony.*），这些类由系统运行时提供、
+#    而 minSdk 24 根本不会走那两个适配器 → 让 R8 忽略，不要因此报错。
+-dontwarn org.conscrypt.**
+-dontwarn com.android.org.conscrypt.**
+-dontwarn org.apache.harmony.xnet.provider.jsse.**
+# 3) Bouncy Castle：jdk15to18 变体对 sun.* 有软引用，Android 上没有 → 忽略。
+-dontwarn org.bouncycastle.**

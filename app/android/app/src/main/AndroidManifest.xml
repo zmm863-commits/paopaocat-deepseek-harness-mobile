@@ -224,6 +224,16 @@
         <meta-data
             android:name="moe.shizuku.client.V3_SUPPORT"
             android:value="true" />
+        <!-- 免装 Shizuku 通道：引擎 dex 在 shell 进程（uid 2000）里起来之后，
+             把 binder 塞进广播投递回 App。必须**静态注册**（shell 发广播时 App 可能还没起）。 -->
+        <receiver
+            android:name=".VdShellReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.dshmobile.vdshell.BINDER_READY" />
+            </intent-filter>
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

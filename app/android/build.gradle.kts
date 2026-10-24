@@ -2,6 +2,9 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // 免装 Shizuku 那条路要用 libadb-android（adb 协议 + 无线调试配对），
+        // 它只发在 JitPack 上。双许可 GPL-3.0 / Apache-2.0，我们按 Apache-2.0 用。
+        maven { url = uri("https://jitpack.io") }
     }
 }
 

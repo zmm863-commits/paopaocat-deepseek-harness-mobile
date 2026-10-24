@@ -1154,6 +1154,24 @@ class _SettingsTabState extends State<SettingsTab> {
                     '下载前界面上会写明体积与来源。'),
                 style: const TextStyle(fontSize: 12, height: 1.6),
               ),
+              const SizedBox(height: 12),
+              SelectableText(
+                context.tr('免装 Shizuku 的 adb 通道（2026-10-24 新增，随包）\n'
+                    '\n'
+                    '· libadb-android 3.1.1 —— adb 协议与「无线调试配对」的实现。'
+                    '双许可（GPL-3.0 或 Apache-2.0），本 App 按 Apache-2.0 使用。'
+                    'https://github.com/MuntashirAkon/libadb-android\n'
+                    '\n'
+                    '· Conscrypt 2.5.3 —— TLS 实现（无线调试配对用）。Apache-2.0。'
+                    'https://github.com/google/conscrypt\n'
+                    '\n'
+                    '· Bouncy Castle 1.78.1（bcprov / bcpkix）—— adb 认证证书的生成。'
+                    'MIT 许可。https://www.bouncycastle.org\n'
+                    '\n'
+                    '以上组件只用于本 App 自带的「无线调试配对」功能（让用户不装 Shizuku '
+                    '也能启动后台引擎），源码均未修改。'),
+                style: const TextStyle(fontSize: 12, height: 1.6),
+              ),
             ],
           ),
         ),

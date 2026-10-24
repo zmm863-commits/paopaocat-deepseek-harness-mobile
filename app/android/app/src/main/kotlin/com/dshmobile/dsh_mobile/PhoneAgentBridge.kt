@@ -212,11 +212,17 @@ class PhoneAgentBridge {
                 respond(out, 200, "{\"ok\":true,\"service\":\"phone-agent\",\"mode\":\"headless\"}")
 
             path.startsWith("/status") -> {
-                val display = displayIdOf(vd)
+                val display = engineDisplayId()
+                val engine = when {
+                    VdShell.isAlive() -> "vdshell"
+                    shizuku?.isConnected() == true -> "shizuku"
+                    else -> "none"
+                }
                 respond(out, 200,
                     "{\"ok\":true,\"headless\":true," +
-                        "\"shizukuPermission\":" + (vd?.hasPermission() == true) +
-                        ",\"connected\":" + (vd?.isConnected() == true) +
+                        "\"engine\":\"" + engine + "\"," +
+                        "\"shizukuPermission\":" + (shizuku?.hasPermission() == true) +
+                        ",\"connected\":" + (engine != "none") +
                         ",\"display\":" + display + "}")
             }
 
@@ -224,19 +230,19 @@ class PhoneAgentBridge {
                 val w = jsonInt(body, "w") ?: 1080
                 val h = jsonInt(body, "h") ?: 1920
                 val dpi = jsonInt(body, "dpi") ?: 320
-                val r = vd?.call(EngineProtocol.CMD_CREATE) {
+                val r = engineCall(EngineProtocol.CMD_CREATE) {
                     it.writeInt(w); it.writeInt(h); it.writeInt(dpi)
-                } ?: "ERR:not connected"
+                }
                 respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
             }
 
             path.startsWith("/release") -> {
-                val r = vd?.call(EngineProtocol.CMD_RELEASE) ?: "ERR:not connected"
+                val r = engineCall(EngineProtocol.CMD_RELEASE)
                 respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
             }
 
             path.startsWith("/screenshot") -> {
-                val png = vd?.capture()
+                val png = engineCapture()
                 if (png == null) {
                     respond(out, 502, "{\"ok\":false,\"error\":\"截图失败（虚拟屏未建或还没出帧）\"}")
                 } else {
@@ -250,8 +256,7 @@ class PhoneAgentBridge {
                 if (x == null || y == null) {
                     respond(out, 400, "{\"ok\":false,\"error\":\"需要 x 与 y\"}")
                 } else {
-                    val r = vd?.call(EngineProtocol.CMD_TAP) { it.writeInt(x); it.writeInt(y) }
-                        ?: "ERR:not connected"
+                    val r = engineCall(EngineProtocol.CMD_TAP) { it.writeInt(x); it.writeInt(y) }
                     respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
@@ -263,9 +268,9 @@ class PhoneAgentBridge {
                     respond(out, 400, "{\"ok\":false,\"error\":\"需要 x1,y1,x2,y2\"}")
                 } else {
                     val d = jsonInt(body, "ms") ?: 300
-                    val r = vd?.call(EngineProtocol.CMD_SWIPE) {
+                    val r = engineCall(EngineProtocol.CMD_SWIPE) {
                         it.writeInt(x1); it.writeInt(y1); it.writeInt(x2); it.writeInt(y2); it.writeInt(d)
-                    } ?: "ERR:not connected"
+                    }
                     respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
@@ -276,7 +281,7 @@ class PhoneAgentBridge {
                 if (code < 0) {
                     respond(out, 400, "{\"ok\":false,\"error\":\"不认识的 action（back/home/recents）\"}")
                 } else {
-                    val r = vd?.call(EngineProtocol.CMD_KEY) { it.writeInt(code) } ?: "ERR:not connected"
+                    val r = engineCall(EngineProtocol.CMD_KEY) { it.writeInt(code) }
                     respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
@@ -286,13 +291,13 @@ class PhoneAgentBridge {
                 if (t.isEmpty()) {
                     respond(out, 400, "{\"ok\":false,\"error\":\"需要 text\"}")
                 } else {
-                    val r = vd?.call(EngineProtocol.CMD_TEXT) { it.writeString(t) } ?: "ERR:not connected"
+                    val r = engineCall(EngineProtocol.CMD_TEXT) { it.writeString(t) }
                     respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
 
             path.startsWith("/ocr") || path.startsWith("/find-text") -> {
-                val png = vd?.capture()
+                val png = engineCapture()
                 if (png == null) {
                     respond(out, 502, "{\"ok\":false,\"error\":\"截图失败（虚拟屏未建或还没出帧）\"}")
                 } else {
@@ -336,7 +341,7 @@ class PhoneAgentBridge {
                     val deadline = System.currentTimeMillis() + timeoutMs
                     var hit = false
                     while (System.currentTimeMillis() < deadline) {
-                        val png = vd?.capture(400)
+                        val png = engineCapture(400)
                         if (png != null) {
                             val bmp = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size)
                             if (bmp != null) {
@@ -381,13 +386,12 @@ class PhoneAgentBridge {
                     respond(out, 400, "{\"ok\":false,\"error\":\"需要 pkg\"}")
                 } else {
                     // 懒建屏：还没建就先建一块默认 1080×1920 / 320dpi
-                    if (displayIdOf(vd) < 0) {
-                        vd?.call(EngineProtocol.CMD_CREATE) {
+                    if (engineDisplayId() < 0) {
+                        engineCall(EngineProtocol.CMD_CREATE) {
                             it.writeInt(1080); it.writeInt(1920); it.writeInt(320)
                         }
                     }
-                    val r = vd?.call(EngineProtocol.CMD_LAUNCH) { it.writeString(pkg) }
-                        ?: "ERR:not connected"
+                    val r = engineCall(EngineProtocol.CMD_LAUNCH) { it.writeString(pkg) }
                     respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
@@ -396,9 +400,25 @@ class PhoneAgentBridge {
         }
     }
 
+    /**
+     * 双通道引擎调用：**免装通道（vdshell binder）优先，Shizuku 兜底**。
+     *
+     * 两条通道的 transact 协议完全一样（同一个 EngineProtocol），所以这里只挑一个活着
+     * 的 binder 发命令 —— 上层（HTTP 桥 / 操作台）不用关心屏是谁建的。
+     */
+    private fun engineCall(code: Int, write: ((android.os.Parcel) -> Unit)? = null): String {
+        if (VdShell.isAlive()) return VdShell.call(code, write)
+        return shizuku?.call(code, write) ?: "ERR:engine not connected"
+    }
+
+    private fun engineCapture(timeoutMs: Int = 800): ByteArray? {
+        if (VdShell.isAlive()) return VdShell.capture(timeoutMs)
+        return shizuku?.capture(timeoutMs)
+    }
+
     /** 从 shell 进程读当前虚拟屏 id（无屏返回 -1）。 */
-    private fun displayIdOf(vd: ShizukuEngineClient?): Int {
-        val r = vd?.call(EngineProtocol.CMD_STATUS) ?: return -1
+    private fun engineDisplayId(): Int {
+        val r = engineCall(EngineProtocol.CMD_STATUS)
         val m = Regex("display=(\\d+)").find(r)
         return m?.groupValues?.get(1)?.toIntOrNull() ?: -1
     }

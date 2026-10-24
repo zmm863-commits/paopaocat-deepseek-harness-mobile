@@ -369,7 +369,7 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
             ),
           ),
           const SizedBox(height: 8),
-          _stepRow(1, context.tr('Shizuku 已授权'), granted),
+          _stepRow(1, context.tr('已激活（Shizuku 或免装配对）'), granted || connected),
           _stepRow(2, context.tr('引擎已连上（shell 进程）'), connected),
           _stepRow(3, context.tr('虚拟屏已创建'), info?.hasDisplay ?? false),
           if (!bridgeUp)

@@ -114,6 +114,9 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
           style: TextStyle(color: DshColors.textDim, fontSize: 11.5, height: 1.5),
         ),
         const SizedBox(height: 10),
+        // 2026-10-24：「免装 Shizuku」通道 —— 用无线调试配对，自己把引擎起在 shell 里
+        _VdShellBlock(),
+        const SizedBox(height: 10),
         // 2026-10-24：把「后台操作台」摆在这里 —— 用户要在 App 里**亲眼确认**
         // 虚拟屏建没建起来、画面对不对、点得中不中，而不是只能靠会话里猜。
         OutlinedButton.icon(
@@ -370,5 +373,227 @@ class _AppPickerState extends State<_AppPicker> {
           ),
         ),
     ];
+  }
+}
+
+
+/// 「免装 Shizuku」：用无线调试配对，把引擎 dex 起在 shell 身份里。
+///
+/// 用户侧只有两步：① 打开「无线调试」拿到 6 位配对码；② 填进来点一下。
+/// 之后引擎一直在跑（App 重启后重来一次即可，配对关系本身是持久的）。
+class _VdShellBlock extends StatefulWidget {
+  @override
+  State<_VdShellBlock> createState() => _VdShellBlockState();
+}
+
+class _VdShellBlockState extends State<_VdShellBlock> {
+  final TextEditingController _code = TextEditingController();
+  final TextEditingController _port = TextEditingController();
+  bool _busy = false;
+  bool _alive = false;
+  String _msg = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatus();
+  }
+
+  @override
+  void dispose() {
+    _code.dispose();
+    _port.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadStatus() async {
+    final Map<String, dynamic>? st =
+        await PhoneAgentBridge.instance.vdshellStatus();
+    if (!mounted || st == null) return;
+    setState(() {
+      _alive = st['binderAlive'] == true;
+      final String err = st['error']?.toString() ?? '';
+      if (!_alive && err.isNotEmpty) _msg = err;
+    });
+  }
+
+  Future<void> _openSettings() async {
+    try {
+      await DshHost.channel.invokeMethod<bool>('openWirelessDebuggingSettings');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-phone-agent', '打开开发者选项失败：$e');
+    }
+  }
+
+  Future<void> _pairAndStart() async {
+    if (_busy) return;
+    final String code = _code.text.trim();
+    if (code.length != 6) {
+      setState(() => _msg = '配对码是 6 位数字（在「使用配对码配对设备」里看）');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _msg = '正在配对…';
+    });
+    final int? port = int.tryParse(_port.text.trim());
+    final bool ok = await PhoneAgentBridge.instance.vdshellPair(code, port: port);
+    if (!ok) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _msg = '配对失败：确认「无线调试」开着、配对码是最新的（60 秒会变）';
+        });
+      }
+      return;
+    }
+    if (mounted) setState(() => _msg = '已配对，正在起引擎（约 3~10 秒）…');
+    final ({bool ok, String error}) r =
+        await PhoneAgentBridge.instance.vdshellBootstrap();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _alive = r.ok;
+      _msg = r.ok ? '引擎已就绪 —— 现在去后台操作台建屏' : '启动失败：${r.error}';
+    });
+  }
+
+  Future<void> _stop() async {
+    await PhoneAgentBridge.instance.vdshellStop();
+    if (!mounted) return;
+    setState(() {
+      _alive = false;
+      _msg = '引擎已停止';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: DshColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(DshMetrics.radius(12)),
+        border: Border.all(color: DshColors.line, width: DshMetrics.borderWidth),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                _alive ? Icons.bolt : Icons.bolt_outlined,
+                size: 16,
+                color: _alive ? DshColors.ok : DshColors.accent,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  context.tr('免装 Shizuku（用无线调试自己起引擎）'),
+                  style: TextStyle(
+                    color: DshColors.text,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            context.tr('不装 Shizuku 也能后台操作：打开「无线调试」，把配对码填进来，'
+                'App 会用 adb 通道把引擎起在 shell 里。配对码 60 秒过期，用最新的那个。'),
+            style: TextStyle(color: DshColors.textDim, fontSize: 11, height: 1.45),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(38),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+            icon: const Icon(Icons.developer_mode, size: 16),
+            label: Text(context.tr('打开「无线调试」设置页'),
+                style: const TextStyle(fontSize: 12)),
+            onPressed: _openSettings,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _code,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  style: TextStyle(color: DshColors.text, fontSize: 13),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    counterText: '',
+                    labelText: context.tr('配对码'),
+                    hintText: '6 位数字',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _port,
+                  keyboardType: TextInputType.number,
+                  style: TextStyle(color: DshColors.text, fontSize: 13),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: context.tr('端口'),
+                    hintText: context.tr('可留空'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(40),
+                  ),
+                  icon: Icon(_busy ? Icons.hourglass_top : Icons.play_arrow,
+                      size: 18),
+                  label: Text(
+                    _busy ? context.tr('处理中…') : context.tr('配对并启动引擎'),
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  onPressed: _busy ? null : _pairAndStart,
+                ),
+              ),
+              if (_alive) ...<Widget>[
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(64, 40),
+                  ),
+                  onPressed: _stop,
+                  child: Text(context.tr('停止'),
+                      style: const TextStyle(fontSize: 12)),
+                ),
+              ],
+            ],
+          ),
+          if (_msg.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 7),
+              child: Text(
+                _msg,
+                style: TextStyle(
+                  color: _alive ? DshColors.ok : DshColors.textDim,
+                  fontSize: 11,
+                  height: 1.4,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

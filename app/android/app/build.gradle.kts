@@ -194,6 +194,21 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
+    // ── 免装 Shizuku：内置 adb 通道（VdShellManager.kt）────────────────────
+    // 目标：用户不用另装 Shizuku，App 自己用「无线调试配对」把引擎 dex 起在
+    // shell 身份里。libadb-android 提供 adb 协议（CNXN/AUTH/OPEN/WRTE）+ 无线调试
+    // 配对（TLS 1.3 PSK + Spake2）；双许可 GPL-3.0 / Apache-2.0，我们按 Apache-2.0。
+    // ⚠ 它依赖一个 LGPL 的 Spake2 实现（配对协议用），对自用分发没有影响，
+    //   但要在 docs/第三方许可.md 里如实登记。
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    // TLS 栈：用打包进来的 Conscrypt，**不**依赖 Android 9+ 的 hidden-API 绕行
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
+    // 自签名证书（adb 认证要一对 RSA 密钥 + X509 证书）。
+    // ⚠️ 版本必须跟 libadb 的传递依赖 **bcprov-jdk15to18:1.81** 对齐：
+    //   libadb 运行时自己也用 org.bouncycastle（配对协议），不能 exclude 也不能换
+    //   jdk18on —— 所以证书生成也用 jdk15to18 变体，bcpkix 会带进同版本 bcprov。
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
+
     // ── LiteRT 的 GPU 加速器（`libLiteRtClGlAccelerator.so`）────────────────────
     // 为什么必须单独加这一条：`litertlm-android` 的 AAR 里**只有** `liblitertlm_jni.so`，
     // 而它是**运行时 dlopen** 加速器插件的（把包内 .so 的字符串挖出来可见这些名字：

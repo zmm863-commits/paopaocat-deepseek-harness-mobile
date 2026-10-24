@@ -4693,5 +4693,45 @@
     "en": "Showing the first {0} results; keep typing to narrow it down",
     "ja": "検索結果の先頭 {0} 件のみ表示。入力して絞り込んでください",
     "ko": "검색 결과 처음 {0}개만 표시. 계속 입력해 범위를 좁히세요"
+  },
+  "免装 Shizuku（用无线调试自己起引擎）": {
+    "en": "No Shizuku needed (start the engine via Wireless debugging)",
+    "ja": "Shizuku 不要（ワイヤレスデバッグでエンジンを起動）",
+    "ko": "Shizuku 없이(무선 디버깅으로 엔진 시작)"
+  },
+  "不装 Shizuku 也能后台操作：打开「无线调试」，把配对码填进来，App 会用 adb 通道把引擎起在 shell 里。配对码 60 秒过期，用最新的那个。": {
+    "en": "Operate in the background without installing Shizuku: turn on Wireless debugging, enter the pairing code, and the app starts the engine in a shell via adb. The code expires in 60 seconds, so use the newest one.",
+    "ja": "Shizuku を入れなくてもバックグラウンド操作できます。「ワイヤレスデバッグ」を開いてペアリングコードを入力すると、App が adb 経由で shell 内にエンジンを起動します。コードは 60 秒で変わるので、最新のものを使ってください。",
+    "ko": "Shizuku를 설치하지 않아도 백그라운드 조작이 됩니다. 무선 디버깅을 켜고 페어링 코드를 입력하면 앱이 adb로 shell에서 엔진을 시작합니다. 코드는 60초마다 바뀌니 최신 코드를 쓰세요."
+  },
+  "打开「无线调试」设置页": {
+    "en": "Open Wireless debugging settings",
+    "ja": "「ワイヤレスデバッグ」設定を開く",
+    "ko": "무선 디버깅 설정 열기"
+  },
+  "可留空": {
+    "en": "Optional",
+    "ja": "空欄可",
+    "ko": "비워도 됨"
+  },
+  "处理中…": {
+    "en": "Working…",
+    "ja": "処理中…",
+    "ko": "처리 중…"
+  },
+  "配对并启动引擎": {
+    "en": "Pair and start engine",
+    "ja": "ペアリングしてエンジンを起動",
+    "ko": "페어링하고 엔진 시작"
+  },
+  "已激活（Shizuku 或免装配对）": {
+    "en": "Activated (Shizuku or wireless pairing)",
+    "ja": "有効化済み（Shizuku またはペアリング）",
+    "ko": "활성화됨(Shizuku 또는 무선 페어링)"
+  },
+  "免装 Shizuku 的 adb 通道（2026-10-24 新增，随包）\n\n· libadb-android 3.1.1 —— adb 协议与「无线调试配对」的实现。双许可（GPL-3.0 或 Apache-2.0），本 App 按 Apache-2.0 使用。https://github.com/MuntashirAkon/libadb-android\n\n· Conscrypt 2.5.3 —— TLS 实现（无线调试配对用）。Apache-2.0。https://github.com/google/conscrypt\n\n· Bouncy Castle 1.78.1（bcprov / bcpkix）—— adb 认证证书的生成。MIT 许可。https://www.bouncycastle.org\n\n以上组件只用于本 App 自带的「无线调试配对」功能（让用户不装 Shizuku 也能启动后台引擎），源码均未修改。": {
+    "en": "adb channel for no-Shizuku mode (added 2026-10-24, bundled)\n\n· libadb-android 3.1.1 — adb protocol and Wireless-debugging pairing. Dual-licensed (GPL-3.0 or Apache-2.0); this app uses it under Apache-2.0. https://github.com/MuntashirAkon/libadb-android\n\n· Conscrypt 2.5.3 — TLS for pairing. Apache-2.0. https://github.com/google/conscrypt\n\n· Bouncy Castle 1.78.1 (bcprov / bcpkix) — generating the adb auth certificate. MIT. https://www.bouncycastle.org\n\nThese are used only for the built-in Wireless-debugging pairing (so you can start the background engine without installing Shizuku); their source is unmodified.",
+    "ja": "Shizuku 不要モードの adb チャンネル（2026-10-24 追加、同梱）\n\n· libadb-android 3.1.1 — adb プロトコルとワイヤレスデバッグのペアリング。デュアルライセンス（GPL-3.0 または Apache-2.0）、本 App は Apache-2.0 で使用。https://github.com/MuntashirAkon/libadb-android\n\n· Conscrypt 2.5.3 — ペアリング用 TLS。Apache-2.0。https://github.com/google/conscrypt\n\n· Bouncy Castle 1.78.1（bcprov / bcpkix）— adb 認証証明書の生成。MIT。https://www.bouncycastle.org\n\nこれらは本 App 内蔵のワイヤレスデバッグペアリング（Shizuku を入れずにバックグラウンドエンジンを起動するため）にのみ使用し、ソースは改変していません。",
+    "ko": "Shizuku 없이 쓰는 adb 채널(2026-10-24 추가, 동봉)\n\n· libadb-android 3.1.1 — adb 프로토콜과 무선 디버깅 페어링. 이중 라이선스(GPL-3.0 또는 Apache-2.0), 본 앱은 Apache-2.0으로 사용. https://github.com/MuntashirAkon/libadb-android\n\n· Conscrypt 2.5.3 — 페어링용 TLS. Apache-2.0. https://github.com/google/conscrypt\n\n· Bouncy Castle 1.78.1(bcprov / bcpkix) — adb 인증서 생성. MIT. https://www.bouncycastle.org\n\n위 구성요소는 내장된 무선 디버깅 페어링(Shizuku 없이 백그라운드 엔진을 시작하기 위함)에만 사용되며 소스를 수정하지 않았습니다."
   }
 }
