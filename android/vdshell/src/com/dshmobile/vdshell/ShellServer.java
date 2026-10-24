@@ -50,6 +50,13 @@ public final class ShellServer {
         }
         log("context acquired: " + ctx.getPackageName());
 
+        // ── 自测模式：不注册 binder，直接建屏 + 拉 App + 截图到 /data/local/tmp ──
+        // 用途：真机排障（不依赖 App 侧的配对/接收），`app_process / … ShellServer --selftest <pkg>`
+        if (args.length >= 1 && "--selftest".equals(args[0])) {
+            selftest(ctx, args.length > 1 ? args[1] : "com.android.settings");
+            return;
+        }
+
         DisplayEngine engine = new DisplayEngine(ctx);
         Svc svc = new Svc(engine);
 
@@ -68,6 +75,44 @@ public final class ShellServer {
             }
         }
         log("ShellServer exited");
+    }
+
+    // ── 自测：建屏 → 拉 App → 截图 → 点中心 → 再截图（写 /data/local/tmp）────────
+    private static void selftest(Context ctx, String pkg) {
+        log("SELFTEST begin pkg=" + pkg);
+        DisplayEngine engine = new DisplayEngine(ctx);
+        String r = engine.create(1080, 1920, 320);
+        log("SELFTEST create=" + r);
+        String l = engine.launch(pkg);
+        log("SELFTEST launch=" + l);
+        try { Thread.sleep(3500); } catch (InterruptedException ignored) {}
+        byte[] png = engine.capturePng(3000);
+        if (png != null) {
+            writeFile("/data/local/tmp/selftest1.png", png);
+            log("SELFTEST shot1 bytes=" + png.length);
+        } else {
+            log("SELFTEST shot1 FAILED (no frame)");
+        }
+        engine.tap(540, 960);
+        log("SELFTEST tapped center (540,960)");
+        try { Thread.sleep(1200); } catch (InterruptedException ignored) {}
+        byte[] png2 = engine.capturePng(2000);
+        if (png2 != null) {
+            writeFile("/data/local/tmp/selftest2.png", png2);
+            log("SELFTEST shot2 bytes=" + png2.length);
+        } else {
+            log("SELFTEST shot2 FAILED (no frame)");
+        }
+        log("SELFTEST done");
+    }
+
+    private static void writeFile(String path, byte[] data) {
+        try {
+            java.io.FileOutputStream out = new java.io.FileOutputStream(path);
+            try { out.write(data); } finally { out.close(); }
+        } catch (Throwable t) {
+            log("writeFile " + path + " failed: " + t.getMessage());
+        }
     }
 
     // ── 环境 ────────────────────────────────────────────────────────────────
@@ -107,7 +152,7 @@ public final class ShellServer {
             systemMain.setAccessible(true);
             Object thread = systemMain.invoke(null);
             Object ctx = at.getDeclaredMethod("getSystemContext").invoke(thread);
-            if (ctx instanceof Context) return (Context) ctx;
+            if (ctx instanceof Context) return shellContext((Context) ctx);
         } catch (Throwable t) {
             log("systemMain context failed: " + t.getMessage());
         }
@@ -124,12 +169,34 @@ public final class ShellServer {
             }
             if (thread != null) {
                 Object ctx = at.getDeclaredMethod("getSystemContext").invoke(thread);
-                if (ctx instanceof Context) return (Context) ctx;
+                if (ctx instanceof Context) return shellContext((Context) ctx);
             }
         } catch (Throwable t) {
             log("currentActivityThread context failed: " + t.getMessage());
         }
         return null;
+    }
+
+    /**
+     * 用 {@code com.android.shell} 的 context 包一层。
+     *
+     * ## 为什么（真机踩坑）
+     *
+     * systemContext 的 packageName 是 {@code "android"}（uid 1000），而我们跑在 uid 2000。
+     * {@code DisplayManager.createVirtualDisplay} 内部用 context 的 opPackageName 做校验，
+     * 发现 "android" 的 uid(1000) ≠ 调用者 uid(2000) → 抛
+     * {@code SecurityException: packageName must match the calling uid}。
+     *
+     * uid 2000 对应的包名就是 {@code com.android.shell}，换成它的 context 后校验即通过。
+     */
+    private static Context shellContext(Context base) {
+        try {
+            return base.createPackageContext("com.android.shell", 0);
+        } catch (Throwable t) {
+            log("createPackageContext(com.android.shell) failed: " + t.getMessage()
+                    + " — fallback to " + base.getPackageName());
+            return base;
+        }
     }
 
     /** 反射注册系统级 binder（只有 shell/root 才做得到；失败就走广播）。 */

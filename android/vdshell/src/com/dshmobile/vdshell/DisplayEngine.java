@@ -78,7 +78,7 @@ final class DisplayEngine {
             for (int flags : candidates) {
                 VirtualDisplay created = null;
                 try {
-                    created = dm.createVirtualDisplay("vd-shell", width, height, density,
+                    created = createVirtualDisplay(dm, "vd-shell", width, height, density,
                             ir.getSurface(), flags);
                     if (created != null && created.getDisplay() != null) {
                         vd = created;
@@ -103,6 +103,45 @@ final class DisplayEngine {
         } catch (Throwable t) {
             return "ERR:" + t.getClass().getSimpleName() + ":" + t.getMessage();
         }
+    }
+
+    /**
+     * 建虚拟屏：优先走 API 34+ 的 {@code VirtualDisplayConfig}（**不设 packageName**），
+     * 回退旧的 6 参重载。
+     *
+     * ## 为什么必须这样（真机踩坑）
+     *
+     * 引擎跑在 shell 身份（uid 2000），拿到的 systemContext 的 packageName 是
+     * {@code "android"}（uid 1000）。旧的 {@code createVirtualDisplay(name,w,h,dpi,surface,flags)}
+     * 内部会用这个 context 的 packageName 做校验：发现 packageName("android") 的 uid(1000)
+     * ≠ 调用者 uid(2000)，直接抛 {@code SecurityException: packageName must match the calling uid}。
+     *
+     * {@code VirtualDisplayConfig} 不 setPackageName 时该字段是 null，校验被跳过 —— 这就是
+     * shell 进程里能建屏的正确姿势（Shizuku/aladdin 那类无头方案都要绕这一步）。
+     */
+    private static VirtualDisplay createVirtualDisplay(
+            DisplayManager dm, String name, int w, int h, int dpi,
+            android.view.Surface surface, int flags) throws Throwable {
+        // ① API 34+：VirtualDisplayConfig（不设 packageName）
+        try {
+            Class<?> cfgCls = Class.forName("android.hardware.display.VirtualDisplayConfig");
+            Class<?> bldCls = Class.forName("android.hardware.display.VirtualDisplayConfig$Builder");
+            Object builder = bldCls.getConstructor(String.class, int.class, int.class, int.class)
+                    .newInstance(name, w, h, dpi);
+            bldCls.getMethod("setSurface", android.view.Surface.class).invoke(builder, surface);
+            bldCls.getMethod("setFlags", int.class).invoke(builder, flags);
+            Object config = bldCls.getMethod("build").invoke(builder);
+            // 单参重载：createVirtualDisplay(VirtualDisplayConfig config)
+            java.lang.reflect.Method m = DisplayManager.class.getMethod("createVirtualDisplay", cfgCls);
+            Object vd = m.invoke(dm, config);
+            if (vd instanceof VirtualDisplay) return (VirtualDisplay) vd;
+        } catch (Throwable t) {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            t.printStackTrace(new java.io.PrintWriter(sw));
+            Log.w(TAG, "VirtualDisplayConfig path failed:\n" + sw);
+        }
+        // ② 旧签名兜底（部分 ROM / API < 34）
+        return dm.createVirtualDisplay(name, w, h, dpi, surface, flags);
     }
 
     private static int clamp(int v, int lo, int hi) {
