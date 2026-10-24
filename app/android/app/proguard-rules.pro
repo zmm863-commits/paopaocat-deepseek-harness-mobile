@@ -39,3 +39,13 @@
 -keep class com.google.mlkit.vision.text.chinese.** { *; }
 # ML Kit 的 native 层
 -keep class com.google.android.gms.internal.mlkit_vision_text_common.** { *; }
+
+# ── 屏幕助手「无头模式」：Shizuku UserService 按类名反射实例化 ──────────────
+# 一旦 R8 把 EngineService 重命名，shell 进程里 ClassNotFoundException，且只在 release 出现。
+-keep class com.dshmobile.dsh_mobile.EngineService { *; }
+-keepclassmembers class com.dshmobile.dsh_mobile.EngineService {
+    <init>();
+    <init>(android.content.Context);
+    public boolean onTransact(int, android.os.Parcel, android.os.Parcel, int);
+}
+-keep class rikka.shizuku.** { *; }

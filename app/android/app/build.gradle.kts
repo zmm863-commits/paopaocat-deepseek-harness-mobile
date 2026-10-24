@@ -7,6 +7,11 @@ plugins {
 android {
     namespace = "com.dshmobile.dsh_mobile"
     compileSdk = flutter.compileSdkVersion
+    // 屏幕助手「无头模式」的 ShizukuEngineClient 用 BuildConfig.DEBUG 判断
+    // 要不要在 shell 进程里开调试；AGP 8+ 默认不生成 BuildConfig，得显式开。
+    buildFeatures {
+        buildConfig = true
+    }
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -181,6 +186,13 @@ dependencies {
     //   · 不带模型的那版要在设备上临时下载，国内手机没有 GMS 直接不可用
     // 代价约 +20MB（中文识别模型），本地推理约 100ms。
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+
+    // ── 屏幕助手「无头模式」：Shizuku ────────────────────────────────
+    // 在 shell 进程里跑 UserService，创建看不见的虚拟屏 + 定向注入触摸，
+    // 让 Agent 能操作**后台** App（前台用无障碍，后台用这套）。
+    // 两个库都在 Maven Central；api 提供客户端/服务端类，provider 提供 ShizukuProvider。
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // ── LiteRT 的 GPU 加速器（`libLiteRtClGlAccelerator.so`）────────────────────
     // 为什么必须单独加这一条：`litertlm-android` 的 AAR 里**只有** `liblitertlm_jni.so`，
