@@ -260,10 +260,11 @@ class PhoneAgentBridge {
   }
 
   /// 连接 → 部署 dex → 起 shell 进程 → 等 binder。
-  Future<({bool ok, String error})> vdshellBootstrap() async {
+  Future<({bool ok, String error})> vdshellBootstrap({int? connectPort}) async {
     try {
-      final Map<Object?, Object?>? m =
-          await DshHost.channel.invokeMethod<Map<Object?, Object?>>('vdshellBootstrap');
+      final Map<Object?, Object?>? m = await DshHost.channel
+          .invokeMethod<Map<Object?, Object?>>('vdshellBootstrap',
+              <String, dynamic>{'connectPort': connectPort});
       return (
         ok: m?['ok'] == true,
         error: m?['error']?.toString() ?? '',

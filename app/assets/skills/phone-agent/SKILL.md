@@ -15,7 +15,7 @@ node toolbox/phone-agent.mjs status
 
 - `connected: true` → 可以用。
 - 报「总开关是关的」→ 告诉用户：**设置 → 应用 → 屏幕助手 → 打开总开关**。
-- 报「无头引擎（Shizuku）没连上」→ 告诉用户：**设置 → 应用 → 屏幕助手 → 去授权 Shizuku**（需要用户先装好 Shizuku 并授权）。
+- 报「后台引擎没连上」→ 告诉用户：**设置 → 应用 → 屏幕助手 → 用「免装 Shizuku」配对启动引擎**（已经装了 Shizuku 的，也可以去授权 Shizuku）。
 
 **不要自己去改系统设置**，只能引导用户点。
 
@@ -23,7 +23,7 @@ node toolbox/phone-agent.mjs status
 
 | 命令 | 作用 |
 |---|---|
-| `status` | Shizuku 连接 / 虚拟屏 id |
+| `status` | 引擎连接 / 虚拟屏 id |
 | `create [w] [h] [dpi]` | 建一块虚拟屏（默认 1080×1920 / 320dpi） |
 | `launch <包名或应用名>` | 自动建屏（如没建）+ 把 App 拉到虚拟屏（可只给名字） |
 | `shot [out.png]` | 截虚拟屏存 PNG，打印路径 |

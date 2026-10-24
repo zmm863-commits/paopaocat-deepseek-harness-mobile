@@ -180,9 +180,9 @@ object VdShellManager {
      * @return 成功与否；失败原因放 [lastError]
      */
     @Synchronized
-    fun bootstrap(context: Context, waitMs: Long = 20_000): Boolean {
+    fun bootstrap(context: Context, connectPort: Int? = null, waitMs: Long = 20_000): Boolean {
         val c = ensureClient(context) ?: return false
-        if (!c.connectDevice()) {
+        if (!c.connectDevice(connectPort = connectPort)) {
             lastError = "连不上 adbd（先配对，再确认「无线调试」还开着）"
             return false
         }

@@ -153,7 +153,7 @@ switch (cmd) {
     const s = await call(key, 'GET', '/status');
     console.log(JSON.stringify(s, null, 2));
     if (!s.connected) {
-      console.error('\n✗ 无头引擎（Shizuku）没连上 —— 去 App 的 设置 → 应用 → 屏幕助手 授权 Shizuku。');
+      console.error('\n✗ 后台引擎没连上 —— 去 App 的 设置 → 应用 → 屏幕助手，用「免装 Shizuku」配对启动（或已装 Shizuku 则授权）。');
       process.exit(1);
     }
     break;

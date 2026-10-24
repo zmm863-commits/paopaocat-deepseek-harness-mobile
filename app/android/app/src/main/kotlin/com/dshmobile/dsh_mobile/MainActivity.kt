@@ -409,9 +409,10 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "vdshellBootstrap" -> {
+                        val connectPort = call.argument<Int>("connectPort")
                         Thread {
                             val ok = try {
-                                VdShellManager.bootstrap(this)
+                                VdShellManager.bootstrap(this, connectPort)
                             } catch (e: Throwable) {
                                 false
                             }

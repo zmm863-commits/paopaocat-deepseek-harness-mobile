@@ -167,8 +167,20 @@ class VdShellClient(private val context: Context) : AbsAdbConnectionManager() {
         }
     }
 
-    /** 连接（先试 TLS/无线调试，失败回退 TCP）。 */
-    fun connectDevice(timeoutMs: Long = 12_000): Boolean {
+    /**
+     * 连接 adbd。优先用调用方手填的连接端口（无线调试主页显示的「IP 地址和端口」），
+     * 没填再退回 mDNS 发现（部分 Android 16 ROM 上 NsdManager 发现不到 adb 服务，
+     * 所以手填是主力通道，mDNS 只是兜底）。
+     */
+    fun connectDevice(timeoutMs: Long = 12_000, connectPort: Int? = null): Boolean {
+        if (connectPort != null && connectPort > 0) {
+            return try {
+                connect("127.0.0.1", connectPort)
+            } catch (e: Throwable) {
+                Log.w(TAG, "connect(port=$connectPort) failed: ${e.message}")
+                false
+            }
+        }
         try {
             if (connectTls(context, timeoutMs)) return true
         } catch (e: Throwable) {

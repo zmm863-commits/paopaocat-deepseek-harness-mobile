@@ -400,6 +400,7 @@ class _VdShellBlock extends StatefulWidget {
 class _VdShellBlockState extends State<_VdShellBlock> {
   final TextEditingController _code = TextEditingController();
   final TextEditingController _port = TextEditingController();
+  final TextEditingController _connectPort = TextEditingController();
   bool _busy = false;
   bool _alive = false;
   String _msg = '';
@@ -414,6 +415,7 @@ class _VdShellBlockState extends State<_VdShellBlock> {
   void dispose() {
     _code.dispose();
     _port.dispose();
+    _connectPort.dispose();
     super.dispose();
   }
 
@@ -459,8 +461,9 @@ class _VdShellBlockState extends State<_VdShellBlock> {
       return;
     }
     if (mounted) setState(() => _msg = '已配对，正在起引擎（约 3~10 秒）…');
-    final ({bool ok, String error}) r =
-        await PhoneAgentBridge.instance.vdshellBootstrap();
+    final int? connectPort = int.tryParse(_connectPort.text.trim());
+    final ({bool ok, String error}) r = await PhoneAgentBridge.instance
+        .vdshellBootstrap(connectPort: connectPort);
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -554,8 +557,8 @@ class _VdShellBlockState extends State<_VdShellBlock> {
                   style: TextStyle(color: DshColors.text, fontSize: 13),
                   decoration: InputDecoration(
                     isDense: true,
-                    labelText: context.tr('端口'),
-                    hintText: context.tr('可留空'),
+                    labelText: context.tr('配对端口'),
+                    hintText: context.tr('弹窗里的端口'),
                   ),
                 ),
               ),
