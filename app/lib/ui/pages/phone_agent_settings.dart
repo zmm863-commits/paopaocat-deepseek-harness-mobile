@@ -97,7 +97,7 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
             Expanded(
               child: Text(
                 connected
-                    ? context.tr('屏幕助手已开启，Agent 可以看屏幕、点屏幕')
+                    ? context.tr('泡泡猫已就绪，可以后台帮你搜索、比价、查信息')
                     : (st?.hint ?? context.tr('正在检查…')),
                 style: TextStyle(
                   color: DshColors.text,

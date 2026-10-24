@@ -4743,5 +4743,20 @@
     "en": "View illustrated instructions",
     "ja": "図解の使い方を見る",
     "ko": "그림으로 된 사용 설명 보기"
+  },
+  "泡泡猫已就绪，可以后台帮你搜索、比价、查信息": {
+    "en": "Paopaocat is ready: it can search, compare prices and look up info in the background",
+    "ja": "パオパオキャット準備完了：バックグラウンドで検索・価格比較・情報検索ができます",
+    "ko": "파오파오캣 준비됨: 백그라운드에서 검색·가격 비교·정보 조회 가능"
+  },
+  "配对端口": {
+    "en": "Pairing port",
+    "ja": "ペアリングポート",
+    "ko": "페어링 포트"
+  },
+  "弹窗里的端口": {
+    "en": "Port shown in the popup",
+    "ja": "ポップアップのポート",
+    "ko": "팝업의 포트"
   }
 }
