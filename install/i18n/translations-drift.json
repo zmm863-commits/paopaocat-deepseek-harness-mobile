@@ -4523,5 +4523,175 @@
     "en": "To be clear: this app **cannot show** what a .pptx looks like (no Office components inside). After it is generated you will find it in the Library — use “Open with another app” to hand it to WPS / Office on the phone, or share it directly.",
     "ja": "正直に言うと：このアプリ内では .pptx の見た目を**表示できません**（Office コンポーネントを同梱していないため）。生成後は「ライブラリ」にあります。「他のアプリで開く」でスマホの WPS / Office に渡すか、そのまま共有してください。",
     "ko": "분명히 말씀드리면: 이 앱에서는 .pptx의 모양을 **볼 수 없습니다**(Office 구성 요소 미포함). 생성 후 「자료실」에서 찾을 수 있고, 「다른 앱으로 열기」로 휴대폰의 WPS / Office에 넘기거나 바로 공유하세요."
+  },
+  "往虚拟屏里输入文字": {
+    "en": "Type text into the virtual display",
+    "ja": "仮想ディスプレイに文字を入力",
+    "ko": "가상 디스플레이에 텍스트 입력"
+  },
+  "只支持英文/数字/符号": {
+    "en": "Only letters, digits and symbols",
+    "ja": "英字・数字・記号のみ",
+    "ko": "영문/숫자/기호만 지원"
+  },
+  "输入": {
+    "en": "Type",
+    "ja": "入力",
+    "ko": "입력"
+  },
+  "后台操作台": {
+    "en": "Background console",
+    "ja": "バックグラウンド操作台",
+    "ko": "백그라운드 콘솔"
+  },
+  "三步打开后台操作": {
+    "en": "Three steps to go headless",
+    "ja": "3 ステップでバックグラウンド操作",
+    "ko": "3단계로 백그라운드 조작"
+  },
+  "Shizuku 已授权": {
+    "en": "Shizuku authorized",
+    "ja": "Shizuku 認証済み",
+    "ko": "Shizuku 승인됨"
+  },
+  "引擎已连上（shell 进程）": {
+    "en": "Engine connected (shell process)",
+    "ja": "エンジン接続済み（shell プロセス）",
+    "ko": "엔진 연결됨(shell 프로세스)"
+  },
+  "虚拟屏已创建": {
+    "en": "Virtual display created",
+    "ja": "仮想ディスプレイ作成済み",
+    "ko": "가상 디스플레이 생성됨"
+  },
+  "本机操作桥没起来 —— 退出本页重进会自动拉起": {
+    "en": "The local bridge is not running — leave and reopen this page to restart it",
+    "ja": "ローカルブリッジが起動していません — このページを開き直すと自動で起動します",
+    "ko": "로컬 브리지가 실행 중이 아닙니다 — 이 페이지를 나갔다 다시 들어오면 자동으로 시작됩니다"
+  },
+  "重连引擎": {
+    "en": "Reconnect engine",
+    "ja": "エンジンを再接続",
+    "ko": "엔진 다시 연결"
+  },
+  "虚拟屏": {
+    "en": "Virtual display",
+    "ja": "仮想ディスプレイ",
+    "ko": "가상 디스플레이"
+  },
+  "创建虚拟屏": {
+    "en": "Create virtual display",
+    "ja": "仮想ディスプレイを作成",
+    "ko": "가상 디스플레이 생성"
+  },
+  "销毁": {
+    "en": "Destroy",
+    "ja": "破棄",
+    "ko": "삭제"
+  },
+  "虚拟屏是「看不见」的：目标 App 在里面跑，物理屏上什么都不显示。": {
+    "en": "The virtual display is invisible: the target app runs inside it and nothing appears on the physical screen.",
+    "ja": "仮想ディスプレイは「見えない」画面です。対象アプリはその中で動き、実画面には何も表示されません。",
+    "ko": "가상 디스플레이는 보이지 않는 화면입니다. 대상 앱은 그 안에서 실행되고 실제 화면에는 아무것도 표시되지 않습니다."
+  },
+  "实时画面": {
+    "en": "Live view",
+    "ja": "ライブ画面",
+    "ko": "실시간 화면"
+  },
+  "点一下 = 在虚拟屏里点那个坐标；按住拖动 = 滑动。画面每 0.9 秒刷新一次。": {
+    "en": "Tap = tap that spot in the virtual display; drag = swipe. The view refreshes every 0.9 s.",
+    "ja": "タップ＝仮想ディスプレイのその座標をタップ、ドラッグ＝スワイプ。画面は 0.9 秒ごとに更新されます。",
+    "ko": "탭 = 가상 디스플레이의 해당 좌표를 탭, 드래그 = 스와이프. 화면은 0.9초마다 갱신됩니다."
+  },
+  "主屏": {
+    "en": "Home",
+    "ja": "ホーム",
+    "ko": "홈"
+  },
+  "最近任务": {
+    "en": "Recents",
+    "ja": "最近のアプリ",
+    "ko": "최근 앱"
+  },
+  "输入文字": {
+    "en": "Type text",
+    "ja": "文字を入力",
+    "ko": "텍스트 입력"
+  },
+  "先建一块虚拟屏，这里就会出现画面": {
+    "en": "Create a virtual display first and the view will appear here",
+    "ja": "先に仮想ディスプレイを作成すると、ここに画面が表示されます",
+    "ko": "먼저 가상 디스플레이를 만들면 여기에 화면이 나타납니다"
+  },
+  "等第一帧…（把 App 拉到虚拟屏后才有画面）": {
+    "en": "Waiting for the first frame… (a view appears once an app is launched into the virtual display)",
+    "ja": "最初のフレームを待っています…（アプリを仮想ディスプレイに起動すると画面が出ます）",
+    "ko": "첫 프레임을 기다리는 중… (앱을 가상 디스플레이로 실행하면 화면이 나옵니다)"
+  },
+  "可点 / 可拖": {
+    "en": "Tap / drag",
+    "ja": "タップ／ドラッグ可",
+    "ko": "탭/드래그 가능"
+  },
+  "在虚拟屏里打开": {
+    "en": "Open in the virtual display",
+    "ja": "仮想ディスプレイで開く",
+    "ko": "가상 디스플레이에서 열기"
+  },
+  "载入应用列表": {
+    "en": "Load app list",
+    "ja": "アプリ一覧を読み込む",
+    "ko": "앱 목록 불러오기"
+  },
+  "拉到虚拟屏": {
+    "en": "Send to display",
+    "ja": "仮想画面へ",
+    "ko": "가상 화면으로"
+  },
+  "只显示前 {0} 条，继续输入缩小范围": {
+    "en": "Showing the first {0} — keep typing to narrow it down",
+    "ja": "先頭 {0} 件のみ表示 — 入力して絞り込んでください",
+    "ko": "처음 {0}개만 표시 — 계속 입력해 범위를 좁히세요"
+  },
+  "先把虚拟屏建起来，再点「载入应用列表」选一个 App 拉进去。": {
+    "en": "Create the virtual display first, then tap Load app list and pick an app to send into it.",
+    "ja": "まず仮想ディスプレイを作成し、「アプリ一覧を読み込む」からアプリを選んで送り込んでください。",
+    "ko": "먼저 가상 디스플레이를 만든 뒤 앱 목록 불러오기에서 앱을 골라 보내세요."
+  },
+  "在会话里直接说「帮我看当前屏幕 / 帮我打开某应用」即可使用；助手只在你下达指令时操作界面，不会自行乱点。": {
+    "en": "Just ask in a chat, e.g. look at my screen or open this app. The assistant only acts on your instruction and never taps on its own.",
+    "ja": "チャットで「今の画面を見て」「このアプリを開いて」と言うだけで使えます。アシスタントは指示があった時だけ操作し、勝手にタップしません。",
+    "ko": "채팅에서 지금 화면 봐줘 또는 이 앱 열어줘라고 말하면 됩니다. 어시스턴트는 지시가 있을 때만 조작하고 임의로 탭하지 않습니다."
+  },
+  "打开后台操作台（虚拟屏 + 实时画面）": {
+    "en": "Open background console (virtual display + live view)",
+    "ja": "バックグラウンド操作台を開く（仮想ディスプレイ＋ライブ画面）",
+    "ko": "백그라운드 콘솔 열기(가상 디스플레이 + 실시간 화면)"
+  },
+  "桥已就绪：127.0.0.1:{0}（Agent 从 phone-agent.json 拿钥匙）": {
+    "en": "Bridge ready: 127.0.0.1:{0} (the agent reads the key from phone-agent.json)",
+    "ja": "ブリッジ準備完了：127.0.0.1:{0}（Agent は phone-agent.json から鍵を読みます）",
+    "ko": "브리지 준비됨: 127.0.0.1:{0} (에이전트는 phone-agent.json에서 키를 읽습니다)"
+  },
+  "{0} 个": {
+    "en": "{0}",
+    "ja": "{0} 件",
+    "ko": "{0}개"
+  },
+  "已在前台打开「{0}」。想让它跑到后台虚拟屏里 → 用上面的「后台操作台」。": {
+    "en": "Opened {0} in the foreground. To run it in the background virtual display, use the background console above.",
+    "ja": "「{0}」を前面で開きました。バックグラウンドの仮想ディスプレイで動かすには、上の「バックグラウンド操作台」を使ってください。",
+    "ko": "{0}을(를) 포그라운드에서 열었습니다. 백그라운드 가상 디스플레이에서 실행하려면 위의 백그라운드 콘솔을 사용하세요."
+  },
+  "系统": {
+    "en": "System",
+    "ja": "システム",
+    "ko": "시스템"
+  },
+  "只显示搜索结果前 {0} 条；继续输入缩小范围": {
+    "en": "Showing the first {0} results; keep typing to narrow it down",
+    "ja": "検索結果の先頭 {0} 件のみ表示。入力して絞り込んでください",
+    "ko": "검색 결과 처음 {0}개만 표시. 계속 입력해 범위를 좁히세요"
   }
 }

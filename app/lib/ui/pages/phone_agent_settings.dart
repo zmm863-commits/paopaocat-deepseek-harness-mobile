@@ -6,6 +6,7 @@ import '../../state/app_settings.dart';
 import '../../local/dsh_runtime.dart';
 import '../../local/phone_agent_bridge.dart';
 import '../../local/diagnostics_log.dart';
+import 'phone_agent_console_page.dart';
 import 'dart:convert';
 
 /// 设置页「屏幕助手」卡片：这个功能在 App 里唯一的门面。
@@ -111,6 +112,17 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
           context.tr('在会话里直接说「帮我看当前屏幕 / 帮我打开某应用」即可使用；'
               '助手只在你下达指令时操作界面，不会自行乱点。'),
           style: TextStyle(color: DshColors.textDim, fontSize: 11.5, height: 1.5),
+        ),
+        const SizedBox(height: 10),
+        // 2026-10-24：把「后台操作台」摆在这里 —— 用户要在 App 里**亲眼确认**
+        // 虚拟屏建没建起来、画面对不对、点得中不中，而不是只能靠会话里猜。
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(44),
+          ),
+          icon: const Icon(Icons.desktop_windows_outlined, size: 18),
+          label: Text(context.tr('打开后台操作台（虚拟屏 + 实时画面）')),
+          onPressed: () => PhoneAgentConsolePage.open(context),
         ),
         const SizedBox(height: 12),
         if (!connected)
@@ -295,7 +307,8 @@ class _AppPickerState extends State<_AppPicker> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                context.tr('已打开「{0}」—— 现在到会话里说「帮我操作它」即可。', <Object>[_lastOpened!]),
+                context.tr('已在前台打开「{0}」。想让它跑到后台虚拟屏里 → 用上面的「后台操作台」。',
+                    <Object>[_lastOpened!]),
                 style: TextStyle(color: DshColors.ok, fontSize: 11.5, height: 1.4),
               ),
             ),

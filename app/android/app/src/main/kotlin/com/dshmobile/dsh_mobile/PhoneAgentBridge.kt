@@ -109,6 +109,21 @@ class PhoneAgentBridge {
         shizuku?.requestPermission(requestCode)
     }
 
+    /**
+     * 重新绑定无头引擎（2026-10-24）。
+     *
+     * 为什么需要它：`attach()` 只在 MainActivity 创建时 bind 一次。用户在
+     * 设置页刚点完「授权」时那次 bind 早就失败了（当时还没权限），于是
+     * 引擎一直连不上、建屏恒返回 `ERR:not connected`。授权结果回调之后
+     * 由 Flutter 侧调这个方法重新 bind，才算真的可用。
+     */
+    fun rebindShizuku(): Boolean {
+        val s = shizuku ?: return false
+        s.unbind()
+        s.bind()
+        return true
+    }
+
     private fun acceptLoop(s: ServerSocket, token: String) {
         while (!stopFlag.get() && running) {
             try {

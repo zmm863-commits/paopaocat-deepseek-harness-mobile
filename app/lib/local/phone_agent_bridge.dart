@@ -146,11 +146,91 @@ class PhoneAgentBridge {
     } catch (_) {}
   }
 
+  /// 弹 Shizuku 授权框（用户点「去授权」时用）。
+  Future<void> requestShizukuPermission() async {
+    try {
+      await DshHost.channel.invokeMethod<bool>('shizukuRequestPermission');
+    } catch (_) {}
+  }
+
+  /// 重新绑定无头引擎。
+  ///
+  /// **授权之后必须调一次**：`attach()` 那次 bind 发生在授权之前，必然失败；
+  /// 不重绑的话引擎永远是 `not connected`，建屏恒失败。
+  Future<bool> rebindEngine() async {
+    try {
+      final bool? ok =
+          await DshHost.channel.invokeMethod<bool>('phoneAgentRebind');
+      return ok == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 当前界面控件树（JSON 字符串）。
   Future<String?> nodes() async {
     final Map<String, dynamic>? r = await _get('/nodes');
     if (r == null || r['ok'] != true) return null;
     return r['nodes'] as String?;
+  }
+
+  // ── 后台虚拟屏（2026-10-24：对齐 aladdin 那套「看不见也能点」）──────────
+  //
+  // 这一组是「后台操作台」页面用的。引擎跑在 Shizuku 拉起的 shell 进程里
+  // （见 EngineService/DisplayEngine），App 侧只是发 binder 命令。
+
+  /// 无头引擎实时状态：Shizuku 授权 / 引擎连接 / 虚拟屏 id。
+  ///
+  /// `displayId < 0` 表示还没建屏。
+  Future<PhoneAgentHeadless?> headlessInfo() async {
+    final Map<String, dynamic>? r = await _get('/status');
+    if (r == null || r['ok'] != true) return null;
+    return PhoneAgentHeadless(
+      shizukuGranted: r['shizukuPermission'] == true,
+      engineConnected: r['connected'] == true,
+      displayId: (r['display'] as num?)?.toInt() ?? -1,
+    );
+  }
+
+  /// 建一块看不见的虚拟屏（后台模式第一步）。返回 `OK:<displayId>` 或 `ERR:<原因>`。
+  Future<String?> createDisplay({
+    int w = 1080,
+    int h = 1920,
+    int dpi = 320,
+  }) async {
+    final Map<String, dynamic>? r = await _post('/create', <String, dynamic>{
+      'w': w,
+      'h': h,
+      'dpi': dpi,
+    });
+    return r?['result'] as String?;
+  }
+
+  /// 销毁虚拟屏（顺带释放截图缓冲与唤醒锁）。
+  Future<String?> releaseDisplay() async {
+    final Map<String, dynamic>? r = await _post('/release', <String, dynamic>{});
+    return r?['result'] as String?;
+  }
+
+  /// 把目标应用启动到虚拟屏上（不会出现在物理屏）。返回 `OK` 或 `ERR:<原因>`。
+  Future<String?> launchOnDisplay(String packageName) async {
+    final Map<String, dynamic>? r = await _post('/launch', <String, dynamic>{
+      'pkg': packageName,
+    });
+    return r?['result'] as String?;
+  }
+
+  /// 往虚拟屏发一个系统键：back / home / recents。
+  Future<bool> sendKey(String action) async {
+    final Map<String, dynamic>? r = await _get('/key?action=$action');
+    return r?['ok'] == true;
+  }
+
+  /// 把一段文字敲进虚拟屏（KeyCharacterMap，不弹输入法）。
+  Future<bool> inputText(String text) async {
+    final Map<String, dynamic>? r =
+        await _post('/input', <String, dynamic>{'text': text});
+    return r?['ok'] == true;
   }
 
   Future<Map<String, dynamic>?> _get(String path) =>
@@ -221,13 +301,45 @@ class PhoneAgentStatus {
   final int sdk;
 
   /// 给用户看的一句话（说人话，不出现端口这种细节）。
+  ///
+  /// 2026-10-24：无头模式已取代无障碍 —— 这里不再提「设置 → 无障碍」，
+  /// 否则用户在系统里翻半天也找不到那个开关（它压根不存在了）。
   String get hint {
     if (!running) return '桥没起来';
     if (!connected) {
-      return sdk >= 30
-          ? '需要先在「设置 → 无障碍」里开启「DSH 屏幕助手」'
-          : '这台机（Android $sdk）不支持无障碍截图';
+      return '还没连上 Shizuku —— 点下面的按钮授权，授权后会自动重连';
     }
     return '已就绪';
+  }
+}
+
+/// 后台无头引擎的状态快照（虚拟屏视角）。
+///
+/// 与 [PhoneAgentStatus] 的区别：那个是「桥 + 授权」的总状态，
+/// 这个是「引擎连到哪一步、虚拟屏建了没有」，给操作台页面用。
+class PhoneAgentHeadless {
+  const PhoneAgentHeadless({
+    required this.shizukuGranted,
+    required this.engineConnected,
+    required this.displayId,
+  });
+
+  /// Shizuku 已授予本 App 权限（系统层面已勾选）。
+  final bool shizukuGranted;
+
+  /// shell 进程里的引擎已经连上（binder 可用）。
+  final bool engineConnected;
+
+  /// 已建虚拟屏的 displayId；`-1` = 没建。
+  final int displayId;
+
+  bool get hasDisplay => displayId >= 0;
+
+  /// 一句话说清现在能做什么。
+  String get hint {
+    if (!shizukuGranted) return '还没授权 Shizuku —— 先授权，引擎才有 shell 身份';
+    if (!engineConnected) return '已授权，但引擎还没连上 —— 点「重连引擎」';
+    if (!hasDisplay) return '引擎就绪，可以建一块看不见的屏了';
+    return '虚拟屏在跑：display=$displayId';
   }
 }

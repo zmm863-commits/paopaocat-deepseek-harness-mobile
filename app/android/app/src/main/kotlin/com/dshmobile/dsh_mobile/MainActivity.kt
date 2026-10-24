@@ -367,6 +367,10 @@ class MainActivity : FlutterActivity() {
                         phoneAgent.requestShizukuPermission()
                         result.success(true)
                     }
+                    "phoneAgentRebind" -> {
+                        // 授权回调之后重新 bind —— 授权前那次 bind 一定失败。
+                        result.success(phoneAgent.rebindShizuku())
+                    }
                     "phoneAgentStatus" -> {
                         result.success(
                             mapOf(
