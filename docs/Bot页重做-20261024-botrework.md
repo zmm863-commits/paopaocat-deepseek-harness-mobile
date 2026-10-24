@@ -120,3 +120,52 @@ App 的 surface / surfaceHigh / navBg 都是半透明：
    不在 Bot 网页范围，单独记。
 6. `WebView.setWebContentsDebuggingEnabled(true)` 目前是**无条件开启**（为真机 CDP），
    **发版前必须改成 `if (BuildConfig.DEBUG)`**（见 `docs/接续台账.md` §6）。
+
+---
+
+# 第二轮：添加文件点不动 + 顶部两枚按钮几乎看不见（2026-10-24 下午）
+
+用户两条：「无法添加文件，点击没什么反应」「顶部左右有两个按钮，几乎看不见，只有深色主题才能看见」。
+
+## 一、顶部两枚按钮（浅色下白图标）
+
+- 真机 CDP 定位：就是宿主那两枚圆钮 `EIQnXa_toggle`（打开导航，12,13,44×44，z=90）与
+  `CzK_aW_toggle`（更多操作，318,13,44×44，z=220）。图标是**固定浅色**，落在浅色页面就消失。
+- 修：布局层加一条，按两套主题钉死 `color` + 给圆钮一层浅灰/白半透明底。
+- 实测：浅色下 `color rgb(15,17,21)` + `bg rgba(12,26,51,.06)`；深色下 `color rgb(249,250,251)`。
+  两种主题都清晰可见。
+
+## 二、「添加文件」—— 四层断点，逐一拆掉
+
+真机走完整链路发现**不是一处断，是四处**：
+
+| 层 | 症状 | 根因 | 修 |
+|---|---|---|---|
+| ① 选文件 | 选择器能弹，选完回来附件**没进输入框** | `webview_flutter_android 4.14.1` 的 `onShowFileChooser` 收尾是 `Uri.parse(dart 返回值)`。原来返回绝对路径 `/storage/emulated/0/…` → 得到**无 scheme 的 Uri**，WebView 读不到 → `input.files` 为空 → `onChange` 不触发 | 原生加 `fileUriForWeb`：把文件复制进 `filesDir/attachments/`（FileProvider 白名单内）再 `getUriForFile` 转 `content://` |
+| ② 上传不发请求 | 附件进来了，但 Network 里**一个上传请求都没有** | 上传默认走 `dsh-client-file-upload` 的 **Blob Worker**（`new Worker(URL.createObjectURL(blob))`），Android WebView 里这条链不稳定 | 利用 DSH 官方 hook `window.__DSH_FILE_UPLOAD__`，在 `onPageStarted` 抢在 Cordis boot 前装好，让上传改走**主线程 fetch** |
+| ③ 上传 200 但 body 空 | 请求发出去了，`POST /api/session/uploadFileBinary` 回 200 但**响应体为空** | 前端 `JSON.parse("")` 直接抛 → 标记 failed | 手工 probe 才看到服务端真实错误（见 ④） |
+| ④ 服务端 EACCES | 服务端日志：`failed to store file upload: Error: EACCES: permission denied, open '/data/user/0'` | DSH 附件存储 `dsh-attachment-local` 首次把 DSH_HOME 标记 durable 时，`ensureDurableHome()` 会从 home **一路 fsync 到 `/`**，其中要 `open('/data/user/0')` —— App 沙箱内不可读 | `BotServer` 起服务前给运行时打**幂等小补丁**：把 `chmod` 与 `syncDirectory` 各包一层 catch |
+
+补丁（`bot_server.dart::_patchAttachmentDurability`）：
+```
+await chmod(target, 448);            →  await chmod(target, 448).catch(() => {});
+await syncDirectory(parent);          →  await syncDirectory(parent).catch(() => {});
+```
+用 marker 判重 + 临时文件 rename 原子替换；运行时版本变了替换串不命中就只记日志。
+
+## 实测（真机，versionCode 223）
+
+- 顶部按钮：浅色 / 深色各验一次，均可见（见上）。
+- 添加文件：`+ → 添加文件 → 选 q3.xml → 输入框出现「q3-…xml XML 13KB」`，上传成功。
+- 深色附件/气泡：同第一轮结论（`bgLight=0`）。
+
+## 关键教训
+
+1. **WebView 的 file chooser 只认 `content://`**：`Uri.parse(绝对路径)` 是 webview_flutter_android
+   的既有行为，任何「选择器弹了、文件传不进去」先查这里。
+2. **Blob Worker 在 Android WebView 不可靠**：DSH 留了 `__DSH_FILE_UPLOAD__` 钩子，
+   但必须在页面 boot 前设（`onPageStarted`），`onPageFinished` 已经晚了。
+3. **上传"失败"要一路追到服务端**：前端把服务端错误吞成了「200 + 空 body」，
+   只靠 Network 面板会误判成"请求没发"；`cdp-watch` 抓 `getResponseBody` 有时也拿不到，
+   最后是**手工 fetch probe 同一接口**才把 EACCES 逼出来。
+4. **durable 提升在 Android 沙箱内必然 EACCES**：任何 `fsync 到根` 的逻辑都要 catch。

@@ -452,6 +452,21 @@ class MainActivity : FlutterActivity() {
                     "openSpecialSettings" -> result.success(
                         openSpecialSettingsPage(call.argument<String>("which") ?: "")
                     )
+                    // 网页选的文件 → content:// URI（见 fileUriForWeb 的注释）。
+                    // 复制文件可能要几百毫秒，必须放后台线程。
+                    "fileUriForWeb" -> {
+                        val p = call.argument<String>("path") ?: ""
+                        Thread {
+                            val uri = fileUriForWeb(p)
+                            runOnUiThread {
+                                if (uri != null) {
+                                    result.success(uri)
+                                } else {
+                                    result.error("FILE_URI_FAILED", "无法把这个文件交给网页：$p", null)
+                                }
+                            }
+                        }.start()
+                    }
                     // 用系统"打开方式"打开一个私有目录里的文件（产物 / 资料库）。
                     // 返回 "ok" 或 "no_app"（没有可用应用时交给 Dart 如实提示）。
                     "openFile" -> openFileByPath(call.argument<String>("path"), result)
@@ -552,6 +567,42 @@ class MainActivity : FlutterActivity() {
     // 为什么不用 resolveActivity 做前置判断：Android 11+ 的包可见性会让它在没声明
     // <queries> 时**错误地返回 null**（明明装了相机也说没有）。所以这里直接启动、
     // 捕获 ActivityNotFoundException，并在 Manifest 里补上 <queries>。
+
+    /**
+     * 把网页选中的文件转成 `content://` URI —— WebView 唯一读得了的形式。
+     *
+     * 为什么必须转（2026-10-24 真机实测）：
+     * `webview_flutter_android` 的 `onShowFileChooser` 收尾是
+     * `filePaths[i] = Uri.parse(value.get(i))` —— Dart 返回什么字符串它就 parse 什么。
+     * 我们原来返回的是绝对路径（/storage/emulated/0/Download/x.txt），`Uri.parse`
+     * 得到一个**没有 scheme** 的 Uri，WebView 读不到 → `<input type=file>` 的
+     * `files` 为空 → 页面 `onChange` 根本不触发 → 用户看到的就是
+     * 「选完文件回来了，输入框里什么都没有」。
+     *
+     * 为什么要复制进 attachments/：FileProvider 的白名单
+     * （res/xml/file_paths.xml）只覆盖 filesDir 下几个目录，用户从「下载 / 相册」
+     * 选的文件在 /storage/…，直接 getUriForFile 会抛 IllegalArgumentException。
+     * attachments/ 本来就在白名单里（拍照也用它），复用最省事。
+     */
+    private fun fileUriForWeb(path: String): String? {
+        return try {
+            val src = File(path)
+            if (!src.exists() || !src.isFile) return null
+            val dir = attachmentsDir()
+            var dst = File(dir, src.name)
+            if (dst.exists()) {
+                val dot = src.name.lastIndexOf('.')
+                val base = if (dot > 0) src.name.substring(0, dot) else src.name
+                val ext = if (dot > 0) src.name.substring(dot) else ""
+                dst = File(dir, "$base-${System.currentTimeMillis()}$ext")
+            }
+            src.copyTo(dst, overwrite = true)
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", dst).toString()
+        } catch (e: Throwable) {
+            Log.w(TAG, "fileUriForWeb failed: ${e.message}")
+            null
+        }
+    }
 
     private fun attachmentsDir(): File {
         val d = File(filesDir, "attachments")

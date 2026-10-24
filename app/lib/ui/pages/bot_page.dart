@@ -376,6 +376,52 @@ body { overscroll-behavior-y: contain; }
       }
     }
 
+    // ── ⑤-b 「添加文件」兜底 + 探针（2026-10-24 用户报「点了没反应」）──────────
+    // ds-bot 的实现是一路可选链：
+    //   button.closest("[data-composer-card]")?.querySelector("input[type=file]")?.click()
+    // 任一环找不到就**静默什么都不做** —— 用户看到的就是"没反应"。
+    //
+    // ⚠️ 兜底必须在**同步**路径里做：file input 的 click() 需要用户手势（user
+    // activation），放到 setTimeout 里浏览器会直接忽略（不弹选择器、也不报错）。
+    // 所以这里在 capture 阶段先判断「React 那条路会不会断」：
+    //   · + 按钮在 [data-composer-card] 内 → 交给 React（它会点卡片里的 input）
+    //   · 不在卡片内（closest 返回 null，React 必失败）→ 立刻自己点全页那个 input
+    // 另外给 input 的 click 打标记，用来在诊断日志里区分
+    // 「点了但宿主没收到」和「压根没点」。
+    var dshmFileClickAt = 0;
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (t && t.tagName === 'INPUT' && String(t.type).toLowerCase() === 'file') {
+        dshmFileClickAt = Date.now();
+        post('文件输入框被点击（React 或兜底），随后应看到宿主「网页请求选择文件」日志');
+      }
+    }, true);
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var item = t.closest('.bt-plus-menu button, [role="menuitem"]');
+      if (!item) return;
+      var label = (item.textContent || '').trim();
+      if (label.indexOf('添加文件') < 0 && label.indexOf('Add files') < 0) return;
+      var plus = document.querySelector('.bt-plus');
+      var inCard = !!(plus && plus.closest('[data-composer-card]'));
+      var cardInput = document.querySelector('[data-composer-card] input[type=file]');
+      var anyInput = document.querySelector('input[type=file]');
+      if (inCard) {
+        post('「添加文件」：按钮在卡片内，交给页面自己点（卡片内文件输入=' +
+             (cardInput ? '有' : '无') + '）');
+        return;
+      }
+      // React 的 closest 一定是 null —— 同步兜底（仍有用户手势）
+      if (anyInput) {
+        post('「添加文件」兜底：按钮不在卡片内，改点全页 input[type=file]');
+        anyInput.click();
+      } else {
+        post('「添加文件」失败：全页没有 input[type=file]（卡片=' +
+             (document.querySelector('[data-composer-card]') ? '有' : '无') + '）');
+      }
+    }, true);
+
     // ── ⑥-b 点会话行后自动收起名册（一屏一页）────────────────────────────
     // 名册是满屏一页：点一条会话如果不把名册收起来，用户仍停在名册，
     // 会以为"没点中"（0.79 审计第 6 条同款）；而且会话里的设置层(z=60)
@@ -579,6 +625,27 @@ body { overscroll-behavior-y: contain; }
   })();
   ''';
 
+  /// 让**文件上传走主线程 fetch**，而不是 DSH 默认的 Blob Worker。
+  ///
+  /// 为什么（2026-10-24 真机实测）：上传实现在 `@deepseek-ai/dsh-client-file-upload`，
+  /// 默认 transport 是 `new Worker(URL.createObjectURL(blob))` —— 在 Android WebView
+  /// 里这条链不稳定（调用方看到的就是「附件进来了、但一直上传失败」，而且 Network
+  /// 里一个上传请求都没有）。DSH 自己在服务构造时留了官方 hook：
+  ///     const hook = globalThis.__DSH_FILE_UPLOAD__;
+  ///     this.transport = hook === void 0 ? workerTransport() : customTransport(hook.fetch);
+  /// 所以只要在页面 **boot 之前** 把这个 hook 装上，上传就变成普通 fetch。
+  ///
+  /// ⚠️ 时机是关键：服务是在 Cordis boot 时构造的，onPageFinished 再注入已经晚了
+  /// （transport 已经选成 worker）。必须在 `onPageStarted` 里塞。
+  static const String _uploadHookJs = r"""
+  (function () {
+    if (window.__DSH_FILE_UPLOAD__) return;
+    window.__DSH_FILE_UPLOAD__ = {
+      fetch: function (input, init) { return fetch(input, init); }
+    };
+  })();
+  """;
+
   /// 设置层出现时给 body 打标记 —— 布局层用它藏掉宿主那两个圆形浮层
   /// （实现在 bot_mobile_layout.dart 的 ⑫）。低频轮询即可，不做 MutationObserver。
   static const String _settingsFlagJs = r'''
@@ -777,7 +844,31 @@ body { overscroll-behavior-y: contain; }
               'dsh-bot',
               r == null ? '文件选择被取消' : '已选择 ${paths.length} 个文件',
             );
-            return paths;
+            // ⚠️ 必须转成 content:// 再交回去（2026-10-24 真机实测的根因）：
+            //    webview_flutter_android 的收尾是 `Uri.parse(返回值)`。直接给绝对路径
+            //    （/storage/emulated/0/Download/x.txt）得到的是**没有 scheme** 的 Uri，
+            //    WebView 读不到 → input.files 为空 → 页面 onChange 不触发 →
+            //    用户看到「选完文件回来了，输入框里什么都没有」。
+            //    原生侧会把文件复制进 filesDir/attachments（FileProvider 白名单内）再转。
+            final uris = <String>[];
+            for (final p in paths) {
+              try {
+                final u = await DshHost.channel
+                    .invokeMethod<String>('fileUriForWeb', {'path': p});
+                if (u != null && u.isNotEmpty) uris.add(u);
+              } catch (e) {
+                DiagnosticsLog.add('dsh-bot', '把文件交给网页失败（原路径不回退）：$e');
+              }
+            }
+            DiagnosticsLog.add(
+              'dsh-bot',
+              '交给网页的地址：${uris.length} 个 content://（原路径 ${paths.length} 个）',
+            );
+            if (uris.isEmpty && paths.isNotEmpty) {
+              DiagnosticsLog.add('dsh-bot', '全部转 content:// 失败，退回原路径（网页很可能读不到）');
+              return paths;
+            }
+            return uris;
           } catch (e) {
             DiagnosticsLog.add('dsh-bot', '文件选择失败：$e');
             _toast('选文件失败：$e');
@@ -787,6 +878,17 @@ body { overscroll-behavior-y: contain; }
       }
       await controller.setNavigationDelegate(
         NavigationDelegate(
+          // ── ① 页面刚起步：抢在 Cordis boot 前装上传 hook（见 _uploadHookJs）──
+          onPageStarted: (_) async {
+            try {
+              await controller.runJavaScript(_uploadHookJs);
+              DiagnosticsLog.add('dsh-bot', '页面开始加载：已装上传 hook（走主线程 fetch）');
+            } catch (e) {
+              // 早期注入失败不致命：末尾的 onPageFinished 会再补一次（虽然那次已偏晚，
+              // 但至少留给下一次 reload）。
+              DiagnosticsLog.add('dsh-bot', '早期装上传 hook 失败：$e');
+            }
+          },
           // ── ② 导航拦截（2026-10-19 用户报「Bot 里的文件无法直接预览」）──────
           // 本机 Bot 服务的 URL 一律放行；其余（网页里点了文件、点了外链）拦下来，
           // 不让 WebView 变成一个"打不开的下载页"。
@@ -841,6 +943,17 @@ body { overscroll-behavior-y: contain; }
             } catch (e) {
               DiagnosticsLog.add('dsh-bot', '设置层标记注入失败：$e');
             }
+            // 上传 hook 兜底：早注入若被页面清掉，这里补一次（对**下一次**加载才生效，
+            // 所以只记日志，不假装能救当前这次）。
+            try {
+              await controller.runJavaScript(_uploadHookJs);
+              final hasHook = await controller.runJavaScriptReturningResult(
+                  "typeof window.__DSH_FILE_UPLOAD__ === 'object' ? '1' : '0'");
+              DiagnosticsLog.add('dsh-bot', '上传 hook 状态：${hasHook.toString().contains('1') ? '已装' : '缺失'}');
+            } catch (e) {
+              // 自检失败不影响页面：只是少一条诊断日志。
+            }
+
             // DOM 自检：布局层是否真的插进去了。只留痕、不无限补注入 ——
             // 错误页（chrome-error）同样能跑 JS，靠"注入成功"判断页面正常会误判。
             try {

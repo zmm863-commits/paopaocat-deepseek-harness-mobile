@@ -218,6 +218,53 @@ class BotServer {
     }
   }
 
+  /// 给随包运行时打一个 **Android 专用**的小补丁（幂等）。
+  ///
+  /// 为什么（2026-10-24 真机实测，用户报「添加文件点了没反应/上传失败」）：
+  /// DSH 的附件存储 `dsh-attachment-local` 在第一次把 DSH_HOME 标记为 durable 时，
+  /// 会从 home 一路 `fsync` 到文件系统根：
+  ///   `ensureDurableHome()` → `ensureDurableDirectory(home, parse(home).root)`
+  /// 其中 `syncDirectory(parent)` 要 `open('/data/user/0')` —— App 沙箱里这个目录
+  /// 读不了，Node 直接抛：
+  ///   `failed to store file upload: Error: EACCES: permission denied, open '/data/user/0'`
+  /// 用户看到的就是「文件选进来了、一直显示上传失败」。
+  ///
+  /// 补丁只做一件事：把 `chmod` 与 `syncDirectory` 各包一层 catch。
+  /// Android 沙箱内父目录不可 open 是正常情况，不该让整个上传失败。
+  ///
+  /// ⚠️ 这是**运行时文件**补丁（不是源码），所以：① 必须幂等（用 marker 判重）；
+  /// ② 写临时文件再 rename，避免进程读到半截文件；③ 运行时版本一变要重新核对
+  /// 替换字符串是否还在（找不到就只记日志，不静默）。
+  static Future<void> _patchAttachmentDurability(DshRuntime runtime) async {
+    try {
+      final f = File('${runtime.runtimeRoot}/node_modules/'
+          '@deepseek-ai/dsh-attachment-local/lib/index.js');
+      if (!f.existsSync()) return;
+      final src = await f.readAsString();
+      const marker = '/* dshm-android-durable-patch */';
+      if (src.contains(marker)) return;
+      final out = src
+          .replaceAll(
+            'await chmod(target, 448);',
+            'await chmod(target, 448).catch(() => {}); $marker',
+          )
+          .replaceAll(
+            'await syncDirectory(parent);',
+            'await syncDirectory(parent).catch(() => {});',
+          );
+      if (out == src) {
+        DiagnosticsLog.add('dsh-bot', '附件存储补丁未命中（运行时版本可能变了），上传可能仍报 EACCES');
+        return;
+      }
+      final tmp = File('${f.path}.dshm-tmp');
+      await tmp.writeAsString(out, flush: true);
+      await tmp.rename(f.path);
+      DiagnosticsLog.add('dsh-bot', '已给运行时打附件存储补丁（Android 父目录不可 fsync）');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '附件存储补丁失败（上传会继续报 EACCES）：$e');
+    }
+  }
+
   /// 起服务（已起着就直接复用）。
   ///
   /// [onLog] 收启动过程的原始行，供调用方显示"卡在哪一步"。
@@ -228,6 +275,10 @@ class BotServer {
     final running = _current;
     if (running != null && running.alive) return running;
     if (running != null) await running.stop();
+
+    // 运行时的 Android 兼容补丁：附件上传的 durable 提升会 fsync 到 /data/user/0
+    // （App 沙箱内不可 open）→ 上传必失败。幂等，每次启动都过一遍。
+    await _patchAttachmentDurability(runtime);
 
     // 端口必须在拼 args 之前定好（重启复用同一个，见 [_pinnedPort]）。
     await _pickPort();

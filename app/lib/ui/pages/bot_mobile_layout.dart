@@ -159,6 +159,30 @@ const String botMobileLayoutCss = r'''
     background-color: var(--bt-main, transparent) !important;
     z-index: 10 !important;
   }
+  /* ── ⑤-b 顶部两枚圆形浮层的图标色 ────────────────────────────────
+     用户 2026-10-24：「顶部左右有两个按钮，几乎看不见，只有深色主题才能看见」。
+     它们就是宿主那两个圆钮（打开导航 / 更多操作，z=90/220）：图标是固定浅色，
+     落在浅色页面上就消失了。按两套主题钉死；svg 用 currentColor 兜一层。 */
+  body:not([data-ds-dark-theme]) [class*="overlayLayer"] button,
+  body:not([data-ds-dark-theme]) [class*="overlayLayer"] svg,
+  body:not([data-ds-dark-theme]) [class*="toggle"] {
+    color: #0f1115 !important;
+  }
+  body[data-ds-dark-theme] [class*="overlayLayer"] button,
+  body[data-ds-dark-theme] [class*="overlayLayer"] svg,
+  body[data-ds-dark-theme] [class*="toggle"] {
+    color: #f9fafb !important;
+  }
+  /* 圆钮底：浅色下给一点可见的浅灰，别让图标浮在纯白上 */
+  body:not([data-ds-dark-theme]) [class*="overlayLayer"] button,
+  body:not([data-ds-dark-theme]) [class*="toggle"] {
+    background-color: rgba(12, 26, 51, 0.06) !important;
+  }
+  body[data-ds-dark-theme] [class*="overlayLayer"] button,
+  body[data-ds-dark-theme] [class*="toggle"] {
+    background-color: rgba(255, 255, 255, 0.10) !important;
+  }
+
   /* 会话标题做成胶囊，窄屏上会和右侧按钮挤 → 允许省略、限定宽度 */
   header [aria-label="查看对话详情"] {
     max-width: calc(100vw - 132px) !important;
