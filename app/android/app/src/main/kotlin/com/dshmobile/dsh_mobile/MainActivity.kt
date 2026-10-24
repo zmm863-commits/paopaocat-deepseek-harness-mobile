@@ -362,25 +362,17 @@ class MainActivity : FlutterActivity() {
                             result.success(null)
                         }
                     }
-                    "openAccessibilitySettings" -> {
-                        try {
-                            startActivity(
-                                android.content.Intent(
-                                    android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS
-                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
-                            result.success(true)
-                        } catch (e: Throwable) {
-                            result.error("openA11y", e.message, null)
-                        }
+                    "shizukuRequestPermission" -> {
+                        // 弹 Shizuku 授权框（屏幕助手「无头模式」的权限入口）。
+                        phoneAgent.requestShizukuPermission()
+                        result.success(true)
                     }
                     "phoneAgentStatus" -> {
-                        val svc = DshPhoneAgentService.instance
                         result.success(
                             mapOf(
                                 "running" to phoneAgent.isRunning(),
                                 "port" to phoneAgent.port(),
-                                "connected" to (svc != null),
+                                "connected" to phoneAgent.shizukuConnected(),
                                 "sdk" to android.os.Build.VERSION.SDK_INT,
                             )
                         )

@@ -51,6 +51,11 @@ class ShizukuEngineClient(private val context: Context) {
 
     fun isConnected(): Boolean = binder?.pingBinder() == true
 
+    /** 弹 Shizuku 授权框（requestCode 要和 addRequestPermissionResultListener 对齐）。 */
+    fun requestPermission(requestCode: Int = 4451) {
+        try { Shizuku.requestPermission(requestCode) } catch (_: Throwable) {}
+    }
+
     fun hasPermission(): Boolean = try {
         Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
     } catch (_: Throwable) { false }
@@ -70,12 +75,12 @@ class ShizukuEngineClient(private val context: Context) {
         }
     }
 
-    /** 截图命令：int ok, String err, byte[] jpeg */
-    fun capture(timeoutMs: Int = 800, quality: Int = 70): ByteArray? {
+    /** 截图命令：int ok, String err, byte[] png */
+    fun capture(timeoutMs: Int = 800): ByteArray? {
         val b = binder ?: return null
         val data = Parcel.obtain(); val reply = Parcel.obtain()
         return try {
-            data.writeInt(timeoutMs); data.writeInt(quality)
+            data.writeInt(timeoutMs); data.writeInt(0)
             b.transact(EngineProtocol.CMD_CAPTURE, data, reply, 0)
             val ok = reply.readInt()
             val err = reply.readString()

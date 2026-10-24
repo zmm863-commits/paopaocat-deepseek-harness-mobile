@@ -153,7 +153,7 @@ switch (cmd) {
     const s = await call(key, 'GET', '/status');
     console.log(JSON.stringify(s, null, 2));
     if (!s.connected) {
-      console.error('\n✗ 无障碍服务没连上 —— 去 系统设置 → 无障碍 → DSH 屏幕助手 开启。');
+      console.error('\n✗ 无头引擎（Shizuku）没连上 —— 去 App 的 设置 → 应用 → 屏幕助手 授权 Shizuku。');
       process.exit(1);
     }
     break;
@@ -167,46 +167,6 @@ switch (cmd) {
     fs.writeFileSync(out, buf);
     console.log(out);
     console.error(`✓ 截图 ${(buf.length / 1024).toFixed(0)} KB → ${out}`);
-    break;
-  }
-
-  case 'nodes': {
-    const depth = args[0] ? Number(args[0]) : 12;
-    const r = await call(key, 'GET', `/nodes?depth=${depth}`);
-    console.log(JSON.stringify(r.nodes, null, 2));
-    break;
-  }
-
-  case 'find': {
-    const needle = args[0];
-    if (!needle) die('用法：phone-agent.mjs find <文字>');
-    const r = await call(key, 'GET', '/nodes');
-    const hits = [];
-    const walk = (n) => {
-      const t = `${n.text || ''} ${n.desc || ''}`;
-      if (t.includes(needle) && n.bounds && n.bounds[2] > n.bounds[0]) {
-        hits.push({
-          text: (n.text || n.desc || '').slice(0, 40),
-          cls: n.cls,
-          clickable: n.clickable,
-          center: [
-            Math.round((n.bounds[0] + n.bounds[2]) / 2),
-            Math.round((n.bounds[1] + n.bounds[3]) / 2),
-          ],
-          bounds: n.bounds,
-        });
-      }
-      for (const c of n.children || []) walk(c);
-    };
-    for (const n of r.nodes) walk(n);
-    if (!hits.length) {
-      console.error(`✗ 界面上没找到含「${needle}」的控件。`);
-      console.error('  （如果是游戏/自绘界面，节点树本来就没有文字 —— 用 shot 截图 + 视觉判断。）');
-      process.exit(1);
-    }
-    // 优先给 clickable 的、靠前的
-    hits.sort((a, b) => Number(b.clickable) - Number(a.clickable));
-    console.log(JSON.stringify(hits.slice(0, 10), null, 2));
     break;
   }
 
@@ -245,26 +205,6 @@ switch (cmd) {
     if (ei >= 0 && args[ei + 1]) body.expect = args[ei + 1];
     const r = await call(key, 'POST', '/tap', body);
     console.log(JSON.stringify(r));
-    break;
-  }
-
-  case 'clicknode': {
-    const pi = args.indexOf('--pkg');
-    const ti = args.indexOf('--text');
-    const pkg = pi >= 0 ? args[pi + 1] : '';
-    const text = ti >= 0 ? args[ti + 1] : '';
-    if (!pkg || !text) die('用法：phone-agent.mjs clicknode --pkg <包名> --text <文字>');
-    const r = await call(key, 'GET',
-      `/clicknode?pkg=${encodeURIComponent(pkg)}&text=${encodeURIComponent(text)}`);
-    console.log(JSON.stringify(r));
-    break;
-  }
-
-  case 'windows': {
-    const r = await call(key, 'GET', '/windows');
-    for (const w of r.windows || []) {
-      console.log(`${w.active ? '*' : ' '} ${w.package}\tfocused=${w.focused}`);
-    }
     break;
   }
 
@@ -343,6 +283,21 @@ switch (cmd) {
     break;
   }
 
+  case 'create': {
+    const w = args[0] ? Number(args[0]) : 1080;
+    const h = args[1] ? Number(args[1]) : 1920;
+    const dpi = args[2] ? Number(args[2]) : 320;
+    const r = await call(key, 'POST', '/create', { w, h, dpi });
+    console.log(JSON.stringify(r));
+    break;
+  }
+
+  case 'release': {
+    const r = await call(key, 'GET', '/release');
+    console.log(JSON.stringify(r));
+    break;
+  }
+
   default:
-    die(`不认识的子命令 "${cmd}"。支持：status / shot / nodes / find / ocr / findtext / tap / swipe / key / input / waittext / apps / launch`);
+    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch`);
 }

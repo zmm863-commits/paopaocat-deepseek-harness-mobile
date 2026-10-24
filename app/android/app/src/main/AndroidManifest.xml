@@ -149,26 +149,6 @@
              libvndksupport.so / libOpenCL.so / libcdsprpc.so 三条），
              且这些库名是从我们包内 `liblitertlm_jni.so` 的字符串里逐条对出来的。
              一律 required="false"：没有这些库的设备照样能装，只是用不了对应后端。 -->
-        <!-- ── 「手机界面操作」的无障碍服务（见 DshPhoneAgentService.kt）──────────
-             让 DSH 的 Agent 能看屏幕、点屏幕。
-             · 无障碍服务是**用户手动在系统设置里开**的，App 不能自己开；
-             · 不需要额外运行时权限（截图走 AccessibilityService.takeScreenshot，
-               API 30+；点击走 dispatchGesture）；
-             · 导出说明：系统会把本服务的名字显示在「已安装的服务」里，
-               所以文案要写清楚这是什么、干什么用。 -->
-        <service
-            android:name=".DshPhoneAgentService"
-            android:exported="true"
-            android:label="@string/phone_agent_service_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService"/>
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/phone_agent_accessibility_config"/>
-        </service>
-
         <uses-native-library android:name="libOpenCL.so" android:required="false"/>
         <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
         <uses-native-library android:name="libvndksupport.so" android:required="false"/>

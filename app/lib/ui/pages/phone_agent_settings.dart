@@ -118,14 +118,14 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(44),
             ),
-            icon: const Icon(Icons.accessibility_new, size: 18),
-            label: Text(context.tr('去系统设置开启（无障碍）')),
+            icon: const Icon(Icons.security, size: 18),
+            label: Text(context.tr('去授权 Shizuku')),
             onPressed: () async {
               try {
                 await DshHost.channel
-                    .invokeMethod<bool>('openAccessibilitySettings');
+                    .invokeMethod<bool>('shizukuRequestPermission');
               } catch (e) {
-                DiagnosticsLog.add('dsh-phone-agent', '跳系统无障碍失败：$e');
+                DiagnosticsLog.add('dsh-phone-agent', '申请 Shizuku 授权失败：$e');
               }
             },
           )

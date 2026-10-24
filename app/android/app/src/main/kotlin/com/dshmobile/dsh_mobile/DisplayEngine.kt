@@ -171,7 +171,7 @@ class DisplayEngine(private val context: Context) {
         return "OK"
     }
 
-    fun captureJpeg(timeoutMs: Int, quality: Int): ByteArray? {
+    fun capturePng(timeoutMs: Int): ByteArray? {
         val ir = reader ?: return null
         val deadline = SystemClock.uptimeMillis() + timeoutMs.coerceAtLeast(100)
         while (SystemClock.uptimeMillis() < deadline) {
@@ -188,7 +188,7 @@ class DisplayEngine(private val context: Context) {
                     bmp.copyPixelsFromBuffer(plane.buffer)
                     val cropped = Bitmap.createBitmap(bmp, 0, 0, it.width, it.height)
                     return ByteArrayOutputStream().use { bos ->
-                        cropped.compress(Bitmap.CompressFormat.JPEG, quality, bos)
+                        cropped.compress(Bitmap.CompressFormat.PNG, 100, bos)
                         bos.toByteArray()
                     }
                 }

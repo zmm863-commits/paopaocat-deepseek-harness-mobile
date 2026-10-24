@@ -67,11 +67,11 @@ class EngineService : Binder {
                     out.writeString(engine.text(data.readString() ?: ""))
                 }
                 EngineProtocol.CMD_CAPTURE -> {
-                    val timeout = data.readInt(); val q = data.readInt()
-                    val jpeg = engine.captureJpeg(timeout, q)
-                    out.writeInt(if (jpeg != null) 1 else 0)
-                    out.writeString(if (jpeg != null) "" else "no frame")
-                    out.writeByteArray(jpeg ?: ByteArray(0))
+                    val timeout = data.readInt(); data.readInt()  // 第二个 int（quality）是保留位，忽略
+                    val png = engine.capturePng(timeout)
+                    out.writeInt(if (png != null) 1 else 0)
+                    out.writeString(if (png != null) "" else "no frame")
+                    out.writeByteArray(png ?: ByteArray(0))
                 }
                 EngineProtocol.CMD_SHUTDOWN -> {
                     engine.release()

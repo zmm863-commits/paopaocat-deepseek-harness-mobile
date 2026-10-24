@@ -48,9 +48,15 @@ class PhoneAgentBridge {
     @Volatile
     private var appContext: android.content.Context? = null
 
-    /** MainActivity 在 onCreate 里调一次 —— 没有它，/apps 与 /launch 用不了。 */
+    /** 无头引擎（Shizuku UserService）的 App 进程侧客户端。 */
+    @Volatile
+    private var shizuku: ShizukuEngineClient? = null
+
+    /** MainActivity 在 onCreate 里调一次 —— 没有它，/apps /launch 与无头操作都用不了。 */
     fun attach(context: android.content.Context) {
         appContext = context.applicationContext
+        shizuku = ShizukuEngineClient(context.applicationContext)
+        shizuku?.bind()
     }
 
     @Volatile
@@ -94,6 +100,14 @@ class PhoneAgentBridge {
     fun port(): Int = server?.localPort ?: 0
 
     fun isRunning(): Boolean = running
+
+    /** 无头引擎（Shizuku UserService）是否连上（设置页用）。 */
+    fun shizukuConnected(): Boolean = shizuku?.isConnected() == true
+
+    /** 弹 Shizuku 授权框（设置页「去授权 Shizuku」按钮用）。 */
+    fun requestShizukuPermission(requestCode: Int = 4451) {
+        shizuku?.requestPermission(requestCode)
+    }
 
     private fun acceptLoop(s: ServerSocket, token: String) {
         while (!stopFlag.get() && running) {
@@ -177,139 +191,99 @@ class PhoneAgentBridge {
 
     /** 真正的路由分发（拆出来，让 [handle] 只管 HTTP 层）。 */
     private fun route(out: OutputStream, path: String, query: String, body: String) {
-        val svc = DshPhoneAgentService.instance
+        val vd = shizuku
         when {
             path.startsWith("/ping") ->
-                respond(out, 200, "{\"ok\":true,\"service\":\"phone-agent\"}")
-            path.startsWith("/status") ->
-                respond(
-                    out, 200,
-                    "{\"ok\":true,\"connected\":" + (svc != null) +
-                        ",\"sdk\":" + Build.VERSION.SDK_INT +
-                        ",\"package\":\"" + (svc?.rootInActiveWindow?.packageName ?: "") + "\"}"
-                )
+                respond(out, 200, "{\"ok\":true,\"service\":\"phone-agent\",\"mode\":\"headless\"}")
+
+            path.startsWith("/status") -> {
+                val display = displayIdOf(vd)
+                respond(out, 200,
+                    "{\"ok\":true,\"headless\":true," +
+                        "\"shizukuPermission\":" + (vd?.hasPermission() == true) +
+                        ",\"connected\":" + (vd?.isConnected() == true) +
+                        ",\"display\":" + display + "}")
+            }
+
+            path.startsWith("/create") -> {
+                val w = jsonInt(body, "w") ?: 1080
+                val h = jsonInt(body, "h") ?: 1920
+                val dpi = jsonInt(body, "dpi") ?: 320
+                val r = vd?.call(EngineProtocol.CMD_CREATE) {
+                    it.writeInt(w); it.writeInt(h); it.writeInt(dpi)
+                } ?: "ERR:not connected"
+                respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
+            }
+
+            path.startsWith("/release") -> {
+                val r = vd?.call(EngineProtocol.CMD_RELEASE) ?: "ERR:not connected"
+                respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
+            }
+
             path.startsWith("/screenshot") -> {
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接，请先在系统设置里开启\"}")
-                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                    respond(out, 501, "{\"ok\":false,\"error\":\"截图需要 Android 13 (API 33+)；本机 " + Build.VERSION.SDK_INT + "\"}")
+                val png = vd?.capture()
+                if (png == null) {
+                    respond(out, 502, "{\"ok\":false,\"error\":\"截图失败（虚拟屏未建或还没出帧）\"}")
                 } else {
-                    val png = svc.screenshotBase64()
-                    if (png == null) {
-                        respond(out, 502, "{\"ok\":false,\"error\":\"截图失败（可能没有前台界面，或该页禁止截图）\"}")
-                    } else {
-                        respond(out, 200, "{\"ok\":true,\"png\":\"" + png + "\"}")
-                    }
+                    respond(out, 200, "{\"ok\":true,\"png\":\"" +
+                        Base64.encodeToString(png, Base64.NO_WRAP) + "\"}")
                 }
             }
+
             path.startsWith("/tap") -> {
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
+                val x = jsonInt(body, "x"); val y = jsonInt(body, "y")
+                if (x == null || y == null) {
+                    respond(out, 400, "{\"ok\":false,\"error\":\"需要 x 与 y\"}")
                 } else {
-                    val x = jsonInt(body, "x")
-                    val y = jsonInt(body, "y")
-                    if (x == null || y == null) {
-                        respond(out, 400, "{\"ok\":false,\"error\":\"需要 x 与 y\"}")
-                    } else {
-                        // ⚠️ 前台包名校验（2026-10-23 加）：触摸只送到**前台**窗口，
-                        //    如果中途前台被切走（通知/误触 Home），这一下就会点进**别的 App**。
-                        //    调用方可用 `expect=<包名>` 声明"我点的是这个 App"，
-                        //    包名不符就整笔拒绝（409），绝不盲点。
-                        val expect = paramOf(query, "expect") ?: jsonStrOf(body, "expect")
-                        val fg = try {
-                            svc.rootInActiveWindow?.packageName?.toString()
-                        } catch (e: Throwable) {
-                            null
-                        }
-                        if (!expect.isNullOrEmpty() && expect != fg) {
-                            respond(out, 409,
-                                "{\"ok\":false,\"error\":\"前台已经不是目标应用了（期望 " +
-                                    expect + "，实际 " + (fg ?: "未知") +
-                                    "）—— 已拒绝这次点击，避免误点。\"," +
-                                    "\"expected\":\"" + expect + "\",\"actual\":\"" + (fg ?: "") + "\"}")
-                        } else {
-                            val ok = svc.tap(x, y, jsonLong(body, "ms") ?: 80)
-                            respond(out, 200, "{\"ok\":" + ok + ",\"package\":\"" + (fg ?: "") + "\"}")
-                        }
-                    }
+                    val r = vd?.call(EngineProtocol.CMD_TAP) { it.writeInt(x); it.writeInt(y) }
+                        ?: "ERR:not connected"
+                    respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
+
             path.startsWith("/swipe") -> {
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
+                val x1 = jsonInt(body, "x1"); val y1 = jsonInt(body, "y1")
+                val x2 = jsonInt(body, "x2"); val y2 = jsonInt(body, "y2")
+                if (x1 == null || y1 == null || x2 == null || y2 == null) {
+                    respond(out, 400, "{\"ok\":false,\"error\":\"需要 x1,y1,x2,y2\"}")
                 } else {
-                    val x1 = jsonInt(body, "x1"); val y1 = jsonInt(body, "y1")
-                    val x2 = jsonInt(body, "x2"); val y2 = jsonInt(body, "y2")
-                    if (x1 == null || y1 == null || x2 == null || y2 == null) {
-                        respond(out, 400, "{\"ok\":false,\"error\":\"需要 x1,y1,x2,y2\"}")
-                    } else {
-                        val expect = paramOf(query, "expect") ?: jsonStrOf(body, "expect")
-                        val fg = try { svc.rootInActiveWindow?.packageName?.toString() } catch (e: Throwable) { null }
-                        if (!expect.isNullOrEmpty() && expect != fg) {
-                            respond(out, 409,
-                                "{\"ok\":false,\"error\":\"前台已不是目标应用（期望 " + expect +
-                                    "，实际 " + (fg ?: "未知") + "）—— 已拒绝\"}")
-                        } else {
-                            val ok = svc.swipe(x1, y1, x2, y2, jsonLong(body, "ms") ?: 300)
-                            respond(out, 200, "{\"ok\":" + ok + ",\"package\":\"" + (fg ?: "") + "\"}")
-                        }
-                    }
+                    val d = jsonInt(body, "ms") ?: 300
+                    val r = vd?.call(EngineProtocol.CMD_SWIPE) {
+                        it.writeInt(x1); it.writeInt(y1); it.writeInt(x2); it.writeInt(y2); it.writeInt(d)
+                    } ?: "ERR:not connected"
+                    respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
+
             path.startsWith("/key") -> {
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
+                val act = paramOf(query, "action") ?: "back"
+                val code = keyCodeOf(act)
+                if (code < 0) {
+                    respond(out, 400, "{\"ok\":false,\"error\":\"不认识的 action（back/home/recents）\"}")
                 } else {
-                    val act = paramOf(query, "action") ?: "back"
-                    val ok = svc.globalAction(act)
-                    if (ok) respond(out, 200, "{\"ok\":true,\"action\":\"" + act + "\"}")
-                    else respond(out, 400, "{\"ok\":false,\"error\":\"不认识的 action（back/home/recents/notifications）\"}")
+                    val r = vd?.call(EngineProtocol.CMD_KEY) { it.writeInt(code) } ?: "ERR:not connected"
+                    respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
+
             path.startsWith("/input") -> {
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
+                val t = paramOf(query, "text") ?: jsonStrOf(body, "text") ?: ""
+                if (t.isEmpty()) {
+                    respond(out, 400, "{\"ok\":false,\"error\":\"需要 text\"}")
                 } else {
-                    val t = paramOf(query, "text") ?: jsonStrOf(body, "text") ?: ""
-                    if (t.isEmpty()) {
-                        respond(out, 400, "{\"ok\":false,\"error\":\"需要 text\"}")
-                    } else {
-                        val ok = svc.setText(t)
-                        if (ok) respond(out, 200, "{\"ok\":true,\"len\":" + t.length + "}")
-                        else respond(out, 422, "{\"ok\":false,\"error\":\"没能写入输入框（自绘界面的输入框认不出，或该框不接受程序输入）—— 请让用户手动打字\"}")
-                    }
+                    val r = vd?.call(EngineProtocol.CMD_TEXT) { it.writeString(t) } ?: "ERR:not connected"
+                    respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
-            path.startsWith("/wait-text") -> {
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
-                } else {
-                    val q = paramOf(query, "q") ?: ""
-                    if (q.isEmpty()) {
-                        respond(out, 400, "{\"ok\":false,\"error\":\"需要 q\"}")
-                    } else {
-                        val timeoutMs = (paramOf(query, "timeout")?.toLongOrNull() ?: 8000L)
-                            .coerceIn(500L, 30000L)
-                        val deadline = System.currentTimeMillis() + timeoutMs
-                        var hit = false
-                        while (System.currentTimeMillis() < deadline) {
-                            if (svc.nodesJson().contains(q)) { hit = true; break }
-                            Thread.sleep(400)
-                        }
-                        if (hit) respond(out, 200, "{\"ok\":true,\"found\":true}")
-                        else respond(out, 200, "{\"ok\":true,\"found\":false,\"waitedMs\":" + timeoutMs + "}")
-                    }
-                }
-            }
+
             path.startsWith("/ocr") || path.startsWith("/find-text") -> {
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
-                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                    respond(out, 501, "{\"ok\":false,\"error\":\"OCR 需要 Android 13 (API 33+)；本机 " + Build.VERSION.SDK_INT + "\"}")
+                val png = vd?.capture()
+                if (png == null) {
+                    respond(out, 502, "{\"ok\":false,\"error\":\"截图失败（虚拟屏未建或还没出帧）\"}")
                 } else {
-                    val bmp = svc.screenshotBitmap()
+                    val bmp = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size)
                     if (bmp == null) {
-                        respond(out, 502, "{\"ok\":false,\"error\":\"截图失败（可能没有前台界面，或该页禁止截图）\"}")
+                        respond(out, 500, "{\"ok\":false,\"error\":\"截图解码失败\"}")
                     } else {
                         val ocrLines = try {
                             PhoneAgentOcr.recognize(bmp)
@@ -331,49 +305,37 @@ class PhoneAgentBridge {
                                     put("bounds", org.json.JSONArray(listOf(l.left, l.top, l.right, l.bottom)))
                                 })
                             }
-                            respond(out, 200,
-                                "{\"ok\":true,\"count\":" + n + ",\"lines\":" + arr.toString() + "}")
+                            respond(out, 200, "{\"ok\":true,\"count\":" + n + ",\"lines\":" + arr.toString() + "}")
                         }
                     }
                 }
             }
-            path.startsWith("/windows") -> {
-                // 诊断用：看 getWindows() 到底暴露了哪些窗口（含不含后台 App）。
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
+
+            path.startsWith("/wait-text") -> {
+                val q = paramOf(query, "q") ?: ""
+                if (q.isEmpty()) {
+                    respond(out, 400, "{\"ok\":false,\"error\":\"需要 q\"}")
                 } else {
-                    respond(out, 200, "{\"ok\":true,\"windows\":[" + svc.listWindows().joinToString(",") + "]}")
-                }
-            }
-            path.startsWith("/clicknode") -> {
-                // **节点点击**：对指定包名窗口里的控件直接触发点击回调。
-                // 与 /tap（手势）不同 —— 这条**不强求目标在前台**。
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
-                } else {
-                    val pkg = paramOf(query, "pkg") ?: jsonStrOf(body, "pkg") ?: ""
-                    val text = paramOf(query, "text") ?: jsonStrOf(body, "text") ?: ""
-                    if (pkg.isEmpty() || text.isEmpty()) {
-                        respond(out, 400, "{\"ok\":false,\"error\":\"需要 pkg 与 text\"}")
-                    } else {
-                        val r = svc.clickNodeIn(pkg, text)
-                        if (r == null) {
-                            respond(out, 404,
-                                "{\"ok\":false,\"error\":\"在 " + pkg +
-                                    " 的窗口里没找到含「" + text + "」的可点控件（或该窗口没暴露给我们）\"}")
-                        } else {
-                            respond(out, 200, "{\"ok\":true,\"clicked\":\"" + text + "\"}")
+                    val timeoutMs = (paramOf(query, "timeout")?.toLongOrNull() ?: 8000L)
+                        .coerceIn(500L, 30000L)
+                    val deadline = System.currentTimeMillis() + timeoutMs
+                    var hit = false
+                    while (System.currentTimeMillis() < deadline) {
+                        val png = vd?.capture(400)
+                        if (png != null) {
+                            val bmp = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size)
+                            if (bmp != null) {
+                                val lines = try { PhoneAgentOcr.recognize(bmp) }
+                                finally { try { bmp.recycle() } catch (_: Throwable) {} }
+                                if (lines != null && lines.any { it.text.contains(q) }) { hit = true; break }
+                            }
                         }
+                        Thread.sleep(500)
                     }
+                    respond(out, 200, "{\"ok\":true,\"found\":" + hit + ",\"waitedMs\":" + timeoutMs + "}")
                 }
             }
-            path.startsWith("/nodes") -> {
-                if (svc == null) {
-                    respond(out, 409, "{\"ok\":false,\"error\":\"无障碍服务未连接\"}")
-                } else {
-                    respond(out, 200, "{\"ok\":true,\"nodes\":" + svc.nodesJson() + "}")
-                }
-            }
+
             path.startsWith("/apps") -> {
                 val ctx = appContext
                 if (ctx == null) {
@@ -397,29 +359,46 @@ class PhoneAgentBridge {
                     respond(out, 200, "{\"ok\":true,\"apps\":" + arr.toString() + "}")
                 }
             }
+
             path.startsWith("/launch") -> {
-                val ctx = appContext
-                if (ctx == null) {
-                    respond(out, 503, "{\"ok\":false,\"error\":\"桥还没 attach 到 App\"}")
+                val pkg = paramOf(query, "pkg") ?: jsonStrOf(body, "pkg")
+                if (pkg.isNullOrEmpty()) {
+                    respond(out, 400, "{\"ok\":false,\"error\":\"需要 pkg\"}")
                 } else {
-                    val pkg = paramOf(query, "pkg") ?: jsonStrOf(body, "pkg")
-                    if (pkg.isNullOrEmpty()) {
-                        respond(out, 400, "{\"ok\":false,\"error\":\"需要 pkg\"}")
-                    } else {
-                        val li = ctx.packageManager.getLaunchIntentForPackage(pkg)
-                        if (li == null) {
-                            respond(out, 404, "{\"ok\":false,\"error\":\"这个应用没有可启动的主界面\"}")
-                        } else {
-                            li.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            ctx.startActivity(li)
-                            respond(out, 200, "{\"ok\":true,\"launched\":\"" + pkg + "\"}")
+                    // 懒建屏：还没建就先建一块默认 1080×1920 / 320dpi
+                    if (displayIdOf(vd) < 0) {
+                        vd?.call(EngineProtocol.CMD_CREATE) {
+                            it.writeInt(1080); it.writeInt(1920); it.writeInt(320)
                         }
                     }
+                    val r = vd?.call(EngineProtocol.CMD_LAUNCH) { it.writeString(pkg) }
+                        ?: "ERR:not connected"
+                    respond(out, 200, "{\"ok\":true,\"result\":\"" + jsonEsc(r) + "\"}")
                 }
             }
+
             else -> respond(out, 404, "{\"ok\":false,\"error\":\"no such path\"}")
         }
     }
+
+    /** 从 shell 进程读当前虚拟屏 id（无屏返回 -1）。 */
+    private fun displayIdOf(vd: ShizukuEngineClient?): Int {
+        val r = vd?.call(EngineProtocol.CMD_STATUS) ?: return -1
+        val m = Regex("display=(\\d+)").find(r)
+        return m?.groupValues?.get(1)?.toIntOrNull() ?: -1
+    }
+
+    /** action（back/home/recents）→ Android keyCode；不认识返回 -1。 */
+    private fun keyCodeOf(act: String): Int = when (act) {
+        "back" -> android.view.KeyEvent.KEYCODE_BACK
+        "home" -> android.view.KeyEvent.KEYCODE_HOME
+        "recents" -> android.view.KeyEvent.KEYCODE_APP_SWITCH
+        else -> -1
+    }
+
+    /** 转义 JSON 字符串里的引号/反斜杠（命令结果里可能带引号）。 */
+    private fun jsonEsc(s: String): String =
+        s.replace("\\", "\\\\").replace("\"", "\\\"")
 
     private fun respond(out: OutputStream, code: Int, body: String) {
         try {

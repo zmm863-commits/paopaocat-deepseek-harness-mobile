@@ -1929,7 +1929,7 @@ const Map<String, String> kEnTable = <String, String>{
   '；轮换池 {0} 因此一个成员都不剩，整池一起删掉了': '; rotation pool {0} has no members left, so the whole pool was deleted',
   '屏幕助手': 'Screen assistant',
   '允许 Agent 操作手机界面': 'Let the agent operate the phone UI',
-  '去系统设置开启（无障碍）': 'Open system settings (Accessibility)',
+  '去授权 Shizuku': 'Authorize Shizuku',
   '屏幕助手已开启，Agent 可以看屏幕、点屏幕': 'Screen assistant is on: the agent can see and tap the screen',
   '截图 / 点击 / 滑动 / 打开下面的应用。关闭后 Agent 会拒绝此类请求。': 'Screenshots, taps, swipes and launching the apps below. When off, the agent refuses such requests.',
   '手机里的应用': 'Apps on this phone',
