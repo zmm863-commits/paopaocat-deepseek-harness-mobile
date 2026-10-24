@@ -27,6 +27,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import android.webkit.WebView
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -228,6 +229,13 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // ⚠️ 仅用于真机验证（bot-rework 工作分支）：Bot 页是 WebView，装到真机后
+        //    要靠 CDP（`adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`）
+        //    进去量 DOM 几何、验注入是否生效。**发版前必须改成
+        //    `if (BuildConfig.DEBUG)`**（docs/接续台账.md §6 自查项。
+        //    0.79 线曾无条件开启过，v0.78 基线里没有，这里是本轮加回来的）。
+        WebView.setWebContentsDebuggingEnabled(true)
 
         // LiteRT-LM 是**进程内**的（不走子进程），所以它的 stdout 不会被 App 收集到 ——
         // 上一轮"失败了看运行日志里的 litert-lm 行"其实是空头支票：一行都不会出现。

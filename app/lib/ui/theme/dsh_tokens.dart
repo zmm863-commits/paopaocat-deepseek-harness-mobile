@@ -69,9 +69,19 @@ class DshColors {
 
   static bool get isLight => _skin.isLight;
 
+  /// 换肤次数（只增）。给**保活页面**用。
+  ///
+  /// 为什么需要：`applySkin` 只换引用、不通知，靠 `MaterialApp` 重建带动全树。
+  /// 但 Bot 页是常驻在 `IndexedStack` 里的 WebView 页面 —— 实测换肤时它的
+  /// `build` 不一定跑，网页就停在旧主题：**深色 App + 浅色网页**，
+  /// 用户看到的就是「切换以后文字看不见」。需要跟着换肤的组件监听这个值。
+  static final ValueNotifier<int> skinRevision = ValueNotifier<int>(0);
+
   /// 换肤。**只改引用、不通知**：调用方负责触发全树重建（见类注释）。
+  /// 保活组件另外监听 [skinRevision]。
   static void applySkin(DshPalette skin) {
     _skin = skin;
+    skinRevision.value++;
   }
 
   /// 圆角缩放（像素风 = 0，见 `DshPalette.radiusScale`）。

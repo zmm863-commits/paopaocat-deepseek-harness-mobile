@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert' show jsonEncode;
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -9,6 +10,7 @@ import '../../local/bot_server.dart';
 import '../../local/dsh_runtime.dart';
 import '../../local/diagnostics_log.dart';
 import '../theme/dsh_tokens.dart';
+import 'bot_mobile_layout.dart';
 
 /// 「Bot 团队」页 —— 把**手机本机上**跑着的 dsh web（含 ds-bot）用 WebView 打开。
 ///
@@ -163,6 +165,17 @@ body { overscroll-behavior-y: contain; }
       tk.id = 'dsh-app-tokens';
       tk.textContent = `__DSH_TOKENS_CSS__`;
       document.head.appendChild(tk);
+    }
+
+    // ── ①-c 移动布局层（CSS-only，源码见 bot_mobile_layout.dart）────────────
+    // 只调布局与可读性：一屏一页 / 手指能点 / 两套主题都看得见。
+    // 独立 style 标签，且必须放在下面「已注入过就 return」的守卫**之前** ——
+    // 否则页面被 React 重渲染后补注入时，这一段会被跳过。
+    if (!document.getElementById('dsh-mobile-layout')) {
+      var ly = document.createElement('style');
+      ly.id = 'dsh-mobile-layout';
+      ly.textContent = __DSH_MOBILE_LAYOUT__;
+      document.head.appendChild(ly);
     }
 
 
@@ -363,10 +376,43 @@ body { overscroll-behavior-y: contain; }
       }
     }
 
+    // ── ⑥-b 点会话行后自动收起名册（一屏一页）────────────────────────────
+    // 名册是满屏一页：点一条会话如果不把名册收起来，用户仍停在名册，
+    // 会以为"没点中"（0.79 审计第 6 条同款）；而且会话里的设置层(z=60)
+    // 会被侧栏压住看不见。收起动作交给页面自己的「关闭导航」
+    // （display:none 的元素 click() 照样派发事件，0.79 已实测）。
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      if (!t.closest('.bt-row')) return;
+      setTimeout(function () {
+        try {
+          var close = document.querySelector('[aria-label="关闭导航"]');
+          if (close) close.click();
+        } catch (err) {}
+      }, 280);
+    }, true);
+
     // ── ⑦ 扫一遍 + 盯住 DOM（这些元素都是 SPA 按需渲染出来的）─────────────
+    // ── 用户 2026-10-24：「取消通用设置里『切换 agent 模式』那一栏」──────────
+    // ds-bot 的「模式」分区只有「经典 Agent 模式 / 切换」一条，切过去是把界面
+    // 换回经典 Agent —— 手机上属于会掉出 Bot 界面的死路，直接整栏收掉。
+    function hideModeSection() {
+      var secs = document.querySelectorAll('.bt-set-section');
+      for (var i = 0; i < secs.length; i++) {
+        var h = secs[i].querySelector('h3') || secs[i].querySelector('[class*="title"]');
+        var t = h ? (h.textContent || '').trim() : '';
+        if (t !== '模式' && t !== 'Mode') continue;
+        if (secs[i].style.display === 'none') continue;
+        secs[i].style.display = 'none';
+        post('已隐藏设置页的「模式」一栏（切换经典 Agent 是死路）');
+      }
+    }
+
     function sweep() {
       applyTheme();
       hideHarness();
+      hideModeSection();
       fixOfficeHint();
       fixAutoHint();
       renamePlusMenu();
@@ -397,15 +443,19 @@ body { overscroll-behavior-y: contain; }
   static String _webPatchJs({required bool dark}) =>
       _fill(_webPatchTemplate, dark: dark);
 
-  /// 把两个占位符填进去，并**校验没有残留**。
+  /// 把占位符填进去，并**校验没有残留**。
   ///
   /// 为什么用 replaceAll 而不是 replaceFirst：2026-10-20 的坑 —— 注释里写了占位符的名字，
   /// `replaceFirst` 命中注释而不是代码，多行 CSS 被塞进 `//` 后面 → 整段脚本语法错误、
   /// 一条注入都不生效。`replaceAll` + 残留断言让这种"写错位置"当场暴露，而不是静默失效。
+  ///
+  /// 移动布局层用 [jsonEncode] 转成**合法的 JS 字符串字面量**：那段 CSS 里有换行、
+  /// 单引号与反斜杠，塞进模板字符串迟早被某个字符截断（108 版就是这么整段失效的）。
   static String _fill(String template, {required bool dark}) {
     final js = template
         .replaceAll('__DSH_APP_DARK__', dark ? 'true' : 'false')
-        .replaceAll('__DSH_TOKENS_CSS__', _tokensCss());
+        .replaceAll('__DSH_TOKENS_CSS__', _tokensCss())
+        .replaceAll('__DSH_MOBILE_LAYOUT__', jsonEncode(botMobileLayoutCss));
     if (js.contains('__DSH_')) {
       // 真出现了说明模板里还有第三个没被替换的占位符（或名字拼错）。
       DiagnosticsLog.add('dsh-bot', '注入脚本里有未替换的占位符 → 这段注入可能整体失效');
@@ -419,35 +469,133 @@ body { overscroll-behavior-y: contain; }
   /// 只桥接**颜色**这一层：它决定了两个界面"像不像一家人"的 80%。
   /// 圆角/字号这层故意先不动 —— ds-bot 的圆角散落在几十个类里，逐个覆盖的收益远小于风险。
   static String _tokensCss() {
-    String hex(Color c) =>
-        '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
-    String rgba(Color c, double a) {
-      final v = c.toARGB32();
-      return 'rgba(${(v >> 16) & 0xFF}, ${(v >> 8) & 0xFF}, ${v & 0xFF}, $a)';
-    }
-
-    final body = '''
-    --bt-main: ${hex(DshColors.bg)};
-    --bt-sidebar: ${hex(DshColors.navBg)};
-    --bt-card: ${hex(DshColors.surface)};
-    --bt-bubble: ${hex(DshColors.surfaceHigh)};
-    --bt-ink: ${hex(DshColors.text)};
-    --bt-ink-2: ${hex(DshColors.textDim)};
-    --bt-ink-3: ${hex(DshColors.textFaint)};
-    --bt-line: ${hex(DshColors.line)};
-    --bt-line-2: ${hex(DshColors.line2)};
-    --bt-line-weak: ${hex(DshColors.line)};
-    --bt-hover: ${rgba(DshColors.accent, 0.08)};
-    --bt-active: ${rgba(DshColors.accent, 0.14)};
-    --bt-tag-bg: ${rgba(DshColors.accent, 0.10)};
-    --bt-tag-ink: ${hex(DshColors.textDim)};
-    --bt-accent: ${hex(DshColors.accent)};
-    --bt-user: ${hex(DshColors.accent)};
-    --bt-user-ink: ${hex(DshColors.onAccent)};
-    ''';
-
+    final body = _tokens().entries.map((e) => '    ${e.key}: ${e.value};').join('\n');
     return 'body{\n$body}\nbody[data-ds-dark-theme]{\n$body}';
   }
+
+  /// 令牌表（CSS 变量名 → 值）。样式表与内联注入共用这一份，避免两处走样。
+  static Map<String, String> _tokens() => <String, String>{
+        '--bt-main': _hex(DshColors.bg),
+        '--bt-sidebar': _solid(DshColors.navBg),
+        '--bt-card': _solid(DshColors.surface),
+        '--bt-bubble': _solid(DshColors.surfaceHigh),
+        '--bt-ink': _hex(DshColors.text),
+        '--bt-ink-2': _hex(DshColors.textDim),
+        '--bt-ink-3': _hex(DshColors.textFaint),
+        '--bt-line': _hex(DshColors.line),
+        '--bt-line-2': _hex(DshColors.line2),
+        '--bt-line-weak': _hex(DshColors.line),
+        '--bt-hover': _rgba(DshColors.accent, 0.08),
+        '--bt-active': _rgba(DshColors.accent, 0.14),
+        '--bt-tag-bg': _rgba(DshColors.accent, 0.10),
+        '--bt-tag-ink': _hex(DshColors.textDim),
+        '--bt-accent': _hex(DshColors.accent),
+        '--bt-user': _hex(DshColors.accent),
+        '--bt-user-ink': _hex(DshColors.onAccent),
+      };
+
+  /// 颜色 → CSS 值。**必须保留 alpha**：App 的 surface / navBg / surfaceHigh
+  /// 是半透明白，`& 0xFFFFFF` 会把它变成纯白 —— 深色皮肤下卡片与消息气泡
+  /// 就是「白底配浅色字」（实测：切深色后 `.bt-bubble` 仍是 rgb(255,255,255)）。
+  static String _hex(Color c) {
+    final v = c.toARGB32();
+    final a = (v >> 24) & 0xFF;
+    final r = (v >> 16) & 0xFF;
+    final g = (v >> 8) & 0xFF;
+    final b = v & 0xFF;
+    if (a == 0xFF) {
+      return '#${r.toRadixString(16).padLeft(2, '0')}'
+          '${g.toRadixString(16).padLeft(2, '0')}'
+          '${b.toRadixString(16).padLeft(2, '0')}';
+    }
+    return 'rgba($r, $g, $b, ${(a / 255).toStringAsFixed(3)})';
+  }
+
+  /// 半透明表面色**合成到页面底**之后的不透明值。
+  /// 直接给网页一个半透明背景，在 ds-bot 那层层叠叠的容器上会透出白色底；
+  /// 合成成实色更可控，也正好和 App 里的观感一致。
+  static String _solid(Color c) => _hex(Color.alphaBlend(c, DshColors.bg));
+
+  static String _rgba(Color c, double a) {
+    final v = c.toARGB32();
+    return 'rgba(${(v >> 16) & 0xFF}, ${(v >> 8) & 0xFF}, ${v & 0xFF}, $a)';
+  }
+
+  /// 把令牌**内联**打到 html 与 body 上（`important`）。
+  ///
+  /// 为什么样式表还不够：ds-bot 把主题变量写在 `documentElement.style` 上，
+  /// 内联优先于任何样式表 —— 只写 `body{--bt-…}` 时网页仍用自己的配色
+  /// （实测浅色下「我的消息」气泡是纯黑 `#070707`、字还看不见）。
+  static String _varsJs() {
+    return '''
+  (function () {
+    var V = ${jsonEncode(_tokens())};
+    var roots = [document.documentElement, document.body];
+    for (var i = 0; i < roots.length; i++) {
+      var r = roots[i];
+      if (!r) continue;
+      for (var k in V) {
+        try { r.style.setProperty(k, V[k], 'important'); } catch (e) {}
+      }
+    }
+  })();
+  ''';
+  }
+
+  /// 切深色时把**浅色硬编码**的容器压深；切回浅色时清掉上一轮的内联底色。
+  ///
+  /// 实测：ds-bot 一批容器的 background 写死 `rgb(244,245,247)`，切深色后
+  /// 文字变浅、底色没变 → 浅底浅字（用户报的「切换以后文字看不见」）。
+  /// 只处理「亮度 > 0.82」的容器；有灰度的卡片/气泡不动，保留层次。
+  static String _sweepJs({required bool dark}) => '''
+  (function () {
+    var dark = ${dark ? 'true' : 'false'};
+    var BG = ${jsonEncode(_hex(DshColors.bg))};
+    var CARD = ${jsonEncode(_solid(DshColors.surface))};
+    var els = document.querySelectorAll('body *');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (!el || el.nodeType !== 1 || el === document.body) continue;
+      try {
+        if (!dark) {
+          if (el.getAttribute('data-dshm-swept') === '1') {
+            el.style.removeProperty('background-color');
+            el.removeAttribute('data-dshm-swept');
+          }
+          continue;
+        }
+        var cls = typeof el.className === 'string' ? el.className : '';
+        var c = getComputedStyle(el).backgroundColor;
+        if (!c || c === 'transparent' || c.indexOf('rgba(0, 0, 0, 0)') === 0) continue;
+        var m = c.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+        if (!m) continue;
+        var lum = (0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3]) / 255;
+        if (lum <= 0.82) continue;
+        var isCard = /card|bubble|panel|item|row|menu|dialog|toast/i.test(cls);
+        el.style.setProperty('background-color', isCard ? CARD : BG, 'important');
+        el.setAttribute('data-dshm-swept', '1');
+      } catch (e) {}
+    }
+  })();
+  ''';
+
+  /// 设置层出现时给 body 打标记 —— 布局层用它藏掉宿主那两个圆形浮层
+  /// （实现在 bot_mobile_layout.dart 的 ⑫）。低频轮询即可，不做 MutationObserver。
+  static const String _settingsFlagJs = r'''
+  (function () {
+    if (window.__dshmSettingsFlag) return;
+    window.__dshmSettingsFlag = true;
+    function sync() {
+      try {
+        var open = !!document.querySelector('.bt-settings-layer');
+        if (open) document.body.setAttribute('data-dshm-settings', '');
+        else document.body.removeAttribute('data-dshm-settings');
+      } catch (e) {}
+    }
+    sync();
+    window.__dshmSettingsTimer = setInterval(sync, 600);
+  })();
+  ''';
 
   /// **只**做一件事：把 App 的深浅色同步给网页（可反复调用；App 切皮肤时用）。
   ///
@@ -507,12 +655,23 @@ body { overscroll-behavior-y: contain; }
     final web = _web;
     if (web == null) return;
     final dark = !DshColors.isLight;
+    // 三步各自独立：_themeJs 失败不能让变量与扫底也一起丢（2026-10-23 的教训）。
     try {
       await web.runJavaScript(_themeJs(dark: dark));
-      DiagnosticsLog.add('dsh-bot', 'App 主题变化 → 已把网页改成${dark ? '深色' : '浅色'}');
     } catch (e) {
       DiagnosticsLog.add('dsh-bot', '主题同步到网页失败（网页仍用旧的主题）：$e');
     }
+    try {
+      await web.runJavaScript(_varsJs());
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '令牌内联失败（网页可能仍用 ds-bot 自己的配色）：$e');
+    }
+    try {
+      await web.runJavaScript(_sweepJs(dark: dark));
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '深色扫底失败：$e');
+    }
+    DiagnosticsLog.add('dsh-bot', 'App 主题变化 → 已把网页改成${dark ? '深色' : '浅色'}');
   }
 
   /// 网页能退一层就退，并告诉壳层"这次返回我吃掉了"；否则交回壳层。
@@ -535,12 +694,23 @@ body { overscroll-behavior-y: contain; }
   void initState() {
     super.initState();
     BotPage.consumeBack = _consumeBack;
+    // 换肤（含深浅色）是"会变"的东西：Bot 页常驻 IndexedStack，换肤时 build
+    // 不一定跑（0.79 实测），所以单独监听，把主题立刻推给网页。
+    DshColors.skinRevision.addListener(_onSkinChanged);
     unawaited(_boot());
+  }
+
+  /// App 换肤 → 把网页的深浅色、令牌与深色扫底一起重推。
+  void _onSkinChanged() {
+    if (!mounted) return;
+    _appliedDark = !DshColors.isLight;
+    unawaited(_pushThemeToWeb());
   }
 
   @override
   void dispose() {
     if (BotPage.consumeBack == _consumeBack) BotPage.consumeBack = null;
+    DshColors.skinRevision.removeListener(_onSkinChanged);
     BotServer.live.removeListener(_onServerChanged);
     // ⚠️ 刻意**不**停 [BotServer]：Bot 团队要接着在后台干活。
     DiagnosticsLog.add('dsh-bot', '离开 Bot 页（服务继续在后台跑，会话不受影响）');
@@ -644,6 +814,8 @@ body { overscroll-behavior-y: contain; }
           onPageFinished: (_) async {
             final dark = !DshColors.isLight;
             _appliedDark = dark;
+            // 每一步独立 try：2026-10-23 的教训是四步串一个 try —— 补丁那步一抛异常，
+            // 布局 CSS / 主题变量 / 扫底整层都不注入，症状是"配色变了、排版没变"。
             try {
               await controller.runJavaScript(_webPatchJs(dark: dark));
               DiagnosticsLog.add('dsh-bot',
@@ -653,6 +825,45 @@ body { overscroll-behavior-y: contain; }
               //    进去，日志里却什么都看不见，于是"改了没用"查了很久。必须留痕。
               DiagnosticsLog.add('dsh-bot',
                   '注入网页补丁失败（浮层宽度/主题/文案修正都不会生效）：$e');
+            }
+            try {
+              await controller.runJavaScript(_varsJs());
+            } catch (e) {
+              DiagnosticsLog.add('dsh-bot', '令牌内联失败（网页可能仍用 ds-bot 自己的配色）：$e');
+            }
+            try {
+              await controller.runJavaScript(_sweepJs(dark: dark));
+            } catch (e) {
+              DiagnosticsLog.add('dsh-bot', '深色扫底失败：$e');
+            }
+            try {
+              await controller.runJavaScript(_settingsFlagJs);
+            } catch (e) {
+              DiagnosticsLog.add('dsh-bot', '设置层标记注入失败：$e');
+            }
+            // DOM 自检：布局层是否真的插进去了。只留痕、不无限补注入 ——
+            // 错误页（chrome-error）同样能跑 JS，靠"注入成功"判断页面正常会误判。
+            try {
+              final ok = await controller.runJavaScriptReturningResult(
+                  "document.getElementById('dsh-mobile-layout') ? '1' : '0'");
+              if (!ok.toString().contains('1')) {
+                DiagnosticsLog.add('dsh-bot', '自检：移动布局层不在 DOM 里（下次加载会重新注入）');
+              }
+            } catch (e) {
+              // 自检本身失败不影响页面：只是少一条诊断日志。
+            }
+            // 深色下 SPA 还要渲染约 2 秒：延迟再扫两次，把后出现的浅色容器也压深。
+            if (dark) {
+              for (final ms in const [1600, 3600]) {
+                Future<void>.delayed(Duration(milliseconds: ms), () async {
+                  if (!mounted || _web != controller) return;
+                  try {
+                    await controller.runJavaScript(_sweepJs(dark: true));
+                  } catch (e) {
+                    // 扫底是增强项：失败只是个别浅色块没压深，不影响可用性。
+                  }
+                });
+              }
             }
           },
           onWebResourceError: (WebResourceError e) {
