@@ -185,14 +185,23 @@ final class DisplayEngine {
     synchronized String launch(String pkg) {
         if (displayId < 0) return "ERR:display not created";
         if (pkg == null || pkg.isEmpty()) return "ERR:empty package";
-        // shell 进程可以直接 exec am，最稳、兼容性最好
-        String cmd = "am start --display " + displayId
-                + " -a android.intent.action.MAIN"
-                + " -c android.intent.category.LAUNCHER"
-                + " -p " + pkg + " --user current";
-        return exec(cmd);
+        // 先解析 launcher activity，再用 -n 显式启动。
+        // 为什么不用 `am start -p <pkg>`：-p 在部分 ROM 的 am 里不是 package，且
+        // 抖音这类 launcher 是 splash/alias 的包，用 -p + MAIN/LAUNCHER 会报
+        // "unable to resolve Intent"。resolve-activity 拿到的 component 直接喂 -n 最稳。
+        String resolved = exec("cmd package resolve-activity --brief "
+                + "-a android.intent.action.MAIN -c android.intent.category.LAUNCHER " + pkg);
+        String component = null;
+        for (String line : resolved.split("\n")) {
+            String l = line.trim();
+            if (l.contains("/") && l.contains(".")) { component = l; break; }
+        }
+        if (component == null) return "ERR:resolve failed: " + resolved;
+        String out = exec("am start --display " + displayId + " -n " + component + " --user current");
+        return out.contains("Error") ? "ERR:" + out : "OK";
     }
 
+    /** 执行 shell 命令，返回 stdout（失败时前面带 ERR:exit=）。 */
     private static String exec(String cmd) {
         try {
             Process p = new ProcessBuilder("sh", "-c", cmd)
@@ -202,7 +211,7 @@ final class DisplayEngine {
             String line;
             while ((line = r.readLine()) != null) sb.append(line).append('\n');
             int code = p.waitFor();
-            return code == 0 ? "OK" : "ERR:exit=" + code + " " + sb;
+            return code == 0 ? sb.toString().trim() : "ERR:exit=" + code + " " + sb.toString().trim();
         } catch (Throwable t) {
             return "ERR:exec " + t.getMessage();
         }
