@@ -28,6 +28,8 @@ import '../widgets/send_log_button.dart';
 // 本轮按用户 2026-10-05 的新方案**整段重写**，旧结构（当前模型卡 + 分组卡片 +
 // 轮换组 + 长表单 + Agnes 单独一块）已经取消 —— 这里只负责把它挂到「模型」区。
 import 'model_settings_panel.dart';
+// 「屏幕助手」：让 Agent 操作手机（无障碍 + 本机 HTTP 桥）。
+import 'phone_agent_settings.dart';
 // 「关于」里的「更新说明」：整页展示各版本改了什么（数据在 data/changelog.dart）。
 import 'release_notes_page.dart';
 // 「检查更新」：拉远端版本清单、比版本、提示新版（L1）+ 应用内下载/校验/安装（L2）。
@@ -384,6 +386,15 @@ class _SettingsTabState extends State<SettingsTab> {
                     title: context.tr('手机权限'),
                     child: _card(
                         child: _PermissionsSection(settings: widget.appSettings)),
+                  ),
+                  const SizedBox(height: 10),
+                  // 「屏幕助手」：让 DSH 的 Agent 能看屏幕、点屏幕（2026-10-22）。
+                  // 主交互在会话里（用户直接说话），这里只承担**授权+状态**：
+                  // 无障碍开关 / 桥状态 / 「去开启」跳系统设置。见 phone_agent_settings.dart。
+                  DshCollapsibleSection(
+                    title: context.tr('屏幕助手'),
+                    child: _card(
+                        child: PhoneAgentSettingsSection(settings: widget.appSettings)),
                   ),
                   const SizedBox(height: 10),
                   // 用户要求：原来的「关于」改名「文件地址」（它本来列的就是各种路径），

@@ -55,6 +55,10 @@ class AndroidToolbox {
     // 图片默认只标注不抽，给 `--extract-images 目录` 才真写出来。
     'assets/toolbox/read-docx.mjs': 'toolbox/read-docx.mjs',
     'assets/toolbox/rotate-proxy.mjs': 'toolbox/rotate-proxy.mjs',
+    // ── 手机屏幕助手（2026-10-23）──────────────────────────────────
+    // Agent 调「看屏幕 / 点屏幕 / 开应用」的 Node 客户端：读 filesDir/phone-agent.json
+    // 拿端口+令牌，再打本机 127.0.0.1 的桥（见 Android 侧 PhoneAgentBridge.kt）。
+    'assets/toolbox/phone-agent.mjs': 'toolbox/phone-agent.mjs',
     // 用户第 7 条：内置 Agnes（免费）的生图 / 生视频能力，
     // 用户只要说"生成一张图 / 一段视频"就该直接能跑。
     'assets/toolbox/make-image.mjs': 'toolbox/make-image.mjs',

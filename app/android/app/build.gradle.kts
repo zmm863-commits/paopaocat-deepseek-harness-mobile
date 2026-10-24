@@ -174,6 +174,14 @@ dependencies {
     // arm64 的 `liblitertlm_jni.so` 约 22.2 MB（进 APK 后约 +10 MB）。
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
 
+    // ── 屏幕助手的本机 OCR（PhoneAgentOcr.kt）────────────────────────────
+    // 自绘界面（游戏/剪映这类没有控件树的）靠它认字找按钮。
+    // ⚠️ 有两个版本，**必须用 bundled（带模型）这个**：
+    //   · `text-recognition-chinese` ← 这个：模型打进 APK，**不需要 Google Play Services**
+    //   · 不带模型的那版要在设备上临时下载，国内手机没有 GMS 直接不可用
+    // 代价约 +20MB（中文识别模型），本地推理约 100ms。
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+
     // ── LiteRT 的 GPU 加速器（`libLiteRtClGlAccelerator.so`）────────────────────
     // 为什么必须单独加这一条：`litertlm-android` 的 AAR 里**只有** `liblitertlm_jni.so`，
     // 而它是**运行时 dlopen** 加速器插件的（把包内 .so 的字符串挖出来可见这些名字：

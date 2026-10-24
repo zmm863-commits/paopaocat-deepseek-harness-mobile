@@ -61,6 +61,9 @@ class MainActivity : FlutterActivity() {
         /** LiteRT-LM（Gemma 4 那批 `.litertlm` 模型）：进程内 API + 本机 HTTP 包装。 */
         private val liteRtLm = LiteRtLmBridge()
 
+        /** 手机界面操作（屏幕助手）的桥：无障碍服务 + 本机 HTTP 桥（见 PhoneAgentBridge.kt）。 */
+        private val phoneAgent = PhoneAgentBridge()
+
         /**
          * 运行时的**内容版本**：改动此值会让已安装的 App 重新解压一次运行时。
          *
@@ -227,6 +230,12 @@ class MainActivity : FlutterActivity() {
         })
     }
 
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 手机操作桥需要 packageManager / startActivity —— 把 Activity context 给它。
+        phoneAgent.attach(this)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -252,6 +261,131 @@ class MainActivity : FlutterActivity() {
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).also { c ->
             c.setMethodCallHandler { call, result ->
                 when (call.method) {
+                    // ---- 手机界面操作（Agent 看屏幕/点屏幕）----
+                    //
+                    // 启停那个 127.0.0.1 的小 HTTP 桥；端口与令牌由 Flutter 侧生成并传进来
+                    // （Node 侧要用同样的令牌才能调，见 lib/local/phone_agent_bridge.dart）。
+                    "phoneAgentStart" -> {
+                        try {
+                            val port = (call.argument<Int>("port") ?: 39711)
+                            val token = (call.argument<String>("token") ?: "").ifEmpty { "dph" }
+                            val p = phoneAgent.start(port, token)
+                            // 把 端口+令牌 落到文件：Node 侧（Agent 进程）读这个就知道
+                            // 往 127.0.0.1:<port> 发请求、带什么令牌。每次启动都覆盖。
+                            try {
+                                val info = org.json.JSONObject()
+                                    .put("port", p)
+                                    .put("token", token)
+                                    .put("ts", System.currentTimeMillis())
+                                java.io.File(filesDir, "phone-agent.json")
+                                    .writeText(info.toString())
+                            } catch (e: Throwable) {
+                                android.util.Log.w("DshPhoneAgent", "写 phone-agent.json 失败：${e.message}")
+                            }
+                            result.success(p)
+                        } catch (e: Throwable) {
+                            result.error("phoneAgentStart", e.message, null)
+                        }
+                    }
+                    "phoneAgentStop" -> {
+                        phoneAgent.stop()
+                        result.success(true)
+                    }
+                    "listInstalledApps" -> {
+                        // 「屏幕助手」的应用列表：手机里所有**能从桌面启动**的 App。
+                        // 需要在 Manifest 声明 QUERY_ALL_PACKAGES（Android 11+ 包可见性）。
+                        try {
+                            val pm = packageManager
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_MAIN, null
+                            ).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                            val ris = pm.queryIntentActivities(intent, 0)
+                            val arr = org.json.JSONArray()
+                            for (ri in ris) {
+                                val pkg = ri.activityInfo.packageName
+                                if (pkg == packageName) continue
+                                val o = org.json.JSONObject()
+                                o.put("label", ri.loadLabel(pm).toString())
+                                o.put("package", pkg)
+                                o.put("system", (ri.activityInfo.applicationInfo.flags and
+                                    android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0)
+                                arr.put(o)
+                            }
+                            result.success(arr.toString())
+                        } catch (e: Throwable) {
+                            result.error("listApps", e.message, null)
+                        }
+                    }
+                    "launchApp" -> {
+                        try {
+                            val pkg = call.argument<String>("package") ?: run {
+                                result.error("launch", "需要 package", null); return@setMethodCallHandler
+                            }
+                            val intent = packageManager.getLaunchIntentForPackage(pkg)
+                            if (intent == null) {
+                                result.error("launch", "这个应用没有可启动的主界面", null)
+                            } else {
+                                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(intent)
+                                result.success(true)
+                            }
+                        } catch (e: Throwable) {
+                            result.error("launch", e.message, null)
+                        }
+                    }
+                    "recordPhoneAgentEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        try {
+                            val f = java.io.File(filesDir, "phone-agent.json")
+                            val o = if (f.exists())
+                                org.json.JSONObject(f.readText()) else org.json.JSONObject()
+                            o.put("enabled", enabled)
+                            o.put("enabledAt", System.currentTimeMillis())
+                            f.writeText(o.toString())
+                            result.success(true)
+                        } catch (e: Throwable) {
+                            result.success(false)
+                        }
+                    }
+                    "readPhoneAgentInfo" -> {
+                        try {
+                            val f = java.io.File(filesDir, "phone-agent.json")
+                            if (!f.exists()) {
+                                result.success(null)
+                            } else {
+                                val o = org.json.JSONObject(f.readText())
+                                result.success(
+                                    mapOf("port" to o.optInt("port"), "token" to o.optString("token"))
+                                )
+                            }
+                        } catch (e: Throwable) {
+                            result.success(null)
+                        }
+                    }
+                    "openAccessibilitySettings" -> {
+                        try {
+                            startActivity(
+                                android.content.Intent(
+                                    android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS
+                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            result.success(true)
+                        } catch (e: Throwable) {
+                            result.error("openA11y", e.message, null)
+                        }
+                    }
+                    "phoneAgentStatus" -> {
+                        val svc = DshPhoneAgentService.instance
+                        result.success(
+                            mapOf(
+                                "running" to phoneAgent.isRunning(),
+                                "port" to phoneAgent.port(),
+                                "connected" to (svc != null),
+                                "sdk" to android.os.Build.VERSION.SDK_INT,
+                            )
+                        )
+                    }
+
                     // ---- LiteRT-LM（Gemma 4 那批 `.litertlm` 模型）----
                     //
                     // 它是**进程内 API**（Engine / Conversation），没有现成的 HTTP 服务，

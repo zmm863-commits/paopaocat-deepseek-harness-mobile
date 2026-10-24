@@ -97,6 +97,7 @@ class AppSettings extends ChangeNotifier {
   /// 关掉 = overlay 里把这几个 id 覆盖成 `disabled: true`（见
   /// `data/session_capabilities.dart`），**下一个会话进程**才生效。
   static const String _kSubagentEnabled = 'dsh_subagent_enabled';
+  static const String _kPhoneAgentEnabled = 'dsh_phone_agent_enabled';
 
   /// 子会话用哪个模型（`provider/model` 路由串）。空 = 跟随父会话。
   static const String _kSubagentRoute = 'dsh_subagent_route';
@@ -187,6 +188,12 @@ class AppSettings extends ChangeNotifier {
 
   /// 「会话里提供子智能体工具」是否开启（见 [_kSubagentEnabled]）。**默认开**。
   bool _subagentEnabled = true;
+
+  /// 「屏幕助手」（Agent 操作手机界面）总开关，见 [_kPhoneAgentEnabled]。
+  /// 这是安全闸 —— 关了之后桥虽还在（App 启动即拉起），但 Node 侧读
+  /// phone-agent.json 时会看到 enabled:false，各技能据此拒调。
+  bool _phoneAgentEnabled = false;
+  bool get phoneAgentEnabled => _phoneAgentEnabled;
 
   /// 左右滑动切换页面（见 [_kSwipeSwitch]）。**默认开**。
   bool _swipeSwitch = true;
@@ -494,6 +501,7 @@ class AppSettings extends ChangeNotifier {
       _swipeSwitch = prefs.getBool(_kSwipeSwitch) ?? true;
       // 出厂就是提供子智能体的，所以默认 true。
       _subagentEnabled = prefs.getBool(_kSubagentEnabled) ?? true;
+      _phoneAgentEnabled = prefs.getBool(_kPhoneAgentEnabled) ?? false;
       final sub = prefs.getString(_kSubagentRoute);
       _subagentRoute = (sub == null || sub.trim().isEmpty) ? null : sub.trim();
       // 本地模型那两项：只认白名单里的值，磁盘上有脏值就退回默认
@@ -689,6 +697,19 @@ class AppSettings extends ChangeNotifier {
       await prefs.setBool(_kSwipeSwitch, v);
     } catch (e) {
       debugPrint('[dsh-settings] 保存滑动开关失败：$e');
+    }
+  }
+
+  /// 「屏幕助手」总开关（见 [_phoneAgentEnabled]）。
+  Future<void> setPhoneAgentEnabled(bool v) async {
+    if (v == _phoneAgentEnabled) return;
+    _phoneAgentEnabled = v;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kPhoneAgentEnabled, v);
+    } catch (e) {
+      debugPrint('[dsh-settings] 保存屏幕助手开关失败：$e');
     }
   }
 

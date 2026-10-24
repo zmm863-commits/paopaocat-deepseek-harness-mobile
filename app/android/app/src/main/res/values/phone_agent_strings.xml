@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 无障碍服务的名字：会显示在系统「设置 → 无障碍 → 已下载的服务」列表里。
+         所以要写清楚「这是什么、干什么用」，别让用户以为是什么可疑的东西。 -->
+    <string name="phone_agent_service_label">DSH 屏幕助手</string>
+
+    <!-- 无障碍服务的说明：同样会显示在系统里，用户点开就能看到。 -->
+    <string name="phone_agent_service_description">让 DSH 的助手能够查看当前屏幕内容并在指定位置点击、滑动，用于执行你交代的界面操作。不会自行操作，仅在你下达指令时响应。</string>
+</resources>

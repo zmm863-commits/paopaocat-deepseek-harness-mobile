@@ -28,3 +28,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
 -keep class com.google.ai.edge.litertlm.** { *; }
 -dontwarn com.google.ai.edge.litertlm.**
+
+# ── 屏幕助手 OCR：ML Kit（PhoneAgentOcr.kt）──────────────────────────────
+# 真因：方法名会被 R8 混淆 —— ML Kit 内部靠反射/内部类名装配识别管线，
+# 类名一改就装配出 null，于是崩在识别那一刻。debug 包不混淆所以看不出来
+# （2026-10-23 在 moto 真机 release 包上实测到的）。
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_text** { *; }
+-keep class com.google.android.gms.internal.mlkit_common** { *; }
+-keep class com.google.mlkit.vision.text.chinese.** { *; }
+# ML Kit 的 native 层
+-keep class com.google.android.gms.internal.mlkit_vision_text_common.** { *; }

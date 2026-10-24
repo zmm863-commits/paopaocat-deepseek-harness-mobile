@@ -31,7 +31,7 @@ class _ConstProbe extends StatelessWidget {
 
 void main() {
   group('三张表', () {
-    test('条目数一致，且规模对得上（1923 条界面文案）', () {
+    test('条目数一致，且规模对得上（1933 条界面文案）', () {
       // 994 这个数不是随手写的：2026-10-09 按审计 P0-11/P1-5 清过一轮漂移
       // （补 48 条漏翻 / 删 77 条陈旧 / 修 17 条换行错，三张表各自）。
       // 清理的依据是 `install/i18n/check-tables.mjs` —— 那个脚本以前**不存在**，
@@ -189,7 +189,8 @@ void main() {
       // ⚠️ 2026-10-20 1914 → 1922：系统日历同步（CHG-05）的 8 条 ——
       //    「日历」「同步到系统日历」「申请日历权限」+ 4 条状态说明 + 1 条带占位符的。
       // ⚠️ 2026-10-21 1922 → 1923：差分更新两处文案（「增量 {0}」「正在把补丁拼成…」）。
-      expect(kEnTable.length, 1923);
+      // ⚠️ 2026-10-24 1923 → 1933：屏幕助手（phone-agent）设置页 10 条文案。
+      expect(kEnTable.length, 1933);
       expect(kJaTable.length, kEnTable.length);
       expect(kKoTable.length, kEnTable.length);
     });

@@ -60,6 +60,8 @@ class BuiltinSkills {
   /// 所以「首页没入口」的技能照样会被模型用上（用户说"帮我做个网页"就会命中
   /// `frontend-design`），只是首页没有那张卡。加首页卡片是**产品决定**，不是安装的必要条件。
   static const List<String> names = <String>[
+    // 手机界面操作（2026-10-23）：让 Agent 能看屏幕、点屏幕、开应用。
+    'phone-agent',
     'make-slides',
     'make-image',
     'make-video',

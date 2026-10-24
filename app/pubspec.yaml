@@ -93,6 +93,7 @@ flutter:
     # 设备日志会是 `Unable to load asset: "assets/skills/<name>/SKILL.md"`，
     # 于是 12 个技能全部安装失败（我第一版就是这么翻车的，
     # 见 docs/logs 与 RELEASE-0.09 的"真机发现"）。
+    - assets/skills/phone-agent/
     - assets/skills/make-slides/
     - assets/skills/make-image/
     - assets/skills/make-video/
