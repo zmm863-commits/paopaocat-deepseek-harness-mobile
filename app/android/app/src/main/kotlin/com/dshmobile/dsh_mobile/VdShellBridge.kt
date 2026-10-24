@@ -72,6 +72,7 @@ object VdShell {
             b.transact(code, data, reply, 0)
             reply.readString() ?: "ERR:empty reply"
         } catch (e: Throwable) {
+            Log.w(TAG, "call code=$code failed: ${e.javaClass.name}: ${e.message}")
             "ERR:${e.javaClass.simpleName}:${e.message}"
         } finally {
             data.recycle()

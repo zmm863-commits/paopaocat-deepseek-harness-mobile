@@ -7,6 +7,7 @@ import '../../local/dsh_runtime.dart';
 import '../../local/phone_agent_bridge.dart';
 import '../../local/diagnostics_log.dart';
 import 'phone_agent_console_page.dart';
+import 'phone_agent_guide_page.dart';
 import 'dart:convert';
 
 /// 设置页「屏幕助手」卡片：这个功能在 App 里唯一的门面。
@@ -126,6 +127,16 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
           icon: const Icon(Icons.desktop_windows_outlined, size: 18),
           label: Text(context.tr('打开后台操作台（虚拟屏 + 实时画面）')),
           onPressed: () => PhoneAgentConsolePage.open(context),
+        ),
+        const SizedBox(height: 8),
+        // 图文使用说明：一张竖版长图，第一次配对的完整步骤 + 每次怎么用。
+        TextButton.icon(
+          style: TextButton.styleFrom(
+            minimumSize: const Size.fromHeight(40),
+          ),
+          icon: const Icon(Icons.menu_book_outlined, size: 17),
+          label: Text(context.tr('查看图文使用说明')),
+          onPressed: () => PhoneAgentGuidePage.open(context),
         ),
         const SizedBox(height: 12),
         if (!connected)

@@ -319,8 +319,14 @@ class PhoneAgentBridge {
       );
       req.headers.set('x-dsh-token', _token);
       if (body != null) {
+        // ⚠️ 必须显式设 Content-Length：Dart 的 HttpClient POST 默认用 chunked
+        // 编码（不带 Content-Length 头），而 App 的 HTTP 桥按 Content-Length 读 body，
+        // 读出来是空 → /launch 的 pkg 丢 → 返回「需要 pkg」。
+        // create 之所以"看起来成功"，是因为 body 读空后走了默认值 1080×1920，掩盖了同个 bug。
+        final bytes = utf8.encode(jsonEncode(body));
         req.headers.contentType = ContentType.json;
-        req.add(utf8.encode(jsonEncode(body)));
+        req.contentLength = bytes.length;
+        req.add(bytes);
       }
       final HttpClientResponse resp = await req.close();
       final String text = await resp.transform(utf8.decoder).join();

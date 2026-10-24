@@ -4733,5 +4733,15 @@
     "en": "adb channel for no-Shizuku mode (added 2026-10-24, bundled)\n\n· libadb-android 3.1.1 — adb protocol and Wireless-debugging pairing. Dual-licensed (GPL-3.0 or Apache-2.0); this app uses it under Apache-2.0. https://github.com/MuntashirAkon/libadb-android\n\n· Conscrypt 2.5.3 — TLS for pairing. Apache-2.0. https://github.com/google/conscrypt\n\n· Bouncy Castle 1.78.1 (bcprov / bcpkix) — generating the adb auth certificate. MIT. https://www.bouncycastle.org\n\nThese are used only for the built-in Wireless-debugging pairing (so you can start the background engine without installing Shizuku); their source is unmodified.",
     "ja": "Shizuku 不要モードの adb チャンネル（2026-10-24 追加、同梱）\n\n· libadb-android 3.1.1 — adb プロトコルとワイヤレスデバッグのペアリング。デュアルライセンス（GPL-3.0 または Apache-2.0）、本 App は Apache-2.0 で使用。https://github.com/MuntashirAkon/libadb-android\n\n· Conscrypt 2.5.3 — ペアリング用 TLS。Apache-2.0。https://github.com/google/conscrypt\n\n· Bouncy Castle 1.78.1（bcprov / bcpkix）— adb 認証証明書の生成。MIT。https://www.bouncycastle.org\n\nこれらは本 App 内蔵のワイヤレスデバッグペアリング（Shizuku を入れずにバックグラウンドエンジンを起動するため）にのみ使用し、ソースは改変していません。",
     "ko": "Shizuku 없이 쓰는 adb 채널(2026-10-24 추가, 동봉)\n\n· libadb-android 3.1.1 — adb 프로토콜과 무선 디버깅 페어링. 이중 라이선스(GPL-3.0 또는 Apache-2.0), 본 앱은 Apache-2.0으로 사용. https://github.com/MuntashirAkon/libadb-android\n\n· Conscrypt 2.5.3 — 페어링용 TLS. Apache-2.0. https://github.com/google/conscrypt\n\n· Bouncy Castle 1.78.1(bcprov / bcpkix) — adb 인증서 생성. MIT. https://www.bouncycastle.org\n\n위 구성요소는 내장된 무선 디버깅 페어링(Shizuku 없이 백그라운드 엔진을 시작하기 위함)에만 사용되며 소스를 수정하지 않았습니다."
+  },
+  "使用说明": {
+    "en": "Instructions",
+    "ja": "使い方",
+    "ko": "사용 설명"
+  },
+  "查看图文使用说明": {
+    "en": "View illustrated instructions",
+    "ja": "図解の使い方を見る",
+    "ko": "그림으로 된 사용 설명 보기"
   }
 }
