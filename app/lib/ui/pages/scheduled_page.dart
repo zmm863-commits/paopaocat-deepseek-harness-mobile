@@ -731,6 +731,18 @@ class _ScheduleEditorState extends State<_ScheduleEditor> {
                 alignLabelWithHint: true,
               ),
             ),
+            const SizedBox(height: 8),
+            // 泡泡猫快捷任务：后台搜索/比价/查票最常用，点一下填好 prompt。
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                _fillChip(context, '泡泡猫搜比价',
+                    '泡泡猫帮我在淘宝搜 PS5，找最低价'),
+                _fillChip(context, '泡泡猫查车票', '泡泡猫帮我查一下明天的火车票'),
+                _fillChip(context, '泡泡猫查信息', '泡泡猫帮我查一下今天的天气'),
+              ],
+            ),
             const SizedBox(height: 16),
             Text(context.tr('重复'),
                 style: TextStyle(color: DshColors.textDim, fontSize: 12.5)),
@@ -882,6 +894,33 @@ class _ScheduleEditorState extends State<_ScheduleEditor> {
             fontSize: 12.5,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 泡泡猫快捷任务 chip：点一下把预设 prompt 填进输入框。
+  Widget _fillChip(BuildContext context, String label, String prompt) {
+    return InkWell(
+      onTap: () => setState(() => _prompt.text = prompt),
+      borderRadius: BorderRadius.circular(DshMetrics.radius(18)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: DshColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(DshMetrics.radius(18)),
+          border: Border.all(color: DshColors.divider, width: 0.8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.bolt, size: 14, color: DshColors.accent),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(color: DshColors.accent, fontSize: 12.5),
+            ),
+          ],
         ),
       ),
     );
