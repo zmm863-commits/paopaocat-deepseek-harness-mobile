@@ -22,9 +22,9 @@ import 'dart:convert';
 ///   * **放设置 → 应用**：和「手机权限」是同一类东西——一次性授权 + 平时不用管。
 ///
 /// 卡片三态：
-///   ① 无障碍没开 → 红提示 + 「去开启」按钮（跳系统无障碍设置页）；
-///   ② 开了、桥在跑 → 绿状态 + 当前前台包名；
-///   ③ 桥没起来 → 灰提示 + 尝试重启按钮。
+///   ① 引擎没连上 → 红点 + 「用免装 Shizuku 配对」提示；
+///   ② 引擎连上了 → 绿点 + 可后台操作 + 总开关；
+///   ③ 桥没起来 → 灰点 + 「正在检查…」。
 class PhoneAgentSettingsSection extends StatefulWidget {
   const PhoneAgentSettingsSection({super.key, required this.settings});
 
@@ -36,7 +36,7 @@ class PhoneAgentSettingsSection extends StatefulWidget {
 }
 
 class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
-  PhoneAgentStatus? _status;
+  PhoneAgentHeadless? _headless;
   bool _checking = false;
 
   @override
@@ -55,8 +55,8 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
           await PhoneAgentBridge.instance.start();
         } catch (_) {/* 起不来就如实显示 */}
       }
-      final PhoneAgentStatus st = await PhoneAgentBridge.instance.status();
-      if (mounted) setState(() => _status = st);
+      final PhoneAgentHeadless? hi = await PhoneAgentBridge.instance.headlessInfo();
+      if (mounted) setState(() => _headless = hi);
     } finally {
       _checking = false;
     }
@@ -81,11 +81,10 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final PhoneAgentStatus? st = _status;
-    final bool connected = st?.connected ?? false;
+    final bool connected = _headless?.engineConnected ?? false;
     final Color stateColor = connected
         ? DshColors.ok
-        : (st == null ? DshColors.textFaint : DshColors.err);
+        : (_headless == null ? DshColors.textFaint : DshColors.err);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -99,7 +98,7 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
               child: Text(
                 connected
                     ? context.tr('泡泡猫已就绪，可以后台帮你搜索、比价、查信息')
-                    : (st?.hint ?? context.tr('正在检查…')),
+                    : (_headless?.hint ?? context.tr('正在检查…')),
                 style: TextStyle(
                   color: DshColors.text,
                   fontSize: 12.5,
@@ -150,21 +149,11 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
           onPressed: () => PhoneAgentRulesPage.open(context),
         ),
         const SizedBox(height: 12),
-        const _RecorderBlock(),
-        const SizedBox(height: 12),
-        if (!connected)
-          // 不再引导「去授权 Shizuku」——现在主推免装通道（上面的配对块），
-          // 用户没装 Shizuku 点它只会一脸茫然。
-          Text(
-            context.tr('引擎还没连上 —— 用上面的「免装 Shizuku」配对启动，不用装 Shizuku。'),
-            style: TextStyle(color: DshColors.textDim, fontSize: 11.5, height: 1.5),
-          )
-        else
-          OutlinedButton.icon(
-            icon: const Icon(Icons.verified_outlined, size: 18),
-            label: Text(context.tr('重新检查状态')),
-            onPressed: _refresh,
-          ),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.verified_outlined, size: 18),
+          label: Text(context.tr('重新检查状态')),
+          onPressed: _refresh,
+        ),
         if (connected) ...<Widget>[
           const SizedBox(height: 10),
           // ── 总开关（用户 2026-10-22：「是不是加个应用开关」）────────────
@@ -588,193 +577,6 @@ class _VdShellBlockState extends State<_VdShellBlock> {
                   fontSize: 11,
                   height: 1.4,
                 ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-
-/// 前台录制区块：无障碍记录「点击的文字」，比虚拟屏录制更快更准。
-/// 录制在前台（真实屏幕操作），回放仍走后台虚拟屏。
-class _RecorderBlock extends StatefulWidget {
-  const _RecorderBlock();
-  @override
-  State<_RecorderBlock> createState() => _RecorderBlockState();
-}
-
-class _RecorderBlockState extends State<_RecorderBlock>
-    with WidgetsBindingObserver {
-  bool _enabled = false;
-  bool _recording = false;
-  int _count = 0;
-  bool _busy = false;
-  String _msg = '';
-
-  PhoneAgentBridge get _bridge => PhoneAgentBridge.instance;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _load();
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 用户从系统无障碍设置返回 App 时自动刷新（否则开启后按钮还停在「开启无障碍」）。
-    if (state == AppLifecycleState.resumed) _load();
-  }
-
-  Future<void> _load() async {
-    final Map<String, dynamic>? st = await _bridge.phoneRecStatus();
-    if (!mounted || st == null) return;
-    setState(() {
-      _enabled = st['enabled'] == true;
-      _recording = st['recording'] == true;
-      _count = (st['count'] as num?)?.toInt() ?? 0;
-    });
-  }
-
-  Future<void> _toggle() async {
-    if (_busy) return;
-    if (!_enabled) {
-      // 没开无障碍 → 引导去开
-      await _bridge.phoneRecOpenSettings();
-      setState(() => _msg = '去系统无障碍里找到「泡泡猫录制」打开，再回来点开始');
-      return;
-    }
-    if (_recording) {
-      await _stopAndSave();
-    } else {
-      setState(() => _busy = true);
-      final bool ok = await _bridge.phoneRecStart();
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _recording = ok;
-        _msg = ok
-            ? '录制中——去前台正常操作 App，点完回这里停止'
-            : '开始失败';
-      });
-    }
-  }
-
-  Future<void> _stopAndSave() async {
-    final TextEditingController c = TextEditingController();
-    final String? name = await showDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(ctx.tr('给这条规则起个名')),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          decoration: InputDecoration(hintText: ctx.tr('例如：淘宝比价')),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.tr('取消')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(c.text.trim()),
-            child: Text(ctx.tr('保存')),
-          ),
-        ],
-      ),
-    );
-    c.dispose();
-    if (name == null || name.isEmpty) return;
-    setState(() => _busy = true);
-    final String? json = await _bridge.phoneRecStop(name);
-    final bool saved = json != null && await _bridge.saveRule(json);
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _recording = false;
-      _count = 0;
-      _msg = saved ? '规则「$name」已保存到规则库' : '停止/保存失败';
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: DshColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(DshMetrics.radius(12)),
-        border: Border.all(color: DshColors.line, width: DshMetrics.borderWidth),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(
-                _recording ? Icons.fiber_manual_record : Icons.touch_app_outlined,
-                size: 16,
-                color: _recording ? DshColors.err : DshColors.accent,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  context.tr('前台录制（更快更准）'),
-                  style: TextStyle(
-                    color: DshColors.text,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.refresh, size: 16),
-                tooltip: context.tr('刷新状态'),
-                onPressed: _load,
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _enabled
-                ? (_recording
-                    ? '录制中（$_count 步）—— 去前台操作 App，点完回来停止'
-                    : '在前台真实屏幕操作，自动记下「你点的按钮文字」，比虚拟屏快。')
-                : '第一次用要先开无障碍：点「开启无障碍」，在系统列表里打开「泡泡猫录制」。',
-            style: TextStyle(color: DshColors.textDim, fontSize: 11, height: 1.45),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(38),
-              backgroundColor: _recording ? DshColors.err : null,
-            ),
-            icon: Icon(
-              _recording ? Icons.stop : Icons.fiber_manual_record,
-              size: 16,
-            ),
-            label: Text(
-              !_enabled
-                  ? context.tr('开启无障碍')
-                  : (_recording ? context.tr('停止并保存') : context.tr('开始录制')),
-              style: const TextStyle(fontSize: 12),
-            ),
-            onPressed: _busy ? null : _toggle,
-          ),
-          if (_msg.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _msg,
-                style: TextStyle(color: DshColors.accent, fontSize: 11),
               ),
             ),
         ],

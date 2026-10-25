@@ -44,10 +44,6 @@ class PhoneAgentBridge {
   int? _port;
   bool _running = false;
 
-  /// 无障碍服务是否已被系统绑定（= 用户开了且系统连上了）。
-  bool get serviceConnected => _serviceConnected;
-  bool _serviceConnected = false;
-
   int get port => _port ?? 0;
 
   bool get running => _running;
@@ -85,7 +81,6 @@ class PhoneAgentBridge {
     final Map<Object?, Object?>? m = await DshHost.channel
         .invokeMethod<Map<Object?, Object?>>('phoneAgentStatus');
     final bool connected = m?['connected'] == true;
-    _serviceConnected = connected;
     return PhoneAgentStatus(
       running: m?['running'] == true,
       connected: connected,
@@ -344,52 +339,6 @@ class PhoneAgentBridge {
   Future<bool> deleteRule(String name) async {
     final bool? ok = await DshHost.channel
         .invokeMethod<bool>('phoneRuleDelete', <String, dynamic>{'name': name});
-    return ok == true;
-  }
-
-  /// 前台录制状态：{enabled, recording, count}。
-  ///
-  /// ⚠️ 用 `invokeMethod<Object>` 取原始值再手动转 Map，**不要**用
-  /// `invokeMethod<Map<String, dynamic>>`：Kotlin 的 `Map<String, Any>` 转
-  /// Dart 泛型 Map 时检查会失败、整个返回 null，`_enabled` 就永远是 false
-  /// （真机 2026-10-25 踩到：日志 enabled=true，但页面按钮不变）。
-  Future<Map<String, dynamic>?> phoneRecStatus() async {
-    try {
-      final Object? r =
-          await DshHost.channel.invokeMethod<Object>('phoneRecStatus');
-      if (r is Map) {
-        return <String, dynamic>{
-          for (final MapEntry<dynamic, dynamic> e in r.entries)
-            e.key.toString(): e.value,
-        };
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// 开始前台录制（无障碍记录点击文字）。
-  Future<bool> phoneRecStart() async {
-    final bool? ok = await DshHost.channel.invokeMethod<bool>('phoneRecStart');
-    return ok == true;
-  }
-
-  /// 停止前台录制，返回规则 JSON（含 name/steps）。
-  Future<String?> phoneRecStop(String name) async {
-    try {
-      final Object? r = await DshHost.channel
-          .invokeMethod<Object>('phoneRecStop', <String, dynamic>{'name': name});
-      return r is String ? r : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// 打开系统无障碍设置页（引导用户开启录制服务）。
-  Future<bool> phoneRecOpenSettings() async {
-    final bool? ok =
-        await DshHost.channel.invokeMethod<bool>('phoneRecOpenSettings');
     return ok == true;
   }
 

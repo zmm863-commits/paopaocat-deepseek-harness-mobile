@@ -496,41 +496,6 @@ class MainActivity : FlutterActivity() {
                         result.success(ok)
                     }
 
-                    // ── 泡泡猫前台录制（无障碍记录点击文字）──────────────────
-                    "phoneRecStatus" -> {
-                        val en = DshPhoneAgentRecorderService.isEnabled(this)
-                        val raw = android.provider.Settings.Secure.getString(
-                            contentResolver,
-                            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "(null)"
-                        android.util.Log.i("DshPhoneAgentRec",
-                            "status enabled=$en rec=${DshPhoneAgentRecorderService.recording} raw=$raw")
-                        result.success(mapOf(
-                            "enabled" to en,
-                            "recording" to DshPhoneAgentRecorderService.recording,
-                            "count" to DshPhoneAgentRecorderService.stepCount,
-                        ))
-                    }
-
-                    "phoneRecStart" -> {
-                        DshPhoneAgentRecorderService.start()
-                        result.success(true)
-                    }
-
-                    "phoneRecStop" -> {
-                        val name = call.argument<String>("name") ?: "未命名规则"
-                        result.success(DshPhoneAgentRecorderService.stop(name))
-                    }
-
-                    "phoneRecOpenSettings" -> {
-                        val ok = try {
-                            startActivity(
-                                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                            true
-                        } catch (e: Throwable) { false }
-                        result.success(ok)
-                    }
-
                     "vdshellShell" -> {
                         val command = call.argument<String>("command") ?: "id"
                         Thread {

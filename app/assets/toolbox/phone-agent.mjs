@@ -4,8 +4,8 @@
  *
  * ## 它解决什么
  *
- * App 里有一个本机 HTTP 桥（127.0.0.1:3971x）+ 一个无障碍服务，能力是：
- * 截图 / 控件树 / 点击 / 滑动 / 列应用 / 开应用。
+ * App 里有一个本机 HTTP 桥（127.0.0.1:3971x）+ 一个跑在 shell 里的无头虚拟屏引擎，能力是：
+ * 截图 / OCR 认字 / 点击 / 滑动 / 列应用 / 开应用。
  * **DSH 的 Agent 跑在 Node 进程里**，所以需要一个能在 Node 侧跑、负责
  * 「读钥匙 → 发请求 → 打印结果」的小脚本。就是本文件。
  *
@@ -19,7 +19,7 @@
  *
  * ## 用法（Agent 直接用）
  *
- *   node phone-agent.mjs status           # 桥在不在、无障碍连没连、当前前台包名
+ *   node phone-agent.mjs status           # 桥在不在、引擎连没连、虚拟屏建没建
  *   node phone-agent.mjs shot [out.png]   # 截当前屏幕，存文件（默认 /tmp/pa-shot.png）
  *   node phone-agent.mjs nodes [maxDepth] # 控件树（JSON）
  *   node phone-agent.mjs find <文字>      # 在控件树里找"文字"（按 desc/text 包含），打印坐标
@@ -620,7 +620,8 @@ switch (cmd) {
     // 列出用户录的规则（filesDir/rules/*.json）。
     const names = listUserRuleNames();
     if (!names.length) {
-      console.error('你还没录规则。去 App：设置 → 应用 → 泡泡猫助手 → 前台录制，录一条。');
+      console.error('你还没录规则。去 App：设置 → 应用 → 泡泡猫助手 → 打开后台操作台，'
+        + '在虚拟屏里点「开始录制」录一条；或在这里用 record-start 边跑边录。');
       process.exit(1);
     }
     for (const n of names) {
