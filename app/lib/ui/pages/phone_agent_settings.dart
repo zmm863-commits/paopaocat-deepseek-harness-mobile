@@ -440,13 +440,35 @@ class _VdShellBlockState extends State<_VdShellBlock> {
       _msg = '正在搜索配对服务… 请去开「使用配对码配对设备」，然后在通知栏输码';
     });
     final bool ok = await PhoneAgentBridge.instance.vdshellStartPairing();
+    if (!ok) {
+      if (mounted) {
+        setState(() { _busy = false; _msg = '启动配对服务失败，请重试'; });
+      }
+      return;
+    }
     if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _msg = ok
-          ? '已开始配对：下拉通知栏，在输入框填 6 位配对码'
-          : '启动配对服务失败，请重试';
-    });
+    setState(() => _msg = '已开始配对：下拉通知栏输码。完成后这里会自动显示引擎状态…');
+    // 配对在后台服务里完成，页面轮询引擎状态，一起来就刷新。
+    for (int i = 0; i < 45; i++) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      final Map<String, dynamic>? st =
+          await PhoneAgentBridge.instance.vdshellStatus();
+      if (st?['binderAlive'] == true) {
+        setState(() {
+          _busy = false;
+          _alive = true;
+          _msg = '✅ 引擎已就绪！现在可以在会话里喊「泡泡猫」了';
+        });
+        return;
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _busy = false;
+        _msg = '还没等到引擎就绪，点「开始配对」再试，或下拉通知栏看进度';
+      });
+    }
   }
 
   Future<void> _stop() async {

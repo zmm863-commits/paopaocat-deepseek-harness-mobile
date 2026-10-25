@@ -301,9 +301,13 @@ class VdShellClient(private val context: Context) : AbsAdbConnectionManager() {
             append("cp '").append(dexFile.absolutePath).append("' ").append(remote).append("; ")
             append("chmod 644 ").append(remote).append("; ")
             append("rm -f ").append(log).append("; ")
-            append("CLASSPATH=").append(remote)
+            // ⚠️ 必须 setsid + 重定向 stdin：App 内通过 libadb 的 shell() 起引擎，
+            // 用普通 `&` 后台时，shell 会话一关 adbd 就 SIGHUP 把 app_process 杀掉
+            // （真机 2026-10-25 踩到：binder 广播那一瞬间 App 能收到，随后进程就没了）。
+            // setsid 让引擎脱离 shell 会话，< /dev/null 避免进程读 stdin 阻塞。
+            append("setsid CLASSPATH=").append(remote)
                 .append(" app_process / com.dshmobile.vdshell.ShellServer ")
-                .append(">/dev/null 2>&1 & sleep 1; echo started")
+                .append(">/dev/null 2>&1 < /dev/null & sleep 1; echo started")
         }
         return shell(cmd, 25_000)
     }
