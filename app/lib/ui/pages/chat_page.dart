@@ -18,6 +18,7 @@ import '../../data/api_error_text.dart';
 import '../../data/configured_models.dart';
 import '../../data/artifact_store.dart';
 import '../../data/artifacts.dart';
+import '../../data/workspace_store.dart';
 import '../../local/context_budget.dart';
 import '../../state/session_registry.dart';
 import '../../state/model_store.dart';
@@ -31,6 +32,7 @@ import '../widgets/enabled_experts_sheet.dart';
 import '../widgets/input_bar.dart';
 import '../widgets/message_stream.dart';
 import '../widgets/workspace_entry.dart';
+import '../widgets/session_drawer.dart';
 
 import '../../i18n/dsh_i18n.dart';
 import '../widgets/common.dart';
@@ -62,6 +64,9 @@ class ChatPage extends StatefulWidget {
     this.sessions,
     this.thinkingMode = 'collapsed',
     this.anysearchEnabled = true,
+    this.sessionListFor,
+    this.onOpenSession,
+    this.onNewChat,
   });
 
   final DshRuntime runtime;
@@ -123,12 +128,26 @@ class ChatPage extends StatefulWidget {
   /// 顺路把这一项也带下来即可，不必再造一个全局镜像。
   final String thinkingMode;
 
+  /// 左侧「会话」抽屉的历史会话数据源。用户参照 WorkBuddy 的交互提的：
+  /// 「左上角点击符号，左侧拉出会话列表，能看到会话，点击就能到会话页面」。
+  /// 为 null 时抽屉只显示「当前运行的会话」（live），不显示历史段。
+  final Future<List<DshSession>> Function()? sessionListFor;
+
+  /// 抽屉里点一条历史会话 → 由壳层打开它。
+  final void Function(DshSession session)? onOpenSession;
+
+  /// 抽屉里的「新建会话」→ 由壳层开一个新会话。
+  final VoidCallback? onNewChat;
+
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
 
 class _ChatPageState extends State<ChatPage> {
   final _input = TextEditingController();
+
+  /// 打开左侧会话抽屉用的 Scaffold 句柄。
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final _scroll = ScrollController();
 
   /// 没有会话句柄时，页面自己拿着消息（单测 / 未传 sessions 的旧路径）。
@@ -2235,8 +2254,11 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     final screenH = MediaQuery.sizeOf(context).height;
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: true,
+      // 左侧会话抽屉（参照 WorkBuddy 的左上角 → 左侧列表）。
+      drawer: _buildSessionDrawer(context),
       body: Column(
         children: [
           ChatTopBar(
@@ -2250,6 +2272,7 @@ class _ChatPageState extends State<ChatPage> {
             workspaceLabel: widget.workspaceLabel,
             artifactCount: _artifacts.length,
             onOpenArtifacts: _openArtifacts,
+            onOpenSessions: () => _scaffoldKey.currentState?.openDrawer(),
           ),
           Expanded(child: _buildBody()),
           if (_showAttachMenu)
@@ -2759,6 +2782,51 @@ class _ChatPageState extends State<ChatPage> {
     return _buildInputBox(screenH);
   }
 
+  Widget _buildSessionDrawer(BuildContext context) {
+    final live = <DrawerSession>[];
+    final reg = widget.sessions;
+    if (reg != null) {
+      for (final s in reg.all) {
+        final sid = s.sessionId;
+        if (sid == null || sid.isEmpty) continue; // 还没真正建会话的句柄不列
+        live.add(DrawerSession(
+          sessionId: sid,
+          title: (s.title == null || s.title!.trim().isEmpty)
+              ? context.tr('未命名会话')
+              : s.title!,
+          cwd: s.workspace,
+          running: s.running,
+          live: true,
+        ));
+      }
+    }
+    return SessionDrawer(
+      currentSessionId: _sessionId,
+      workspaceLabel: widget.workspaceLabel,
+      live: live,
+      loadHistory: widget.sessionListFor,
+      onNewChat: () {
+        final f = widget.onNewChat;
+        if (f != null) {
+          f();
+        } else {
+          Navigator.of(context).pop();
+        }
+      },
+      onHome: () => Navigator.of(context).pop(),
+      onPick: (picked) {
+        if (picked.sessionId == _sessionId) return;
+        final open = widget.onOpenSession;
+        if (open == null) return;
+        open(DshSession(
+          id: picked.sessionId,
+          cwd: picked.cwd,
+          title: picked.title,
+        ));
+      },
+    );
+  }
+
   Widget _buildInputBox(double screenH) {
     return Container(
       color: Colors.transparent,
@@ -2811,11 +2879,15 @@ class ChatTopBar extends StatelessWidget {
     required this.artifactCount,
     required this.onOpenArtifacts,
     this.workspaceLabel,
+    this.onOpenSessions,
   });
 
   final String title;
   final bool running;
   final VoidCallback onCancel;
+
+  /// 左上角「会话」按钮：拉开左侧会话抽屉。为空时不显示。
+  final VoidCallback? onOpenSessions;
 
   /// 为空时不显示工作区入口（见 [ChatPage.onOpenWorkspaces]）
   final VoidCallback? onOpenWorkspaces;
@@ -2858,6 +2930,14 @@ class ChatTopBar extends StatelessWidget {
                 icon: const Icon(Icons.arrow_back_ios_new, size: 17),
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
+              // 左上角「会话」：拉开左侧抽屉（参照 WorkBuddy）。
+              if (onOpenSessions != null)
+                IconButton(
+                  tooltip: context.tr('会话列表'),
+                  icon: const Icon(Icons.view_sidebar_outlined, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onOpenSessions,
+                ),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,

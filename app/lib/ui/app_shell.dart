@@ -574,6 +574,11 @@ class _AppShellState extends State<AppShell> {
         onSessionUsed: ({required id, required cwd, required title}) {
           _ws.noteSession(id: id, cwd: cwd, title: title);
         },
+        // 左侧会话抽屉：历史会话列表 / 点一条切过去 / 新建会话。
+        sessionListFor: () => listPersistedSessions(runtime: _runtime),
+        onOpenSession: (s) =>
+            _openChat(resumeSessionId: s.id, workspacePath: s.cwd),
+        onNewChat: () => _openChat(),
       ),
     );
     _chatRoute = route;

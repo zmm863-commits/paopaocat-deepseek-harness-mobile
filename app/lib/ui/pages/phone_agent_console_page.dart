@@ -794,7 +794,6 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
     final String q = _search.text.trim().toLowerCase();
     final List<({String label, String pkg})> shown = _apps
         .where((a) => q.isEmpty || a.label.toLowerCase().contains(q))
-        .take(10)
         .toList();
     return _box(
       child: Column(
@@ -865,12 +864,10 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
                   ),
                 ),
               ),
-            if (_apps.length > shown.length)
-              Text(
-                context.tr('只显示前 {0} 条，继续输入缩小范围',
-                    <Object>[shown.length]),
-                style: TextStyle(color: DshColors.textFaint, fontSize: 10.5),
-              ),
+            Text(
+              context.tr('共 {0} 个应用', <Object>[shown.length]),
+              style: TextStyle(color: DshColors.textFaint, fontSize: 10.5),
+            ),
           ] else
             Text(
               context.tr('先把虚拟屏建起来，再点「载入应用列表」选一个 App 拉进去。'),

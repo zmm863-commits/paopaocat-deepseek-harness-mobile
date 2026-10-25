@@ -392,7 +392,7 @@ class _SettingsTabState extends State<SettingsTab> {
                   // 主交互在会话里（用户直接说话），这里只承担**授权+状态**：
                   // 无障碍开关 / 桥状态 / 「去开启」跳系统设置。见 phone_agent_settings.dart。
                   DshCollapsibleSection(
-                    title: context.tr('泡泡猫'),
+                    title: context.tr('泡泡猫助手'),
                     child: _card(
                         child: PhoneAgentSettingsSection(settings: widget.appSettings)),
                   ),
