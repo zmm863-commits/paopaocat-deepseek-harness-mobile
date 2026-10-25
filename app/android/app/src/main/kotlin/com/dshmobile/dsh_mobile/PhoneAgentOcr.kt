@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -36,6 +37,15 @@ object PhoneAgentOcr {
 
     private const val TAG = "DshPhoneAgent"
 
+    /**
+     * ⚠️ recognizer 必须复用 —— 每次 `recognize()` 都 new 一个再 close，会反复加载
+     * 中文模型（约百毫秒级），这正是"后台录制点得太慢"的元凶之一。
+     * 改成进程内单例：只 build 一次，反复 `process()`，永不 close。
+     */
+    private val recognizer: TextRecognizer by lazy {
+        TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+    }
+
     /** OCR 结果里的一个文字块。 */
     data class OcrLine(
         val text: String,
@@ -54,10 +64,6 @@ object PhoneAgentOcr {
      * 失败返回 null 并打日志 —— 调用方要如实告诉用户"认不出"，不能假装空结果。
      */
     fun recognize(bitmap: Bitmap, timeoutMs: Long = 15000): List<OcrLine>? {
-        // ⚠️ recognizer 复用（每次 new 一个会反复加载模型，明显变慢）
-        val recognizer = ChineseTextRecognizerOptions.Builder().build().let {
-            TextRecognition.getClient(it)
-        }
         val latch = CountDownLatch(1)
         var out: List<OcrLine>? = null
         var err: Throwable? = null
@@ -88,12 +94,8 @@ object PhoneAgentOcr {
         } catch (e: Throwable) {
             Log.w(TAG, "OCR 异常：${e.message}")
             return null
-        } finally {
-            try {
-                recognizer.close()
-            } catch (_: Throwable) {
-            }
         }
+        // 注意：不再 close recognizer —— 它是复用单例，close 掉下次就废了。
         err?.let {
             Log.w(TAG, "OCR 失败：${it.message}")
             return null

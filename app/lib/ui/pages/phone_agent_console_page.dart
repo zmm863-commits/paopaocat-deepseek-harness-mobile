@@ -64,7 +64,7 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
   int _preset = 0;
   Timer? _ticker;
 
-  /// 拖动中的起止点（**必须是 State 字段**：每 0.9 秒来一帧就 setState，
+  /// 拖动中的起止点（**必须是 State 字段**：每 0.5 秒来一帧就 setState，
   /// 局部变量会在重建时被清空，导致"拖到一半就断了"）。
   Offset? _dragStart;
   Offset? _dragLast;
@@ -74,6 +74,9 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
   /// 录制规则：开着时，点/滑/输入都被记成步骤（点会自动 OCR 转「点文字」锚点）。
   bool _recording = false;
   final List<Map<String, dynamic>> _steps = <Map<String, dynamic>>[];
+
+  /// 预览是否放大（用户嫌默认 360 高太小，点不中）。放大后高度接近满屏。
+  bool _zoomed = false;
 
   PhoneAgentBridge get _bridge => PhoneAgentBridge.instance;
 
@@ -106,7 +109,7 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
     if (!mounted) return;
     setState(() => _info = info);
     if (info?.hasDisplay == true) {
-      _ticker ??= Timer.periodic(const Duration(milliseconds: 900), (_) {
+      _ticker ??= Timer.periodic(const Duration(milliseconds: 450), (_) {
         _pollFrame();
       });
       _pollFrame();
@@ -673,11 +676,21 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
                     : '${_frameSize!.$1}×${_frameSize!.$2}',
                 style: TextStyle(color: DshColors.textFaint, fontSize: 11),
               ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                onPressed: ready ? () => setState(() => _zoomed = !_zoomed) : null,
+                icon: Icon(_zoomed ? Icons.zoom_out_map : Icons.zoom_in_map,
+                    size: 16),
+                label: Text(_zoomed ? context.tr('缩小画面') : context.tr('放大画面'),
+                    style: const TextStyle(fontSize: 12)),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           SizedBox(
-            height: 360,
+            height: _zoomed
+                ? MediaQuery.of(context).size.height * 0.72
+                : 360,
             width: double.infinity,
             child: LayoutBuilder(
               builder: (BuildContext c, BoxConstraints cons) {
@@ -689,7 +702,7 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
           const SizedBox(height: 6),
           Text(
             context.tr('点一下 = 在虚拟屏里点那个坐标；按住拖动 = 滑动。'
-                '画面每 0.9 秒刷新一次。'),
+                '画面每 0.5 秒刷新一次。'),
             style: TextStyle(color: DshColors.textFaint, fontSize: 11, height: 1.4),
           ),
           const SizedBox(height: 10),

@@ -4933,5 +4933,20 @@
     "en": "Engine not connected yet — use the \"Shizuku-free pairing\" block above to start it; no Shizuku install needed.",
     "ja": "エンジン未接続 — 上の「Shizuku 不要のペアリング」で起動してください。Shizuku のインストールは不要です。",
     "ko": "엔진이 아직 연결되지 않았습니다 — 위의 \"Shizuku 없이 페어링\"으로 시작하세요. Shizuku 설치가 필요 없습니다."
+  },
+  "放大画面": {
+    "en": "Zoom in",
+    "ja": "画面を拡大",
+    "ko": "화면 확대"
+  },
+  "缩小画面": {
+    "en": "Zoom out",
+    "ja": "画面を縮小",
+    "ko": "화면 축소"
+  },
+  "点一下 = 在虚拟屏里点那个坐标；按住拖动 = 滑动。画面每 0.5 秒刷新一次。": {
+    "en": "Tap = tap that spot on the virtual screen; drag = swipe. The frame refreshes every 0.5 s.",
+    "ja": "タップ＝仮想画面のその位置をタップ、ドラッグ＝スワイプ。画面は0.5秒ごとに更新。",
+    "ko": "탭＝가상 화면의 그 지점을 탭, 드래그＝스와이프. 화면은 0.5초마다 갱신."
   }
 }

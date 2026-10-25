@@ -31,7 +31,7 @@ class _ConstProbe extends StatelessWidget {
 
 void main() {
   group('三张表', () {
-    test('条目数一致，且规模对得上（2006 条界面文案）', () {
+    test('条目数一致，且规模对得上（2008 条界面文案）', () {
       // 994 这个数不是随手写的：2026-10-09 按审计 P0-11/P1-5 清过一轮漂移
       // （补 48 条漏翻 / 删 77 条陈旧 / 修 17 条换行错，三张表各自）。
       // 清理的依据是 `install/i18n/check-tables.mjs` —— 那个脚本以前**不存在**，
@@ -192,7 +192,7 @@ void main() {
       // ⚠️ 2026-10-24 1923 → 1933：屏幕助手（phone-agent）设置页 10 条文案。
       // ⚠️ 2026-10-24 1933 → 1967：「后台操作台」页（虚拟屏 + 实时画面 + 应用列表）34 条。
       // ⚠️ 2026-10-24 1967 → 1973：「免装 Shizuku（无线调试配对）」7 条，删 1 条陈旧。
-      expect(kEnTable.length, 2006);
+      expect(kEnTable.length, 2008);
       expect(kJaTable.length, kEnTable.length);
       expect(kKoTable.length, kEnTable.length);
     });
