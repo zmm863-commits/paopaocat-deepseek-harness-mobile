@@ -8,7 +8,9 @@ import android.app.RemoteInput
 import android.app.Service
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import io.github.muntashirakon.adb.android.AdbMdns
 
@@ -42,6 +44,15 @@ class VdShellPairingService : Service() {
     private var mdns: AdbMdns? = null
     private var busy = false
 
+    private val handler = Handler(Looper.getMainLooper())
+
+    /** 5 分钟没配上就自动收工、移除通知（否则那条「输配对码」通知会一直杵着）。 */
+    private val timeout = Runnable {
+        Log.i(TAG, "配对超时，自动停止")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -67,6 +78,8 @@ class VdShellPairingService : Service() {
             build("正在搜索配对服务…\n请打开：开发者选项 → 无线调试 → 使用配对码配对设备", true)
         )
         startMdns()
+        handler.removeCallbacks(timeout)
+        handler.postDelayed(timeout, 5 * 60 * 1000L)
     }
 
     private fun startMdns() {
@@ -107,6 +120,7 @@ class VdShellPairingService : Service() {
             val boot = VdShellManager.bootstrap(this)
             if (boot) {
                 update("✅ 引擎已就绪！去会话里喊「泡泡猫」就能用了", false)
+                handler.removeCallbacks(timeout)
                 runCatching { mdns?.stop() }
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -151,6 +165,7 @@ class VdShellPairingService : Service() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(timeout)
         runCatching { mdns?.stop() }
         super.onDestroy()
     }

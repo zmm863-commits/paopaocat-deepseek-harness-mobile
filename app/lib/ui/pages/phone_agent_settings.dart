@@ -439,6 +439,20 @@ class _VdShellBlockState extends State<_VdShellBlock> {
 
   Future<void> _startPairing() async {
     if (_busy) return;
+    // 引擎已经连上就别再起配对服务 —— 否则那条「输配对码」通知会一直杵着
+    //（带输入框 + 不可清除），用户点它也没用。
+    final PhoneAgentHeadless? info =
+        await PhoneAgentBridge.instance.headlessInfo();
+    if (info != null && info.engineConnected) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _alive = true;
+          _msg = '引擎已就绪，不用再配对（要重连就用操作台的「重连引擎」）';
+        });
+      }
+      return;
+    }
     setState(() {
       _busy = true;
       _msg = '正在搜索配对服务… 请去开「使用配对码配对设备」，然后在通知栏输码';
