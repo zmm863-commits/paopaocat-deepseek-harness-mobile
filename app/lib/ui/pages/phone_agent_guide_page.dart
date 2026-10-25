@@ -5,7 +5,7 @@ import '../theme/dsh_tokens.dart';
 
 /// 「后台操作」的图文使用说明（全屏看图）。
 ///
-/// 图本身是一张竖版长图（`assets/images/phone_agent_guide.png`，1080×2559），
+/// 图本身是一张竖版长图（`assets/images/phone_agent_guide.png`，1080×3010），
 /// 由 HTML + 无头 Chrome 生成（内容源见 /tmp/guide2.html）。
 /// 内容四段：第一次准备（免装 Shizuku 配对：mDNS 自动找端口 + 通知栏输码）
 /// ＋ 后台操作你的 App ＋ 录规则（后台操作台/AI）＋ 定时任务。
