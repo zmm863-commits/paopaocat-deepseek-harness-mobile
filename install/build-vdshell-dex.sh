@@ -11,7 +11,7 @@
 #   所以脚本把源码复制到 /tmp/vdshell-build 编完再 cp 回来（与打包走 /tmp/dsh-app 同一个原因）。
 #
 # 依赖：javac（JDK 17）、Android SDK 的 android.jar 与 d8。
-# 产物：app/src/main/assets/vdshell.dex（随包分发；App 运行时会 cp 到 /data/local/tmp）。
+# 产物：app/android/app/src/main/assets/vdshell.dex（随包分发；App 运行时会 cp 到 /data/local/tmp）。
 set -e
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -47,7 +47,9 @@ echo "[vdshell] d8"
 DEX="$WORK/out/classes.dex"
 [ -f "$DEX" ] || { echo "d8 没产出 classes.dex" >&2; exit 1; }
 
-ASSETS="$REPO/app/src/main/assets"
+# Gradle 的 sourceSets assets.srcDirs 读的是 android/app/src/main/assets（相对 app 模块），
+# 不是 app/src/main/assets —— 放错位置 dex 不会打进 APK（App 内配对部署会读不到）。
+ASSETS="$REPO/app/android/app/src/main/assets"
 mkdir -p "$ASSETS"
 cp "$DEX" "$ASSETS/vdshell.dex"
 

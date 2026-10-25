@@ -380,6 +380,15 @@ class MainActivity : FlutterActivity() {
                     // 免装通道的一步式配对：起前台服务，mDNS 自动找配对端口，
                     // 通知栏 RemoteInput 输配对码（见 VdShellPairingService）。
                     "vdshellStartPairing" -> {
+                        // Android 13+：先要通知权限，否则前台服务的通知（配对码输入框）
+                        // 整个被系统隐藏，用户下拉通知栏什么也看不到。
+                        if (Build.VERSION.SDK_INT >= 33 &&
+                            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                            android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            requestPermissions(
+                                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+                        }
                         val i = Intent(this, VdShellPairingService::class.java)
                             .setAction(VdShellPairingService.ACTION_START)
                         try {

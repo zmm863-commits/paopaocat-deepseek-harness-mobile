@@ -71,10 +71,12 @@ class VdShellPairingService : Service() {
 
     private fun startMdns() {
         mdns = AdbMdns(this, AdbMdns.SERVICE_TYPE_TLS_PAIRING) { _, port ->
-            if (port > 0 && !busy && discoveredPort == null) {
+            // 端口实时更新：用户重开配对界面会换新端口，必须跟着换，
+            // 否则拿旧端口去连只会 ECONNREFUSED。
+            if (port > 0 && !busy && discoveredPort != port) {
                 discoveredPort = port
                 Log.i(TAG, "发现配对端口 $port")
-                update("找到配对服务（端口 $port）。下拉这条通知，在输入框填 6 位配对码")
+                update("找到配对服务（端口 $port）。下拉通知输 6 位配对码（60 秒内有效，过期就重开配对界面）")
             }
         }
         mdns?.start()
@@ -97,7 +99,8 @@ class VdShellPairingService : Service() {
             val ok = VdShellManager.pair(this, code, port)
             if (!ok) {
                 busy = false
-                update("配对失败（码或端口不对），请下拉输入最新码")
+                discoveredPort = null  // 端口已过期，重置让 mDNS 重新发现
+                update("配对失败（端口或码已过期）。请重开「使用配对码配对设备」，再下拉输最新码")
                 return@Thread
             }
             update("配对成功，正在起引擎…")
