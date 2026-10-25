@@ -1279,7 +1279,7 @@ class _MediaPageState extends State<MediaPage> {
         DshGroupSection(
           title: context.tr('工具'),
           children: <Widget>[
-            // 2026-10-12（用户问「OpenCut 能不能复刻到创作台」）：**剪辑**。
+            // 2026-10-12（用户问「OpenCut 能不能搬到创作台」）：**剪辑**。
             // 那种多轨时间线剪辑器搬不动，但它的**最小可用子集**能真跑 ——
             // 用随包的 ffmpeg 剪一段/拼接/抽音频/抽一帧/压小（见 ClipPage 的说明）。
             _workbenchEntry(

@@ -169,7 +169,7 @@ class PhoneAgentBridge {
     return r['nodes'] as String?;
   }
 
-  // ── 后台虚拟屏（2026-10-24：对齐 aladdin 那套「看不见也能点」）──────────
+  // ── 后台虚拟屏（看不见也能点）────────────────────────────────────
   //
   // 这一组是「后台操作台」页面用的。引擎跑在 Shizuku 拉起的 shell 进程里
   // （见 EngineService/DisplayEngine），App 侧只是发 binder 命令。

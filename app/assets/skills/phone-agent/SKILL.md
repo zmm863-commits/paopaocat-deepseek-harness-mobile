@@ -153,7 +153,7 @@ node toolbox/phone-agent.mjs price 蓝牙耳机 京东
 node toolbox/phone-agent.mjs price 抽纸 拼多多
 ```
 
-命令内部就是 aladdin 那套「固定规则」：拉 App → OCR 找搜索框 → 点 → 输入关键词 → 点搜索 → OCR 抓价格 → 排序报最低，全程固定步骤、不走 LLM，几秒出结果。返回 JSON：`{platform, keyword, count, lowest, prices[]}`。
+命令内部就是一套固定规则：拉 App → OCR 找搜索框 → 点 → 输入关键词 → 点搜索 → OCR 抓价格 → 排序报最低，全程固定步骤、不走 LLM，几秒出结果。返回 JSON：`{platform, keyword, count, lowest, prices[]}`。
 
 - 要「跨平台比价」：对同一关键词跑多次 `price`（换平台），把各平台 `lowest` 横向比较，报「哪个平台最低、多少钱」。
 - `price` 只认淘宝/京东/拼多多三个平台；别的 App 才退回下面的「逐步操作」通用流程。

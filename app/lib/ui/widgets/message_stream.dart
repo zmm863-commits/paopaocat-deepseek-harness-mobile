@@ -998,7 +998,7 @@ class AttachMenu extends StatelessWidget {
     (icon: Icons.extension_outlined, label: '使用技能'),
     (icon: Icons.schedule_outlined, label: '定时任务'),
     // 用户意见④：长会话的「预算可见 + 笔记接力 + 主动换窗」
-    // （复刻 dsh-smart-compact 的用户价值，但不动宿主、纯 App 侧实现 —— 那个插件
+    // （对齐 dsh-smart-compact 的用户价值，但不动宿主、纯 App 侧实现 —— 那个插件
     //   在手机的 acp profile 下装不上，见 lib/local/context_budget.dart 的说明）。
     (icon: Icons.auto_awesome_motion_outlined, label: '长会话助手'),
   ];

@@ -93,7 +93,7 @@ class AndroidToolbox {
     //    但**不需要任何 Key** —— 上游凭据就是公开的 `public`（脚本里写死）。
     'assets/toolbox/zen-proxy.mjs': 'toolbox/zen-proxy.mjs',
     // 用户意见②：手机上多半没有视觉模型，图片先过一遍「免费视觉链」转成文字，
-    // 文本模型才真的看得懂画面（复刻 dsh-vision-router 的思路）。
+    // 文本模型才真的看得懂画面（沿用 dsh-vision-router 的思路）。
     'assets/toolbox/vision-proxy.mjs': 'toolbox/vision-proxy.mjs',
     // 本机离线配音（B 方案）：模型是 .tar.bz2，而 Android 没有 tar/bzip2 →
     // 在 node 里解包（bzip2 解码用 vendor 里那份 MIT 的 seek-bzip）。
