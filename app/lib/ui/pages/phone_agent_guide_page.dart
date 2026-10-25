@@ -5,10 +5,10 @@ import '../theme/dsh_tokens.dart';
 
 /// 「后台操作」的图文使用说明（全屏看图）。
 ///
-/// 图本身是一张竖版长图（`assets/images/phone_agent_guide.png`，1080×2390），
-/// 由 `install/make-phone-agent-guide.sh` 用 HTML + 无头 Chrome 生成。
-/// 内容分两段：第一次准备（开无线调试→拿配对码→回 App 配对）＋ 以后每次用
-/// （进操作台→建虚拟屏→拉 App→销毁）。
+/// 图本身是一张竖版长图（`assets/images/phone_agent_guide.png`，1080×2522），
+/// 由 HTML + 无头 Chrome 生成（内容源见 /tmp/guide2.html）。
+/// 内容四段：第一次准备（免装 Shizuku 配对：mDNS 自动找端口 + 通知栏输码）
+/// ＋ 会话直接用 ＋ 录规则（前台/AI）＋ 定时任务。
 ///
 /// 这里只负责「把图显示出来 + 能放大缩小」，图内容更新时**不用改代码**，
 /// 换图文件即可。

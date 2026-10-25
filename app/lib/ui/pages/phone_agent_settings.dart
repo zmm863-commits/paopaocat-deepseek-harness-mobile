@@ -153,20 +153,11 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
         const _RecorderBlock(),
         const SizedBox(height: 12),
         if (!connected)
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(44),
-            ),
-            icon: const Icon(Icons.security, size: 18),
-            label: Text(context.tr('去授权 Shizuku')),
-            onPressed: () async {
-              try {
-                await DshHost.channel
-                    .invokeMethod<bool>('shizukuRequestPermission');
-              } catch (e) {
-                DiagnosticsLog.add('dsh-phone-agent', '申请 Shizuku 授权失败：$e');
-              }
-            },
+          // 不再引导「去授权 Shizuku」——现在主推免装通道（上面的配对块），
+          // 用户没装 Shizuku 点它只会一脸茫然。
+          Text(
+            context.tr('引擎还没连上 —— 用上面的「免装 Shizuku」配对启动，不用装 Shizuku。'),
+            style: TextStyle(color: DshColors.textDim, fontSize: 11.5, height: 1.5),
           )
         else
           OutlinedButton.icon(
