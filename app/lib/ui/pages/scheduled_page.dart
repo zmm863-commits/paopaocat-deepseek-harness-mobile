@@ -732,15 +732,15 @@ class _ScheduleEditorState extends State<_ScheduleEditor> {
               ),
             ),
             const SizedBox(height: 8),
-            // 泡泡猫快捷任务：后台搜索/比价/查票最常用，点一下填好 prompt。
+            // 泡泡猫快捷任务：后台操作 App / 跑规则 / 录规则，点一下填好 prompt。
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: <Widget>[
-                _fillChip(context, '泡泡猫搜比价',
-                    '泡泡猫帮我在淘宝搜 PS5，找最低价'),
-                _fillChip(context, '泡泡猫查车票', '泡泡猫帮我查一下明天的火车票'),
-                _fillChip(context, '泡泡猫查信息', '泡泡猫帮我查一下今天的天气'),
+                _fillChip(context, '泡泡猫后台操作',
+                    '泡泡猫帮我打开 XX 并操作'),
+                _fillChip(context, '泡泡猫执行规则', '泡泡猫执行 XX 规则'),
+                _fillChip(context, '泡泡猫录规则', '泡泡猫帮我录一条 XX 的规则'),
               ],
             ),
             const SizedBox(height: 16),
