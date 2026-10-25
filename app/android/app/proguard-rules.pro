@@ -59,5 +59,8 @@
 -dontwarn org.conscrypt.**
 -dontwarn com.android.org.conscrypt.**
 -dontwarn org.apache.harmony.xnet.provider.jsse.**
-# 3) Bouncy Castle：jdk15to18 变体对 sun.* 有软引用，Android 上没有 → 忽略。
+# 3) Bouncy Castle：证书生成（X509/签名）依赖 JCA 服务发现 + 反射，R8 一混淆类名
+#    就报 "no such algorithm: SHA256WITHRSA for provider BC"（真机 2026-10-25 踩到）。
+#    所以必须整包 keep，只 dontwarn 不够。
+-keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
