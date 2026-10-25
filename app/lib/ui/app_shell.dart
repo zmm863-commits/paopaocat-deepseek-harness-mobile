@@ -574,11 +574,31 @@ class _AppShellState extends State<AppShell> {
         onSessionUsed: ({required id, required cwd, required title}) {
           _ws.noteSession(id: id, cwd: cwd, title: title);
         },
-        // 左侧会话抽屉：历史会话列表 / 点一条切过去 / 新建会话。
-        sessionListFor: () => listPersistedSessions(runtime: _runtime),
-        onOpenSession: (s) =>
-            _openChat(resumeSessionId: s.id, workspacePath: s.cwd),
-        onNewChat: () => _openChat(),
+        // ── 左侧会话抽屉 ─────────────────────────────────────────────
+        // 列表走壳层已有缓存：先刷一次磁盘索引（首次会起一次性 node 进程读
+        // session/list，之后走缓存），再按当前工作区取会话。别每次都直接
+        // listPersistedSessions —— 那会每次开抽屉都起一次 node，慢且与工作区页
+        // 的缓存脱节（用户反馈「工作区能看到、抽屉看不到」就是它）。
+        sessionListFor: () async {
+          try {
+            if (!_ws.indexLoaded) {
+              await _ws.refreshIndex(
+                  () => listPersistedSessions(runtime: _runtime));
+            }
+          } catch (e) {
+            debugPrint('[dsh-nav] 抽屉刷新会话索引失败：$e');
+          }
+          return _ws.sessionsOf(ws);
+        },
+        onOpenSession: (session) {
+          unawaited(_openChat(
+            resumeSessionId: session.id,
+            workspacePath: session.cwd,
+          ));
+        },
+        onNewChat: () {
+          unawaited(_openChat(workspacePath: ws));
+        },
       ),
     );
     _chatRoute = route;
