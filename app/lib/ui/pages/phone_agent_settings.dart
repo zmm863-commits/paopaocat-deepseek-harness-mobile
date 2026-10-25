@@ -600,7 +600,8 @@ class _RecorderBlock extends StatefulWidget {
   State<_RecorderBlock> createState() => _RecorderBlockState();
 }
 
-class _RecorderBlockState extends State<_RecorderBlock> {
+class _RecorderBlockState extends State<_RecorderBlock>
+    with WidgetsBindingObserver {
   bool _enabled = false;
   bool _recording = false;
   int _count = 0;
@@ -612,7 +613,20 @@ class _RecorderBlockState extends State<_RecorderBlock> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 用户从系统无障碍设置返回 App 时自动刷新（否则开启后按钮还停在「开启无障碍」）。
+    if (state == AppLifecycleState.resumed) _load();
   }
 
   Future<void> _load() async {
@@ -715,6 +729,11 @@ class _RecorderBlockState extends State<_RecorderBlock> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 16),
+                tooltip: context.tr('刷新状态'),
+                onPressed: _load,
               ),
             ],
           ),
