@@ -165,7 +165,10 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
   Widget _ruleCard(Map<String, dynamic> rule) {
     final String name = (rule['name'] ?? '').toString();
     final List<dynamic> steps = (rule['steps'] as List<dynamic>?) ?? <dynamic>[];
-    return Container(
+    return InkWell(
+      borderRadius: BorderRadius.circular(DshMetrics.radius(12)),
+      onTap: () => _viewCode(rule),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -206,6 +209,56 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
             icon: const Icon(Icons.delete_outline, size: 18),
             tooltip: context.tr('删除'),
             onPressed: () => _delete(rule),
+          ),
+        ],
+      ),
+    ),
+    );
+  }
+
+  /// 点开一条规则 → 查看它的 JSON 代码（格式化 + 等宽字体 + 可复制）。
+  Future<void> _viewCode(Map<String, dynamic> rule) async {
+    final String code = const JsonEncoder.withIndent('  ').convert(rule);
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                '${rule['name']} · ${ctx.tr('代码')}',
+                style: const TextStyle(fontSize: 15),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.copy, size: 18),
+              tooltip: ctx.tr('复制'),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: code));
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text(ctx.tr('已复制代码'))),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 420,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              code,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.5),
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(ctx.tr('关闭')),
           ),
         ],
       ),
