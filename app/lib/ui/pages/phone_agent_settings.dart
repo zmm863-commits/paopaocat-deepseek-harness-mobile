@@ -400,7 +400,6 @@ class _VdShellBlock extends StatefulWidget {
 class _VdShellBlockState extends State<_VdShellBlock> {
   final TextEditingController _code = TextEditingController();
   final TextEditingController _port = TextEditingController();
-  final TextEditingController _connectPort = TextEditingController();
   bool _busy = false;
   bool _alive = false;
   String _msg = '';
@@ -415,7 +414,6 @@ class _VdShellBlockState extends State<_VdShellBlock> {
   void dispose() {
     _code.dispose();
     _port.dispose();
-    _connectPort.dispose();
     super.dispose();
   }
 
@@ -461,9 +459,9 @@ class _VdShellBlockState extends State<_VdShellBlock> {
       return;
     }
     if (mounted) setState(() => _msg = '已配对，正在起引擎（约 3~10 秒）…');
-    final int? connectPort = int.tryParse(_connectPort.text.trim());
+    // 连接端口不手填：App 自动读系统设置（adb_wifi_server_port），读不到走 mDNS。
     final ({bool ok, String error}) r = await PhoneAgentBridge.instance
-        .vdshellBootstrap(connectPort: connectPort);
+        .vdshellBootstrap();
     if (!mounted) return;
     setState(() {
       _busy = false;

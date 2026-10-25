@@ -173,11 +173,13 @@ class VdShellClient(private val context: Context) : AbsAdbConnectionManager() {
      * 所以手填是主力通道，mDNS 只是兜底）。
      */
     fun connectDevice(timeoutMs: Long = 12_000, connectPort: Int? = null): Boolean {
-        if (connectPort != null && connectPort > 0) {
+        // 连接端口优先级：手填 > 读系统设置（adb_wifi_server_port）> mDNS 发现
+        val port = connectPort ?: readConnectPort()
+        if (port != null && port > 0) {
             return try {
-                connect("127.0.0.1", connectPort)
+                connect("127.0.0.1", port)
             } catch (e: Throwable) {
-                Log.w(TAG, "connect(port=$connectPort) failed: ${e.message}")
+                Log.w(TAG, "connect(port=$port) failed: ${e.message}")
                 false
             }
         }
@@ -192,6 +194,21 @@ class VdShellClient(private val context: Context) : AbsAdbConnectionManager() {
             Log.w(TAG, "connectTcp failed: ${e.message}")
         }
         return false
+    }
+
+    /**
+     * 从系统设置读无线调试的连接端口（主页「IP 地址和端口」那行）。
+     * 普通 App 可能读不到（SecurityException 或被隐藏），读不到就返回 null 走 mDNS。
+     */
+    private fun readConnectPort(): Int? {
+        return try {
+            val v = android.provider.Settings.Global.getInt(
+                context.contentResolver, "adb_wifi_server_port", -1)
+            if (v > 0) v else null
+        } catch (e: Throwable) {
+            Log.w(TAG, "读 adb_wifi_server_port 失败：${e.message}")
+            null
+        }
     }
 
     private fun discoverPort(serviceType: String, timeoutMs: Long): Int? {
