@@ -76,6 +76,8 @@ function die(msg) {
   process.exit(1);
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // ── HTTP ──────────────────────────────────────────────────────────────
 function req(key, method, pathAndQuery, body) {
   return new Promise((resolve, reject) => {
@@ -298,6 +300,74 @@ switch (cmd) {
     break;
   }
 
+  case 'price': {
+    // ── 快速比价（固定规则，不用 LLM 逐步决策）────────────────────────
+    // 对标 aladdin 的 getMobileSearchRule：预定义「搜索比价」的固定步骤，
+    // 每步 OCR 定位 + 直接执行，秒级跑完。比 Agent 逐步「截图→思考→点」快一个量级。
+    const keyword = args[0];
+    if (!keyword) die('用法：phone-agent.mjs price <关键词> [淘宝|京东|拼多多]');
+    const platform = args[1] || '淘宝';
+    const PKG = {
+      '淘宝': 'com.taobao.taobao',
+      '京东': 'com.jingdong.app.mall',
+      '拼多多': 'com.xunmeng.pinduoduo',
+    };
+    const pkg = PKG[platform];
+    if (!pkg) die(`不认识的平台「${platform}」，支持：${Object.keys(PKG).join('/')}`);
+
+    // 1) 拉平台进虚拟屏（没建屏会懒建）
+    await call(key, 'POST', '/launch', { pkg });
+    await sleep(6500);
+
+    // 2) OCR 找搜索框 → 点
+    let r = await call(key, 'GET', `/find-text?q=${encodeURIComponent('搜索')}`);
+    if (!r.count) {
+      console.error(`✗ ${platform} 首页没 OCR 到「搜索」框（可能还没加载完，或页面有弹窗）。`);
+      console.error('  先跑 `node phone-agent.mjs launch ' + platform + '` + `shot` 看看首页长啥样。');
+      process.exit(1);
+    }
+    const box = r.lines[0];
+    await call(key, 'POST', '/tap', { x: box.cx, y: box.cy });
+    await sleep(1500);
+
+    // 3) 输入关键词（中文可能敲不进，后面回读校验）
+    await call(key, 'POST', '/input', { text: keyword });
+    await sleep(1200);
+
+    // 4) 点「搜索」按钮（键盘或页面上）
+    r = await call(key, 'GET', `/find-text?q=${encodeURIComponent('搜索')}`);
+    if (r.count) {
+      await call(key, 'POST', '/tap', { x: r.lines[0].cx, y: r.lines[0].cy });
+    }
+    await sleep(3500);
+
+    // 5) OCR 抓价格
+    r = await call(key, 'GET', '/ocr');
+    const re = /[¥￥]\s*(\d+(?:\.\d+)?)/;
+    const items = [];
+    for (const l of (r.lines || [])) {
+      const m = l.text.match(re);
+      if (m) items.push({ price: parseFloat(m[1]), text: l.text.slice(0, 44) });
+    }
+    items.sort((a, b) => a.price - b.price);
+    const uniq = [];
+    for (const it of items) {
+      if (!uniq.some((u) => Math.abs(u.price - it.price) < 0.01)) uniq.push(it);
+    }
+    console.log(JSON.stringify({
+      platform, keyword,
+      count: uniq.length,
+      lowest: uniq[0] || null,
+      prices: uniq.slice(0, 12).map((i) => ({ price: i.price, text: i.text })),
+    }, null, 2));
+    if (!uniq.length) {
+      console.error('✗ 结果页没 OCR 到带 ¥/￥ 的价格（可能关键词没输进去，或结果没加载出来）。');
+      process.exit(1);
+    }
+    await call(key, 'GET', '/release');
+    break;
+  }
+
   default:
-    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch`);
+    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / price`);
 }
