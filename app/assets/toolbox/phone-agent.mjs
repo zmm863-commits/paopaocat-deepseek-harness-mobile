@@ -53,6 +53,38 @@ function keyFile() {
   return '/data/user/0/com.dshmobile.dsh_mobile/files/phone-agent.json';
 }
 
+/** 用户录的规则目录（filesDir/rules）。filesDir = DSH_HOME 的父目录。 */
+function rulesDir() {
+  const home = process.env.DSH_HOME || '';
+  if (home) return path.join(path.dirname(home), 'rules');
+  return '/data/user/0/com.dshmobile.dsh_mobile/files/rules';
+}
+
+/** 列出用户录的规则名（filesDir/rules/*.json 的文件名）。 */
+function listUserRuleNames() {
+  try {
+    const dir = rulesDir();
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => f.slice(0, -5))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** 读用户录的一条规则（filesDir/rules/<名字>.json）；没有就返回 null。 */
+function loadUserRule(name) {
+  try {
+    const f = path.join(rulesDir(), name + '.json');
+    if (!fs.existsSync(f)) return null;
+    return JSON.parse(fs.readFileSync(f, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function readKey() {
   const f = keyFile();
   let raw;
@@ -432,13 +464,33 @@ switch (cmd) {
     break;
   }
 
+  case 'rules': {
+    // 列出用户录的规则（filesDir/rules/*.json）。
+    const names = listUserRuleNames();
+    if (!names.length) {
+      console.error('你还没录规则。去 App：设置 → 应用 → 泡泡猫助手 → 前台录制，录一条。');
+      process.exit(1);
+    }
+    for (const n of names) {
+      const r = loadUserRule(n);
+      const steps = Array.isArray(r?.steps) ? r.steps.length : 0;
+      console.log(`${n}\t${steps} 步`);
+    }
+    break;
+  }
+
   case 'run': {
     // 执行一条规则（内置或以后用户录的）。参数：位置参数按规则 params 顺序填，
     // 或 key=value 显式填。
     const name = args[0];
     if (!name) die('用法：phone-agent.mjs run <规则名> [参数=值 ...]');
-    const rule = BUILTIN_RULES[name];
-    if (!rule) die(`不认识的规则「${name}」。内置：${Object.keys(BUILTIN_RULES).join(' / ')}`);
+    // 先查内置规则，再查用户录的规则（filesDir/rules/<名字>.json）。
+    const rule = BUILTIN_RULES[name] || loadUserRule(name);
+    if (!rule) {
+      const mine = listUserRuleNames();
+      die(`不认识的规则「${name}」。内置：${Object.keys(BUILTIN_RULES).join(' / ')}` +
+          (mine.length ? `；你录的：${mine.join(' / ')}` : '；你还没录规则'));
+    }
     const params = {};
     let pi = 0;
     for (const a of args.slice(1)) {
@@ -465,5 +517,5 @@ switch (cmd) {
   }
 
   default:
-    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / run / price`);
+    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / run / rules / price`);
 }

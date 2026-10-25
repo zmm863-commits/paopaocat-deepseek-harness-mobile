@@ -101,6 +101,19 @@ node toolbox/phone-agent.mjs run 淘宝比价 关键词=PS5  # 通用：执行�
 
 以后用户自己录的规则也走 `run`，格式就是 `{steps:[{action, ...}]}`（launch/waitText/tapText/input/tap/swipe/waitMs/key/collectPrices/release）。
 
+## 执行用户录的规则（重要）
+
+用户说「泡泡猫执行『淘宝比价』规则」「帮我跑一下我录的规则」「用我录的那条比价」时：
+
+```bash
+node toolbox/phone-agent.mjs rules          # 先列出用户录了哪些规则（名字 + 步数）
+node toolbox/phone-agent.mjs run 淘宝比价    # 执行指定规则
+```
+
+用户规则存在 App 的 `filesDir/rules/`，和内置规则走**同一个 run 引擎**（OCR 锚定的固定脚本：launch → waitText → tapText → input → ...）。规则里的 `tapText` 是「点某文字」，回放时 OCR 实时找位置，所以换屏幕也能用。
+
+⚠️ 执行前必须先确认引擎在：`node toolbox/phone-agent.mjs status`，`connected` 不是 true 就提示用户先去「泡泡猫助手」配对启动引擎。
+
 ## 比价 / 查最低价（泡泡猫高频场景）
 
 用户说「泡泡猫帮我在淘宝搜 PS5 最低价」「泡泡猫帮我比一下 XX 哪家便宜」时，**优先用固定规则的快速比价命令**（秒级，别用逐步 OCR+LLM 决策）：
