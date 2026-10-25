@@ -197,7 +197,11 @@ final class DisplayEngine {
             if (l.contains("/") && l.contains(".")) { component = l; break; }
         }
         if (component == null) return "ERR:resolve failed: " + resolved;
-        String out = exec("am start --display " + displayId + " -n " + component + " --user current");
+        // ⚠️ 先 force-stop 再启动：如果目标 App 已经在主屏前台运行，`am start --display <id>`
+        // 不会把它挪到虚拟屏，反而把它「聚焦」回主屏（用户看到淘宝弹到前台）。
+        // force-stop 杀掉旧 task，再 --display 启动才会全新落到虚拟屏。
+        String out = exec("am force-stop " + pkg + " 2>/dev/null; "
+                + "am start --display " + displayId + " -n " + component + " --user current");
         return out.contains("Error") ? "ERR:" + out : "OK";
     }
 
