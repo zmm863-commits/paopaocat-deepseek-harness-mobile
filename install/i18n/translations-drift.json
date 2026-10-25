@@ -4768,5 +4768,65 @@
     "en": "Start pairing (enter code in notification)",
     "ja": "ペアリング開始（通知バーで入力）",
     "ko": "페어링 시작(알림바에서 입력)"
+  },
+  "给这条规则起个名": {
+    "en": "Name this rule",
+    "ja": "このルールに名前を付ける",
+    "ko": "이 규칙에 이름 붙이기"
+  },
+  "例如：淘宝比价": {
+    "en": "e.g. Taobao price compare",
+    "ja": "例：淘宝価格比較",
+    "ko": "예: 타오바오 가격 비교"
+  },
+  "停止录制": {
+    "en": "Stop recording",
+    "ja": "録画停止",
+    "ko": "녹화 중지"
+  },
+  "开始录制": {
+    "en": "Start recording",
+    "ja": "録画開始",
+    "ko": "녹화 시작"
+  },
+  "粘贴规则 JSON": {
+    "en": "Paste rule JSON",
+    "ja": "ルール JSON を貼り付け",
+    "ko": "규칙 JSON 붙여넣기"
+  },
+  "把别人分享给你的规则 JSON 粘贴到这里": {
+    "en": "Paste the rule JSON someone shared with you here",
+    "ja": "共有されたルール JSON をここに貼り付け",
+    "ko": "공유받은 규칙 JSON을 여기에 붙여넣기"
+  },
+  "泡泡猫规则库": {
+    "en": "Paopaocat Rule Library",
+    "ja": "パオパオキャット ルールライブラリ",
+    "ko": "파오파오캣 규칙 라이브러리"
+  },
+  "导入规则": {
+    "en": "Import rule",
+    "ja": "ルールをインポート",
+    "ko": "규칙 가져오기"
+  },
+  "这里是你录的规则。点「复制」把 JSON 发给别人；别人粘贴到「导入」里就能用。": {
+    "en": "These are your recorded rules. Tap Copy to send the JSON to others; they paste it into Import to use it.",
+    "ja": "ここに録画したルールが並びます。「コピー」で JSON を共有し、相手は「インポート」に貼り付ければ使えます。",
+    "ko": "여기에 녹화한 규칙이 있습니다. 복사를 눌러 JSON을 공유하면, 상대가 가져오기에 붙여넣어 사용할 수 있습니다."
+  },
+  "还没有规则。去「后台操作台」点「开始录制」，录一条吧。": {
+    "en": "No rules yet. Go to Backstage Console → Start recording to record one.",
+    "ja": "まだルールがありません。「バックグラウンド操作台」の「録画開始」で録ってください。",
+    "ko": "아직 규칙이 없습니다. 백그라운드 조작대에서 녹화 시작을 눌러 녹화하세요."
+  },
+  "复制 JSON": {
+    "en": "Copy JSON",
+    "ja": "JSON をコピー",
+    "ko": "JSON 복사"
+  },
+  "泡泡猫规则库（录制 + 分享）": {
+    "en": "Paopaocat Rule Library (record & share)",
+    "ja": "パオパオキャット ルールライブラリ（録画＋共有）",
+    "ko": "파오파오캣 규칙 라이브러리(녹화+공유)"
   }
 }

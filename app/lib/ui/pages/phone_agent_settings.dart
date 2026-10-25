@@ -8,6 +8,7 @@ import '../../local/phone_agent_bridge.dart';
 import '../../local/diagnostics_log.dart';
 import 'phone_agent_console_page.dart';
 import 'phone_agent_guide_page.dart';
+import 'phone_agent_rules_page.dart';
 import 'dart:convert';
 
 /// 设置页「屏幕助手」卡片：这个功能在 App 里唯一的门面。
@@ -137,6 +138,16 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
           icon: const Icon(Icons.menu_book_outlined, size: 17),
           label: Text(context.tr('查看图文使用说明')),
           onPressed: () => PhoneAgentGuidePage.open(context),
+        ),
+        const SizedBox(height: 8),
+        // 规则库：用户录的规则 + 分享/导入。
+        TextButton.icon(
+          style: TextButton.styleFrom(
+            minimumSize: const Size.fromHeight(40),
+          ),
+          icon: const Icon(Icons.folder_copy_outlined, size: 17),
+          label: Text(context.tr('泡泡猫规则库（录制 + 分享）')),
+          onPressed: () => PhoneAgentRulesPage.open(context),
         ),
         const SizedBox(height: 12),
         if (!connected)

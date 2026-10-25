@@ -70,6 +70,10 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
 
   final TextEditingController _search = TextEditingController();
 
+  /// 录制规则：开着时，点/滑/输入都被记成步骤（点会自动 OCR 转「点文字」锚点）。
+  bool _recording = false;
+  final List<Map<String, dynamic>> _steps = <Map<String, dynamic>>[];
+
   PhoneAgentBridge get _bridge => PhoneAgentBridge.instance;
 
   @override
@@ -225,6 +229,32 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
     _toast(ok
         ? '点了 (${p.dx.round()}, ${p.dy.round()})'
         : '点击失败：引擎没连上');
+    if (_recording && ok) {
+      // 录制：把「点的位置」转成「点的文字」（OCR 锚点），换手机也能用。
+      final String? anchor = await _ocrAnchorAt(p.dx.round(), p.dy.round());
+      if (!mounted) return;
+      setState(() {
+        _steps.add(anchor != null
+            ? <String, dynamic>{'action': 'tapText', 'text': anchor}
+            : <String, dynamic>{'action': 'tap', 'x': p.dx.round(), 'y': p.dy.round()});
+      });
+    }
+  }
+
+  /// 找离 (x,y) 最近的 OCR 文字块，作为「点文字」锚点；太远（纯图标）返回 null。
+  Future<String?> _ocrAnchorAt(int x, int y) async {
+    final List<({String text, int cx, int cy})> lines = await _bridge.ocr();
+    ({String text, int cx, int cy})? best;
+    double bestD = double.infinity;
+    for (final l in lines) {
+      final double d = ((l.cx - x) * (l.cx - x) + (l.cy - y) * (l.cy - y)).toDouble();
+      if (d < bestD) {
+        bestD = d;
+        best = l;
+      }
+    }
+    if (best == null || best.text.isEmpty) return null;
+    return bestD <= 90 * 90 ? best.text : null;
   }
 
   Future<void> _swipeFromTo(Offset a, Offset b, Size box) async {
@@ -234,6 +264,15 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
     final bool ok = await _bridge.swipe(
         p1.dx.round(), p1.dy.round(), p2.dx.round(), p2.dy.round());
     _toast(ok ? '已滑动' : '滑动失败：引擎没连上');
+    if (_recording && ok) {
+      setState(() {
+        _steps.add(<String, dynamic>{
+          'action': 'swipe',
+          'x1': p1.dx.round(), 'y1': p1.dy.round(),
+          'x2': p2.dx.round(), 'y2': p2.dy.round(),
+        });
+      });
+    }
   }
 
   Future<void> _sendKey(String action) async {
@@ -270,8 +309,66 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
     if (text == null || text.isEmpty) return;
     final bool ok = await _bridge.inputText(text);
     _toast(ok ? '已输入' : '输入失败');
+    if (_recording && ok) {
+      setState(() => _steps.add(<String, dynamic>{'action': 'input', 'text': text}));
+    }
     await Future<void>.delayed(const Duration(milliseconds: 400));
     await _pollFrame();
+  }
+
+  // ── 录制规则 ─────────────────────────────────────────────────────────
+
+  Future<void> _toggleRecording() async {
+    if (_recording) {
+      await _saveRecordedRule();
+    } else {
+      setState(() {
+        _recording = true;
+        _steps.clear();
+      });
+      _toast('录制中：点 / 滑 / 输入都会记成步骤，点「停止录制」保存');
+    }
+  }
+
+  Future<void> _saveRecordedRule() async {
+    if (_steps.isEmpty) {
+      setState(() => _recording = false);
+      _toast('没录到任何步骤');
+      return;
+    }
+    final TextEditingController c = TextEditingController();
+    final String? name = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(ctx.tr('给这条规则起个名')),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          decoration: InputDecoration(hintText: ctx.tr('例如：淘宝比价')),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(ctx.tr('取消')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(c.text.trim()),
+            child: Text(ctx.tr('保存')),
+          ),
+        ],
+      ),
+    );
+    c.dispose();
+    setState(() => _recording = false);
+    if (name == null || name.isEmpty) return;
+    final Map<String, dynamic> rule = <String, dynamic>{
+      'name': name,
+      'params': <dynamic>[],
+      'steps': _steps,
+    };
+    final bool ok = await _bridge.saveRule(jsonEncode(rule));
+    if (!mounted) return;
+    _toast(ok ? '规则「$name」已保存（${_steps.length} 步）' : '保存失败');
   }
 
   // ── 应用列表 ────────────────────────────────────────────────────────────
@@ -325,6 +422,8 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
         children: <Widget>[
           _statusCard(info),
           const SizedBox(height: DshMetrics.cardGap),
+          _recordBar(),
+          const SizedBox(height: DshMetrics.cardGap),
           _displayCard(info),
           const SizedBox(height: DshMetrics.cardGap),
           _previewCard(info),
@@ -337,6 +436,41 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
               style: TextStyle(color: DshColors.textDim, fontSize: 11.5),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _recordBar() {
+    return _box(
+      child: Row(
+        children: <Widget>[
+          Icon(
+            _recording ? Icons.fiber_manual_record : Icons.video_camera_back_outlined,
+            size: 16,
+            color: _recording ? DshColors.err : DshColors.accent,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              _recording
+                  ? '录制中（${_steps.length} 步）—— 点 / 滑 / 输入都会记下来'
+                  : '录制规则：点一遍操作，存成可回放、可分享的规则',
+              style: TextStyle(color: DshColors.textDim, fontSize: 11.5),
+            ),
+          ),
+          FilledButton(
+            onPressed: _toggleRecording,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 34),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              backgroundColor: _recording ? DshColors.err : null,
+            ),
+            child: Text(
+              _recording ? context.tr('停止录制') : context.tr('开始录制'),
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
         ],
       ),
     );

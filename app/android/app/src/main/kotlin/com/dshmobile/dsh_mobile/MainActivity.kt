@@ -458,6 +458,44 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
 
+                    // ── 泡泡猫规则库（filesDir/rules/*.json）──────────────────
+                    "phoneRuleSave" -> {
+                        val json = call.argument<String>("json") ?: ""
+                        val ok = try {
+                            val name = runCatching {
+                                org.json.JSONObject(json).getString("name")
+                            }.getOrNull()?.ifBlank { "rule" } ?: "rule"
+                            val dir = java.io.File(filesDir, "rules").apply { mkdirs() }
+                            java.io.File(dir, "$name.json").writeText(json)
+                            true
+                        } catch (e: Throwable) {
+                            android.util.Log.e("DshPhoneAgent", "存规则失败：${e.message}")
+                            false
+                        }
+                        result.success(ok)
+                    }
+
+                    "phoneRuleList" -> {
+                        val dir = java.io.File(filesDir, "rules")
+                        val arr = org.json.JSONArray()
+                        if (dir.isDirectory) {
+                            dir.listFiles()?.filter { it.extension == "json" }
+                                ?.sortedBy { it.name }?.forEach {
+                                    arr.put(runCatching {
+                                        org.json.JSONObject(it.readText())
+                                    }.getOrElse { org.json.JSONObject() })
+                                }
+                        }
+                        result.success(arr.toString())
+                    }
+
+                    "phoneRuleDelete" -> {
+                        val name = call.argument<String>("name") ?: ""
+                        val ok = name.isNotEmpty() &&
+                            java.io.File(java.io.File(filesDir, "rules"), "$name.json").delete()
+                        result.success(ok)
+                    }
+
                     "vdshellShell" -> {
                         val command = call.argument<String>("command") ?: "id"
                         Thread {

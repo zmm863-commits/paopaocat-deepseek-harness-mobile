@@ -310,6 +310,43 @@ class PhoneAgentBridge {
     return r?['ok'] == true;
   }
 
+  /// OCR 识别虚拟屏，返回文字块（text + 中心坐标）。录制规则时用来把
+  /// 「点的位置」转成「点的文字」（OCR 锚点，换手机/分辨率也能用）。
+  Future<List<({String text, int cx, int cy})>> ocr() async {
+    final Map<String, dynamic>? r = await _get('/ocr');
+    if (r == null || r['ok'] != true) return <({String text, int cx, int cy})>[];
+    final List<dynamic> lines = (r['lines'] as List<dynamic>?) ?? <dynamic>[];
+    return <({String text, int cx, int cy})>[
+      for (final dynamic l in lines)
+        if (l is Map)
+          (
+            text: (l['text'] ?? '').toString(),
+            cx: (l['cx'] as num?)?.round() ?? 0,
+            cy: (l['cy'] as num?)?.round() ?? 0,
+          ),
+    ];
+  }
+
+  /// 保存一条规则（JSON 字符串）到 filesDir/rules/。
+  Future<bool> saveRule(String json) async {
+    final bool? ok = await DshHost.channel
+        .invokeMethod<bool>('phoneRuleSave', <String, dynamic>{'json': json});
+    return ok == true;
+  }
+
+  /// 列出所有规则，返回 JSON 数组字符串（无规则时返回空数组 "[]"）。
+  Future<String?> listRules() async {
+    final Object? r = await DshHost.channel.invokeMethod<Object>('phoneRuleList');
+    return r is String ? r : null;
+  }
+
+  /// 删除一条规则（按 name）。
+  Future<bool> deleteRule(String name) async {
+    final bool? ok = await DshHost.channel
+        .invokeMethod<bool>('phoneRuleDelete', <String, dynamic>{'name': name});
+    return ok == true;
+  }
+
   Future<Map<String, dynamic>?> _get(String path) =>
       _request('GET', path, null);
 
