@@ -37,9 +37,13 @@ class DshPhoneAgentRecorderService : AccessibilityService() {
 
         private var lastInputText: String? = null
 
+        /** 录制时用户操作的那个 App（第一个事件源）。回放要先把它拉到虚拟屏。 */
+        private var targetPkg: String? = null
+
         fun start() {
             steps.clear()
             lastInputText = null
+            targetPkg = null
             recording = true
             Log.i(TAG, "开始录制")
         }
@@ -48,6 +52,15 @@ class DshPhoneAgentRecorderService : AccessibilityService() {
         fun stop(name: String): String {
             recording = false
             val arr = JSONArray()
+            // 录制时没录「启动 App」这步（用户本来就在 App 里），但回放时虚拟屏是空的、
+            // 必须先拉 App 才有画面。所以把用户操作的那个 App 自动补成第一步 launch。
+            val pkg = targetPkg
+            if (pkg != null && pkg.isNotBlank()) {
+                val launchObj = JSONObject()
+                launchObj.put("action", "launch")
+                launchObj.put("pkg", pkg)
+                arr.put(launchObj)
+            }
             for (st in steps) {
                 arr.put(JSONObject(st))
             }
@@ -78,6 +91,14 @@ class DshPhoneAgentRecorderService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || !recording) return
+        // 记录用户操作的 App（第一个带包名的事件），回放时先拉它。
+        if (targetPkg == null) {
+            val p = event.packageName?.toString()
+            if (!p.isNullOrBlank() && p != "com.dshmobile.dsh_mobile") {
+                targetPkg = p
+                Log.i(TAG, "录制目标 App: $p")
+            }
+        }
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 val node: AccessibilityNodeInfo? = event.source
