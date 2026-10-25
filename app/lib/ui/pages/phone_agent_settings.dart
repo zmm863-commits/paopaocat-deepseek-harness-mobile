@@ -150,6 +150,8 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
           onPressed: () => PhoneAgentRulesPage.open(context),
         ),
         const SizedBox(height: 12),
+        const _RecorderBlock(),
+        const SizedBox(height: 12),
         if (!connected)
           FilledButton.icon(
             style: FilledButton.styleFrom(
@@ -581,6 +583,174 @@ class _VdShellBlockState extends State<_VdShellBlock> {
                   fontSize: 11,
                   height: 1.4,
                 ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// 前台录制区块：无障碍记录「点击的文字」，比虚拟屏录制更快更准。
+/// 录制在前台（真实屏幕操作），回放仍走后台虚拟屏。
+class _RecorderBlock extends StatefulWidget {
+  const _RecorderBlock();
+  @override
+  State<_RecorderBlock> createState() => _RecorderBlockState();
+}
+
+class _RecorderBlockState extends State<_RecorderBlock> {
+  bool _enabled = false;
+  bool _recording = false;
+  int _count = 0;
+  bool _busy = false;
+  String _msg = '';
+
+  PhoneAgentBridge get _bridge => PhoneAgentBridge.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final Map<String, dynamic>? st = await _bridge.phoneRecStatus();
+    if (!mounted || st == null) return;
+    setState(() {
+      _enabled = st['enabled'] == true;
+      _recording = st['recording'] == true;
+      _count = (st['count'] as num?)?.toInt() ?? 0;
+    });
+  }
+
+  Future<void> _toggle() async {
+    if (_busy) return;
+    if (!_enabled) {
+      // 没开无障碍 → 引导去开
+      await _bridge.phoneRecOpenSettings();
+      setState(() => _msg = '去系统无障碍里找到「泡泡猫录制」打开，再回来点开始');
+      return;
+    }
+    if (_recording) {
+      await _stopAndSave();
+    } else {
+      setState(() => _busy = true);
+      final bool ok = await _bridge.phoneRecStart();
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _recording = ok;
+        _msg = ok
+            ? '录制中——去前台正常操作 App，点完回这里停止'
+            : '开始失败';
+      });
+    }
+  }
+
+  Future<void> _stopAndSave() async {
+    final TextEditingController c = TextEditingController();
+    final String? name = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(ctx.tr('给这条规则起个名')),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          decoration: InputDecoration(hintText: ctx.tr('例如：淘宝比价')),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(ctx.tr('取消')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(c.text.trim()),
+            child: Text(ctx.tr('保存')),
+          ),
+        ],
+      ),
+    );
+    c.dispose();
+    if (name == null || name.isEmpty) return;
+    setState(() => _busy = true);
+    final String? json = await _bridge.phoneRecStop(name);
+    final bool saved = json != null && await _bridge.saveRule(json);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _recording = false;
+      _count = 0;
+      _msg = saved ? '规则「$name」已保存到规则库' : '停止/保存失败';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: DshColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(DshMetrics.radius(12)),
+        border: Border.all(color: DshColors.line, width: DshMetrics.borderWidth),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                _recording ? Icons.fiber_manual_record : Icons.touch_app_outlined,
+                size: 16,
+                color: _recording ? DshColors.err : DshColors.accent,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  context.tr('前台录制（更快更准）'),
+                  style: TextStyle(
+                    color: DshColors.text,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _enabled
+                ? (_recording
+                    ? '录制中（$_count 步）—— 去前台操作 App，点完回来停止'
+                    : '在前台真实屏幕操作，自动记下「你点的按钮文字」，比虚拟屏快。')
+                : '第一次用要先开无障碍：点「开启无障碍」，在系统列表里打开「泡泡猫录制」。',
+            style: TextStyle(color: DshColors.textDim, fontSize: 11, height: 1.45),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(38),
+              backgroundColor: _recording ? DshColors.err : null,
+            ),
+            icon: Icon(
+              _recording ? Icons.stop : Icons.fiber_manual_record,
+              size: 16,
+            ),
+            label: Text(
+              !_enabled
+                  ? context.tr('开启无障碍')
+                  : (_recording ? context.tr('停止并保存') : context.tr('开始录制')),
+              style: const TextStyle(fontSize: 12),
+            ),
+            onPressed: _busy ? null : _toggle,
+          ),
+          if (_msg.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                _msg,
+                style: TextStyle(color: DshColors.accent, fontSize: 11),
               ),
             ),
         ],

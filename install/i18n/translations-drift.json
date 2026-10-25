@@ -4828,5 +4828,20 @@
     "en": "Paopaocat Rule Library (record & share)",
     "ja": "パオパオキャット ルールライブラリ（録画＋共有）",
     "ko": "파오파오캣 규칙 라이브러리(녹화+공유)"
+  },
+  "前台录制（更快更准）": {
+    "en": "Foreground recording (faster & more accurate)",
+    "ja": "フォアグラウンド録画（より速く正確）",
+    "ko": "포그라운드 녹화(더 빠르고 정확)"
+  },
+  "开启无障碍": {
+    "en": "Enable accessibility",
+    "ja": "アクセシビリティを有効化",
+    "ko": "접근성 활성화"
+  },
+  "停止并保存": {
+    "en": "Stop & save",
+    "ja": "停止して保存",
+    "ko": "중지 및 저장"
   }
 }

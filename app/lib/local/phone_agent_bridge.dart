@@ -347,6 +347,40 @@ class PhoneAgentBridge {
     return ok == true;
   }
 
+  /// 前台录制状态：{enabled, recording, count}。
+  Future<Map<String, dynamic>?> phoneRecStatus() async {
+    try {
+      return await DshHost.channel
+          .invokeMethod<Map<String, dynamic>>('phoneRecStatus');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 开始前台录制（无障碍记录点击文字）。
+  Future<bool> phoneRecStart() async {
+    final bool? ok = await DshHost.channel.invokeMethod<bool>('phoneRecStart');
+    return ok == true;
+  }
+
+  /// 停止前台录制，返回规则 JSON（含 name/steps）。
+  Future<String?> phoneRecStop(String name) async {
+    try {
+      final Object? r = await DshHost.channel
+          .invokeMethod<Object>('phoneRecStop', <String, dynamic>{'name': name});
+      return r is String ? r : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 打开系统无障碍设置页（引导用户开启录制服务）。
+  Future<bool> phoneRecOpenSettings() async {
+    final bool? ok =
+        await DshHost.channel.invokeMethod<bool>('phoneRecOpenSettings');
+    return ok == true;
+  }
+
   Future<Map<String, dynamic>?> _get(String path) =>
       _request('GET', path, null);
 
