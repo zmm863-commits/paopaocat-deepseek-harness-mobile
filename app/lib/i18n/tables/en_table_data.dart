@@ -937,6 +937,7 @@ const Map<String, String> kEnTable = <String, String>{
   '打开总开关后，在这里选择要交给 Agent 操作的应用。': 'Turn the main switch on, then pick the apps the agent may operate.',
   '打开没成功：{0}': 'Couldn\'t open: {0}',
   '打开记忆': 'Open memory',
+  '执行': 'Run',
   '执行中…': 'Running…',
   '执行命令': 'Run command',
   '执行异常：{0}': 'Run error: {0}',

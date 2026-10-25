@@ -28,6 +28,8 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
   List<Map<String, dynamic>> _rules = <Map<String, dynamic>>[];
   bool _loading = true;
   String? _note;
+  bool _running = false;
+  String _runMsg = '';
 
   PhoneAgentBridge get _bridge => PhoneAgentBridge.instance;
 
@@ -56,6 +58,111 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
     await Clipboard.setData(ClipboardData(text: jsonEncode(rule)));
     if (!mounted) return;
     setState(() => _note = '规则「${rule['name']}」的 JSON 已复制，发给别人即可');
+  }
+
+  // ── 执行规则（回放：虚拟屏里 OCR 找文字 → 点击）────────────────────
+
+  Future<void> _runRule(Map<String, dynamic> rule) async {
+    if (_running) return;
+    final PhoneAgentHeadless? info = await _bridge.headlessInfo();
+    if (info == null || !info.engineConnected) {
+      setState(() => _note = '引擎没起 —— 先去「泡泡猫助手」配对启动引擎，再执行');
+      return;
+    }
+    final List<dynamic> steps = (rule['steps'] as List<dynamic>?) ?? <dynamic>[];
+    setState(() {
+      _running = true;
+      _runMsg = '开始执行「${rule['name']}」（${steps.length} 步）…';
+    });
+    for (int i = 0; i < steps.length; i++) {
+      if (!mounted) return;
+      final Map<String, dynamic> step =
+          (steps[i] as Map).cast<String, dynamic>();
+      final String action = (step['action'] ?? '').toString();
+      setState(() => _runMsg = '第 ${i + 1}/${steps.length} 步：$action');
+      final bool ok = await _runStep(step);
+      if (!ok) {
+        if (!mounted) return;
+        setState(() {
+          _running = false;
+          _runMsg = '第 ${i + 1} 步失败（$action）';
+        });
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _running = false;
+      _runMsg = '「${rule['name']}」执行完成';
+    });
+  }
+
+  Future<bool> _runStep(Map<String, dynamic> step) async {
+    final String action = (step['action'] ?? '').toString();
+    if (action == 'launch') {
+      final String? r = await _bridge.launchOnDisplay(step['pkg'].toString());
+      return r != null && r.startsWith('OK');
+    } else if (action == 'waitText') {
+      return await _waitText(step['text'].toString(),
+          (step['timeout'] as num?)?.toInt() ?? 8000);
+    } else if (action == 'tapText') {
+      final (int, int)? pos = await _findText(step['text'].toString());
+      if (pos == null) return false;
+      return await _bridge.tap(pos.$1, pos.$2);
+    } else if (action == 'input') {
+      return await _bridge.inputText(step['text'].toString());
+    } else if (action == 'tap') {
+      return await _bridge.tap(
+          (step['x'] as num).toInt(), (step['y'] as num).toInt());
+    } else if (action == 'swipe') {
+      return await _bridge.swipe(
+        (step['x1'] as num).toInt(), (step['y1'] as num).toInt(),
+        (step['x2'] as num).toInt(), (step['y2'] as num).toInt(),
+      );
+    } else if (action == 'waitMs') {
+      await Future<void>.delayed(
+          Duration(milliseconds: (step['ms'] as num?)?.toInt() ?? 1000));
+      return true;
+    } else if (action == 'key') {
+      return await _bridge.sendKey(step['key'].toString());
+    } else if (action == 'collectPrices') {
+      final List<({String text, int cx, int cy})> lines = await _bridge.ocr();
+      final RegExp re = RegExp(r'[¥￥]\s*(\d+(?:\.\d+)?)');
+      final List<double> prices = <double>[];
+      for (final l in lines) {
+        final RegExpMatch? m = re.firstMatch(l.text);
+        if (m != null) prices.add(double.parse(m.group(1)!));
+      }
+      prices.sort();
+      if (!mounted) return true;
+      setState(() => _note = prices.isEmpty
+          ? '没抓到价格'
+          : '抓到 ${prices.length} 个价格，最低 ¥${prices.first}');
+      return true;
+    } else if (action == 'release') {
+      await _bridge.releaseDisplay();
+      return true;
+    }
+    return false;
+  }
+
+  Future<(int, int)?> _findText(String text) async {
+    final List<({String text, int cx, int cy})> lines = await _bridge.ocr();
+    for (final l in lines) {
+      if (l.text.contains(text)) return (l.cx, l.cy);
+    }
+    return null;
+  }
+
+  Future<bool> _waitText(String text, int timeoutMs) async {
+    final DateTime deadline =
+        DateTime.now().add(Duration(milliseconds: timeoutMs));
+    while (DateTime.now().isBefore(deadline)) {
+      final (int, int)? pos = await _findText(text);
+      if (pos != null) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    }
+    return false;
   }
 
   Future<void> _delete(Map<String, dynamic> rule) async {
@@ -150,6 +257,28 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
             ),
           for (final Map<String, dynamic> rule in _rules)
             _ruleCard(rule),
+          if (_runMsg.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                if (_running)
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                if (_running) const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _runMsg,
+                    style: TextStyle(
+                        color: _running ? DshColors.textDim : DshColors.accent,
+                        fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (_note != null) ...<Widget>[
             const SizedBox(height: 12),
             Text(
@@ -199,6 +328,11 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            icon: Icon(_running ? Icons.hourglass_top : Icons.play_arrow, size: 20),
+            tooltip: context.tr('执行'),
+            onPressed: _running ? null : () => _runRule(rule),
           ),
           IconButton(
             icon: const Icon(Icons.copy, size: 18),
