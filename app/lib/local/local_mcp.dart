@@ -110,7 +110,7 @@ class LocalMcp {
       });
       proc.stdin.write('{"jsonrpc":"2.0","id":1,"method":"initialize",'
           '"params":{"protocolVersion":"2024-11-05","capabilities":{},'
-          '"clientInfo":{"name":"dsh-app","version":"0.79"}}}\n'
+          '"clientInfo":{"name":"dsh-app","version":"0.80"}}}\n'
           '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
           '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n');
       await proc.stdin.flush();
