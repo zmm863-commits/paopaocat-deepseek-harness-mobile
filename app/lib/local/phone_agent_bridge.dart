@@ -473,7 +473,7 @@ class PhoneAgentStatus {
   String get hint {
     if (!running) return '桥没起来';
     if (!connected) {
-      return '还没连上 Shizuku —— 点下面的按钮授权，授权后会自动重连';
+      return '引擎还没连上 —— 用下面的「免装 Shizuku」配对启动（不用装 Shizuku）';
     }
     return '已就绪';
   }
@@ -505,7 +505,6 @@ class PhoneAgentHeadless {
   String get hint {
     if (hasDisplay) return '虚拟屏在跑：display=$displayId';
     if (engineConnected) return '引擎就绪，可以建一块看不见的屏了';
-    if (shizukuGranted) return '已授权 Shizuku，但引擎还没连上 —— 点「重连引擎」';
-    return '引擎还没起来：上面可授权 Shizuku，或用「免装 Shizuku」无线调试配对';
+    return '引擎还没起来 —— 用上面的「免装 Shizuku」配对启动（不用装 Shizuku）';
   }
 }
