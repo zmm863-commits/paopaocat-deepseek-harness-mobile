@@ -138,6 +138,35 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 不是绝对坐标，所以换手机/分辨率/App 小改版都还能用。占位符 {参数名} 执行时替换。
 // 这是「用户自己写/录规则」的落点：规则就是普通 JSON，以后用户录完就存成这样。
 
+/**
+ * 通用「关弹窗」文字库 —— 提炼自 GKD 公开订阅的全局组（开屏广告/更新提示/青少年模式）
+ * 里出现频率最高的 text 匹配。
+ *
+ * 分两档：EXACT 是纯按钮文案（短、准），CONTAIN 允许包含匹配但限制长度。
+ * ⚠️ 黑名单：绝对不能点「更新/下载/安装/确定/确认/支付/删除」——这些一按就出事。
+ */
+const DISMISS_EXACT = [
+  '跳过', '跳過', '跳 过', 'skip', 'Skip', 'SKIP',
+  '关闭', '忽略', '不再提示', '不感兴趣', '残忍拒绝', '放弃',
+  '以后再说', '下次再说', '稍后再说', '稍后再看', '下次再约',
+  '我知道了', '知道了', '暂不开启', '暂不更新', '暂不', '以后',
+];
+const DISMISS_CONTAIN = ['跳过', '跳過', '关闭', '我知道了', '以后再说', '暂不', '忽略'];
+// 注意：「开启」不能进黑名单，否则会挡掉合法按钮「暂不开启」。
+const DISMISS_BLOCK = ['更新', '升级', '下载', '安装', '确定', '确认', '支付', '删除', '同意', '授权', '领取'];
+// 「暂不开启」这类按钮必须放行，所以黑名单只用于含「更新/下载/确定」等危险动作的词。
+
+/** 一行 OCR 文字是否像「关弹窗」按钮；返回安全等级（0=精确，1=包含），-1=不能点。 */
+function dismissRank(text) {
+  const t = (text || '').trim();
+  if (!t || t.length > 12) return -1;
+  // ⚠️ 顺序：精确白名单先于黑名单，否则「暂不更新/暂不开启」会被「更新」误杀。
+  if (DISMISS_EXACT.includes(t)) return 0;
+  if (DISMISS_BLOCK.some((k) => t.includes(k))) return -1;
+  if (t.length <= 6 && DISMISS_CONTAIN.some((k) => t.includes(k))) return 1;
+  return -1;
+}
+
 const BUILTIN_RULES = {
   '淘宝比价': {
     name: '淘宝比价',
@@ -171,6 +200,11 @@ const BUILTIN_RULES = {
       { action: 'release' },
     ],
   },
+  '关弹窗': {
+    name: '关弹窗',
+    params: [],
+    steps: [{ action: 'dismiss' }, { action: 'dismiss' }, { action: 'dismiss' }],
+  },
   '拼多多比价': {
     name: '拼多多比价',
     params: ['关键词'],
@@ -194,23 +228,64 @@ function fillParams(text, params) {
 }
 
 /** 执行一条规则。返回 true=跑完；false=某步失败（错误已打 stderr）。 */
+/** 扫屏关弹窗：找常见弹窗文字点掉，返回关掉的个数。 */
+async function dismissPopups(rounds) {
+  let total = 0;
+  for (let i = 0; i < rounds; i++) {
+    const r = await call(key, 'GET', '/ocr');
+    let hit = null;
+    let best = 9;
+    for (const l of (r.lines || [])) {
+      const rank = dismissRank(l.text);
+      if (rank >= 0 && rank < best) { hit = l; best = rank; }
+      if (rank === 0) break;
+    }
+    if (!hit) break;
+    await call(key, 'POST', '/tap', { x: hit.cx, y: hit.cy });
+    total++;
+    await sleep(1200);
+  }
+  return total;
+}
+
 async function runRule(rule, params) {
   let priceResult = null;
+  let totalDismissed = 0;
   for (const st of rule.steps) {
     const a = st.action;
     if (a === 'launch') {
       await call(key, 'POST', '/launch', { pkg: st.pkg });
+      // 开屏广告几乎必然出现，等界面出来一点就清掉，别等后面 waitText 超时才补救。
+      if (st.autoDismiss !== false) {
+        await sleep(st.settle || 2500);
+        totalDismissed += await dismissPopups(2);
+      }
     } else if (a === 'waitText') {
       const q = fillParams(st.text, params);
       const ms = st.timeout || 8000;
-      const r = await call(key, 'GET', `/wait-text?q=${encodeURIComponent(q)}&timeout=${ms}`);
+      let r = await call(key, 'GET', `/wait-text?q=${encodeURIComponent(q)}&timeout=${ms}`);
       if (r.found !== true) {
-        console.error(`✗ 等了 ${ms}ms 没等到「${q}」（步骤 waitText）。可能 App 没加载出来或有弹窗。`);
+        // 没等到 → 清弹窗（开屏广告/更新弹窗是最常见主因）后再等一次。
+        const n = await dismissPopups(3);
+        if (n > 0) {
+          console.error(`… 关掉 ${n} 个弹窗，重新等「${q}」`);
+          r = await call(key, 'GET', `/wait-text?q=${encodeURIComponent(q)}&timeout=${ms}`);
+        }
+      }
+      if (r.found !== true) {
+        console.error(`✗ 等了 ${ms}ms 没等到「${q}」（步骤 waitText）。页面结构可能变了。`);
         return false;
       }
     } else if (a === 'tapText') {
       const q = fillParams(st.text, params);
-      const r = await call(key, 'GET', `/find-text?q=${encodeURIComponent(q)}`);
+      let r = await call(key, 'GET', `/find-text?q=${encodeURIComponent(q)}`);
+      if (!r.count) {
+        const n = await dismissPopups(3);
+        if (n > 0) {
+          console.error(`… 关掉 ${n} 个弹窗，重新找「${q}」`);
+          r = await call(key, 'GET', `/find-text?q=${encodeURIComponent(q)}`);
+        }
+      }
       if (!r.count) {
         console.error(`✗ 没 OCR 到「${q}」（步骤 tapText）。可能界面还没加载，或这是个纯图标按钮。`);
         return false;
@@ -248,6 +323,8 @@ async function runRule(rule, params) {
         lowest: uniq[0] || null,
         prices: uniq.slice(0, 12).map((i) => ({ price: i.price, text: i.text })),
       };
+    } else if (a === 'dismiss') {
+      totalDismissed += await dismissPopups(st.rounds || 3);
     } else if (a === 'release') {
       await call(key, 'GET', '/release');
     } else {
@@ -255,6 +332,7 @@ async function runRule(rule, params) {
       return false;
     }
   }
+  if (totalDismissed > 0) console.error(`… 全程关掉 ${totalDismissed} 个弹窗`);
   if (priceResult) {
     console.log(JSON.stringify(priceResult, null, 2));
     if (!priceResult.count) {
@@ -532,6 +610,12 @@ switch (cmd) {
     break;
   }
 
+  case 'dismiss': {
+    const total = await dismissPopups(Number(args[0]) || 3);
+    console.log(JSON.stringify({ dismissed: total }));
+    break;
+  }
+
   case 'rules': {
     // 列出用户录的规则（filesDir/rules/*.json）。
     const names = listUserRuleNames();
@@ -585,5 +669,5 @@ switch (cmd) {
   }
 
   default:
-    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / run / rules / price / tap-text / record-start / record-stop`);
+    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / run / rules / price / tap-text / record-start / record-stop / dismiss`);
 }

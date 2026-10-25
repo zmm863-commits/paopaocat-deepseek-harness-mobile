@@ -4923,5 +4923,15 @@
     "en": "Run",
     "ja": "実行",
     "ko": "실행"
+  },
+  "关弹窗": {
+    "en": "Close pop-ups",
+    "ja": "ポップアップを閉じる",
+    "ko": "팝업 닫기"
+  },
+  "引擎还没连上 —— 用上面的「免装 Shizuku」配对启动，不用装 Shizuku。": {
+    "en": "Engine not connected yet — use the \"Shizuku-free pairing\" block above to start it; no Shizuku install needed.",
+    "ja": "エンジン未接続 — 上の「Shizuku 不要のペアリング」で起動してください。Shizuku のインストールは不要です。",
+    "ko": "엔진이 아직 연결되지 않았습니다 — 위의 \"Shizuku 없이 페어링\"으로 시작하세요. Shizuku 설치가 필요 없습니다."
   }
 }

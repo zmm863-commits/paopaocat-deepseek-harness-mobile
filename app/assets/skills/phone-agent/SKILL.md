@@ -1,6 +1,6 @@
 ---
 name: phone-agent
-description: 泡泡猫——在手机后台自动搜索、比价、查信息。用户说「泡泡猫帮我查车票」「泡泡猫帮我在淘宝搜 PS5 最低价」「泡泡猫帮我查 XX」时使用。
+description: 泡泡猫——手机后台自动搜索、比价、查信息。「泡泡猫帮我查车票/比价/查信息」时用。
 ---
 
 # 泡泡猫 · 后台自动操作
@@ -56,6 +56,18 @@ node toolbox/phone-agent.mjs status
 7. **每步之间 `sleep 1~2` 秒**，界面动画没走完时点击会落在旧位置。
 8. **任务结束 `release`**，别让虚拟屏一直占着（会占用 Surface、耗电）。
 
+## 弹窗挡路（最常见，先治它）
+
+```bash
+node toolbox/phone-agent.mjs dismiss        # 扫屏找「跳过/关闭/以后再说/我知道了/暂不开启/下次再说/不感兴趣」→ 点掉
+```
+
+`dismiss` 会连点最多 3 轮清多层弹窗，返回 `{"dismissed":N}`（0 = 本来就没弹窗）。
+
+**开屏广告、更新弹窗、领券弹窗、青少年模式提示是后台自动操作失败的第一大原因。**
+`waittext` / `tapText` 找不到时 `run` 和 App 规则执行器会**自动先 dismiss 再重试一次**，
+但你手动分步操作时，发现 `shot` 里画面被弹窗盖住，就主动先 `dismiss`，别硬点。
+
 ## 走错路
 
 ```bash
@@ -63,7 +75,7 @@ node toolbox/phone-agent.mjs key back      # 返回上一页
 node toolbox/phone-agent.mjs key home       # 回桌面
 ```
 
-点偏了、进了弹窗、页面不对 —— 先 `key back`，别硬点。连按 3 次 back 还回不去就 `key home` 重来。
+点偏了、进了弹窗、页面不对 —— 先 `dismiss` 或 `key back`，别硬点。连按 3 次 back 还回不去就 `key home` 重来。
 
 ## 典型流程：后台搜「电影票」
 
@@ -92,14 +104,14 @@ node toolbox/phone-agent.mjs release          # 释放虚拟屏
 ## 规则引擎（录制回放的「回放」半边）
 
 `price` / `run` 内部跑的是**固定规则脚本**（OCR 锚定，点文字不点坐标，换手机也能用）。
-内置三条比价规则：淘宝比价 / 京东比价 / 拼多多比价。
+内置四条规则：淘宝比价 / 京东比价 / 拼多多比价 / 关弹窗。
 
 ```bash
 node toolbox/phone-agent.mjs price PS5 淘宝        # = 执行「淘宝比价」规则，关键词 PS5
 node toolbox/phone-agent.mjs run 淘宝比价 关键词=PS5  # 通用：执行任意规则，参数显式/位置填
 ```
 
-以后用户自己录的规则也走 `run`，格式就是 `{steps:[{action, ...}]}`（launch/waitText/tapText/input/tap/swipe/waitMs/key/collectPrices/release）。
+以后用户自己录的规则也走 `run`，格式就是 `{steps:[{action, ...}]}`（launch/waitText/tapText/dismiss/input/tap/swipe/waitMs/key/collectPrices/release）。
 
 ## 会话里录制规则（Agent 边跑边录）
 

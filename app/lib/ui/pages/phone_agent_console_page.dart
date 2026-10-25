@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../i18n/dsh_i18n.dart';
 import '../../local/diagnostics_log.dart';
 import '../../local/phone_agent_bridge.dart';
+import '../../local/popup_dismiss.dart';
 import '../theme/dsh_tokens.dart';
 
 /// 「后台操作台」—— 屏幕助手的可视化面板。
@@ -242,6 +243,13 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
   }
 
   /// 找离 (x,y) 最近的 OCR 文字块，作为「点文字」锚点；太远（纯图标）返回 null。
+  /// 一键关弹窗：扫屏找「跳过/关闭/以后再说…」点掉（最多 3 轮）。
+  Future<void> _dismissPopups() async {
+    final int hit = await dismissPopups(_bridge, rounds: 3);
+    if (!mounted) return;
+    setState(() => _note = hit == 0 ? '当前画面没有弹窗' : '关掉了 $hit 个弹窗');
+  }
+
   Future<String?> _ocrAnchorAt(int x, int y) async {
     final List<({String text, int cx, int cy})> lines = await _bridge.ocr();
     ({String text, int cx, int cy})? best;
@@ -696,6 +704,12 @@ class _PhoneAgentConsolePageState extends State<PhoneAgentConsolePage> {
                 onPressed: ready ? _inputText : null,
                 icon: const Icon(Icons.keyboard, size: 16),
                 label: Text(context.tr('输入文字'),
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              OutlinedButton.icon(
+                onPressed: ready ? _dismissPopups : null,
+                icon: const Icon(Icons.close, size: 16),
+                label: Text(context.tr('关弹窗'),
                     style: const TextStyle(fontSize: 12)),
               ),
             ],

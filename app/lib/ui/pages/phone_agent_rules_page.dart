@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../local/phone_agent_bridge.dart';
+import '../../local/popup_dismiss.dart';
 import '../theme/dsh_tokens.dart';
 import '../../i18n/dsh_i18n.dart';
 
@@ -80,7 +81,13 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
           (steps[i] as Map).cast<String, dynamic>();
       final String action = (step['action'] ?? '').toString();
       setState(() => _runMsg = '第 ${i + 1}/${steps.length} 步：$action');
-      final bool ok = await _runStep(step);
+      bool ok = await _runStep(step);
+      // 找不到文字类步骤失败 → 先关弹窗再重试一次（开屏广告/更新弹窗是失败主因）。
+      if (!ok && (action == 'tapText' || action == 'waitText')) {
+        setState(() => _runMsg = '第 ${i + 1}/${steps.length} 步：$action 没找到，先关弹窗再试…');
+        await dismissPopups(_bridge, rounds: 3);
+        ok = await _runStep(step);
+      }
       if (!ok) {
         if (!mounted) return;
         setState(() {
@@ -101,7 +108,14 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
     final String action = (step['action'] ?? '').toString();
     if (action == 'launch') {
       final String? r = await _bridge.launchOnDisplay(step['pkg'].toString());
-      return r != null && r.startsWith('OK');
+      final bool ok = r != null && r.startsWith('OK');
+      // 开屏广告几乎必然出现：App 一起就开始清，别等后面 waitText 超时才补救。
+      if (ok && step['autoDismiss'] != false) {
+        await Future<void>.delayed(
+            Duration(milliseconds: (step['settle'] as num?)?.toInt() ?? 2500));
+        await dismissPopups(_bridge, rounds: 2);
+      }
+      return ok;
     } else if (action == 'waitText') {
       return await _waitText(step['text'].toString(),
           (step['timeout'] as num?)?.toInt() ?? 8000);
@@ -138,6 +152,9 @@ class _PhoneAgentRulesPageState extends State<PhoneAgentRulesPage> {
       setState(() => _note = prices.isEmpty
           ? '没抓到价格'
           : '抓到 ${prices.length} 个价格，最低 ¥${prices.first}');
+      return true;
+    } else if (action == 'dismiss') {
+      await dismissPopups(_bridge, rounds: (step['rounds'] as num?)?.toInt() ?? 3);
       return true;
     } else if (action == 'release') {
       await _bridge.releaseDisplay();
