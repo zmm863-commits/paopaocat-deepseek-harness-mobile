@@ -348,10 +348,22 @@ class PhoneAgentBridge {
   }
 
   /// 前台录制状态：{enabled, recording, count}。
+  ///
+  /// ⚠️ 用 `invokeMethod<Object>` 取原始值再手动转 Map，**不要**用
+  /// `invokeMethod<Map<String, dynamic>>`：Kotlin 的 `Map<String, Any>` 转
+  /// Dart 泛型 Map 时检查会失败、整个返回 null，`_enabled` 就永远是 false
+  /// （真机 2026-10-25 踩到：日志 enabled=true，但页面按钮不变）。
   Future<Map<String, dynamic>?> phoneRecStatus() async {
     try {
-      return await DshHost.channel
-          .invokeMethod<Map<String, dynamic>>('phoneRecStatus');
+      final Object? r =
+          await DshHost.channel.invokeMethod<Object>('phoneRecStatus');
+      if (r is Map) {
+        return <String, dynamic>{
+          for (final MapEntry<dynamic, dynamic> e in r.entries)
+            e.key.toString(): e.value,
+        };
+      }
+      return null;
     } catch (_) {
       return null;
     }

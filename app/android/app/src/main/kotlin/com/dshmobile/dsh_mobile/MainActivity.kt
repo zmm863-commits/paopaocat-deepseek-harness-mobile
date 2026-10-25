@@ -498,8 +498,14 @@ class MainActivity : FlutterActivity() {
 
                     // ── 泡泡猫前台录制（无障碍记录点击文字）──────────────────
                     "phoneRecStatus" -> {
+                        val en = DshPhoneAgentRecorderService.isEnabled(this)
+                        val raw = android.provider.Settings.Secure.getString(
+                            contentResolver,
+                            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "(null)"
+                        android.util.Log.i("DshPhoneAgentRec",
+                            "status enabled=$en rec=${DshPhoneAgentRecorderService.recording} raw=$raw")
                         result.success(mapOf(
-                            "enabled" to DshPhoneAgentRecorderService.isEnabled(this),
+                            "enabled" to en,
                             "recording" to DshPhoneAgentRecorderService.recording,
                             "count" to DshPhoneAgentRecorderService.stepCount,
                         ))
