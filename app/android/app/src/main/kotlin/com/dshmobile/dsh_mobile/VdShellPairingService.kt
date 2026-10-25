@@ -33,7 +33,7 @@ import io.github.muntashirakon.adb.android.AdbMdns
 class VdShellPairingService : Service() {
     companion object {
         private const val TAG = "VdShellPairing"
-        private const val CHANNEL = "vd_shell_pairing"
+        private const val CHANNEL = "vd_shell_pairing_v2"
         private const val NOTIF_ID = 8101
         const val ACTION_START = "com.dshmobile.dsh_mobile.pairing.START"
         const val ACTION_CODE = "com.dshmobile.dsh_mobile.pairing.CODE"
@@ -70,7 +70,8 @@ class VdShellPairingService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "泡泡猫配对", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(
+                    CHANNEL, "泡泡猫助手", NotificationManager.IMPORTANCE_DEFAULT)
             )
         }
         startForeground(
