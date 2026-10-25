@@ -60,6 +60,29 @@ function rulesDir() {
   return '/data/user/0/com.dshmobile.dsh_mobile/files/rules';
 }
 
+/** 录制状态文件（Agent 边跑边录时暂存步骤）。 */
+function recordingFile() {
+  const home = process.env.DSH_HOME || '';
+  const dir = home ? path.dirname(home) : '/data/user/0/com.dshmobile.dsh_mobile/files';
+  return path.join(dir, 'recording.json');
+}
+
+function isRecording() {
+  try { return fs.existsSync(recordingFile()); } catch { return false; }
+}
+
+/** 录制模式下，把一步加到暂存文件（没在录制就什么都不做）。 */
+function recordStep(step) {
+  if (!isRecording()) return;
+  try {
+    const f = recordingFile();
+    const cur = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (!Array.isArray(cur.steps)) cur.steps = [];
+    cur.steps.push(step);
+    fs.writeFileSync(f, JSON.stringify(cur));
+  } catch {}
+}
+
 /** 列出用户录的规则名（filesDir/rules/*.json 的文件名）。 */
 function listUserRuleNames() {
   try {
@@ -381,6 +404,7 @@ switch (cmd) {
     }
     const ms = args[4] ? Number(args[4]) : 300;
     const r = await call(key, 'POST', '/swipe', { x1, y1, x2, y2, ms });
+    recordStep({ action: 'swipe', x1, y1, x2, y2 });
     console.log(JSON.stringify(r));
     break;
   }
@@ -396,6 +420,7 @@ switch (cmd) {
     const t = args.join(' ');
     if (!t) die('用法：phone-agent.mjs input <文字>');
     const r = await call(key, 'POST', '/input', { text: t });
+    recordStep({ action: 'input', text: t });
     console.log(JSON.stringify(r));
     break;
   }
@@ -445,6 +470,7 @@ switch (cmd) {
       console.error(`（按名字匹配到：${hit.label} · ${hit.package}）`);
     }
     const r = await call(key, 'POST', '/launch', { pkg });
+    recordStep({ action: 'launch', pkg });
     console.log(JSON.stringify(r));
     break;
   }
@@ -461,6 +487,48 @@ switch (cmd) {
   case 'release': {
     const r = await call(key, 'GET', '/release');
     console.log(JSON.stringify(r));
+    break;
+  }
+
+  case 'record-start': {
+    // Agent 开始边跑边录：之后 launch / tap-text / input / swipe 都会被记下来。
+    fs.writeFileSync(recordingFile(), JSON.stringify({ steps: [] }));
+    console.log('录制开始：之后的操作会记成规则步骤，做完用 record-stop <名字> 保存。');
+    break;
+  }
+
+  case 'record-stop': {
+    const name = args[0];
+    if (!name) die('用法：phone-agent.mjs record-stop <规则名>');
+    let steps = [];
+    try {
+      const cur = JSON.parse(fs.readFileSync(recordingFile(), 'utf8'));
+      steps = Array.isArray(cur.steps) ? cur.steps : [];
+    } catch {
+      die('当前没有在录制（找不到录制暂存）。先 record-start。');
+    }
+    const rule = { name, params: [], steps };
+    const dir = rulesDir();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name + '.json'), JSON.stringify(rule, null, 2));
+    try { fs.unlinkSync(recordingFile()); } catch {}
+    console.log(`已保存规则「${name}」：${steps.length} 步 → ${path.join(dir, name + '.json')}`);
+    break;
+  }
+
+  case 'tap-text': {
+    // 点「某文字」：OCR 找文字 → 点它的中心。录制时记成 tapText（比坐标跨屏）。
+    const t = args[0];
+    if (!t) die('用法：phone-agent.mjs tap-text <文字>');
+    const r = await call(key, 'GET', `/find-text?q=${encodeURIComponent(t)}`);
+    if (!r.count) {
+      console.error(`✗ 没 OCR 到「${t}」。`);
+      process.exit(1);
+    }
+    const line = r.lines[0];
+    await call(key, 'POST', '/tap', { x: line.cx, y: line.cy });
+    recordStep({ action: 'tapText', text: t });
+    console.log('已点：' + t);
     break;
   }
 
@@ -517,5 +585,5 @@ switch (cmd) {
   }
 
   default:
-    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / run / rules / price`);
+    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / run / rules / price / tap-text / record-start / record-stop`);
 }

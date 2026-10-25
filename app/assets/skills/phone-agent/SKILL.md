@@ -101,6 +101,23 @@ node toolbox/phone-agent.mjs run 淘宝比价 关键词=PS5  # 通用：执行�
 
 以后用户自己录的规则也走 `run`，格式就是 `{steps:[{action, ...}]}`（launch/waitText/tapText/input/tap/swipe/waitMs/key/collectPrices/release）。
 
+## 会话里录制规则（Agent 边跑边录）
+
+用户说「泡泡猫帮我录一条淘宝比价的规则」「你跑一遍并记成规则」时：
+
+```bash
+node toolbox/phone-agent.mjs record-start            # 开始录制
+node toolbox/phone-agent.mjs launch 淘宝              # 之后的操作自动记成步骤
+node toolbox/phone-agent.mjs tap-text 搜索
+node toolbox/phone-agent.mjs input PS5
+node toolbox/phone-agent.mjs tap-text 搜索
+node toolbox/phone-agent.mjs waittext 搜索 8000
+node toolbox/phone-agent.mjs record-stop 淘宝比价     # 存成规则，之后可 run 执行
+```
+
+录制时 `launch` / `tap-text` / `input` / `swipe` 会自动记成规则步骤；`tap-text` 记的是
+「点某文字」（OCR 锚点，跨屏可用），不是死坐标。录完用 `rules` 能看到，`run <名字>` 执行。
+
 ## 执行用户录的规则（重要）
 
 用户说「泡泡猫执行『淘宝比价』规则」「帮我跑一下我录的规则」「用我录的那条比价」时：
