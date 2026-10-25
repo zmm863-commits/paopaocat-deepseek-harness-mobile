@@ -116,7 +116,7 @@ class _PhoneAgentSettingsSectionState extends State<PhoneAgentSettingsSection> {
         ),
         const SizedBox(height: 10),
         // 2026-10-24：「免装 Shizuku」通道 —— 用无线调试配对，自己把引擎起在 shell 里
-        _VdShellBlock(),
+        _VdShellBlock(onEngineReady: _refresh),
         const SizedBox(height: 10),
         // 2026-10-24：把「后台操作台」摆在这里 —— 用户要在 App 里**亲眼确认**
         // 虚拟屏建没建起来、画面对不对、点得中不中，而不是只能靠会话里猜。
@@ -386,6 +386,9 @@ class _AppPickerState extends State<_AppPicker> {
 /// 用户侧只有两步：① 打开「无线调试」拿到 6 位配对码；② 填进来点一下。
 /// 之后引擎一直在跑（App 重启后重来一次即可，配对关系本身是持久的）。
 class _VdShellBlock extends StatefulWidget {
+  const _VdShellBlock({this.onEngineReady});
+  /// 引擎连上后回调 —— 让父级刷新顶部红点/状态（否则配对块绿了、顶部还红着）。
+  final Future<void> Function()? onEngineReady;
   @override
   State<_VdShellBlock> createState() => _VdShellBlockState();
 }
@@ -440,6 +443,7 @@ class _VdShellBlockState extends State<_VdShellBlock> {
           _msg = '引擎已就绪，不用再配对（要重连就用操作台的「重连引擎」）';
         });
       }
+      await widget.onEngineReady?.call();
       return;
     }
     setState(() {
@@ -467,6 +471,8 @@ class _VdShellBlockState extends State<_VdShellBlock> {
           _alive = true;
           _msg = '✅ 引擎已就绪！现在可以在会话里喊「泡泡猫」了';
         });
+        // 通知父级刷新顶部红点（引擎连上 → 变绿灯）。
+        await widget.onEngineReady?.call();
         return;
       }
     }

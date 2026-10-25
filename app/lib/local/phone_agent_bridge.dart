@@ -454,6 +454,6 @@ class PhoneAgentHeadless {
   String get hint {
     if (hasDisplay) return '虚拟屏在跑：display=$displayId';
     if (engineConnected) return '引擎就绪，可以建一块看不见的屏了';
-    return '引擎还没起来 —— 用上面的「免装 Shizuku」配对启动（不用装 Shizuku）';
+    return '引擎未连接';
   }
 }
