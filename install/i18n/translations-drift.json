@@ -4758,5 +4758,15 @@
     "en": "Port shown in the popup",
     "ja": "ポップアップのポート",
     "ko": "팝업의 포트"
+  },
+  "不装 Shizuku 也能后台操作：点「开始配对」，再去开无线调试的「使用配对码配对设备」，然后在通知栏输配对码 —— 不用切回 App，配对界面保持开着才能成功。": {
+    "en": "No Shizuku needed: tap Start pairing, open Wireless debugging → Pair device with pairing code, then enter the code in the notification — keep the pairing screen open, don't switch away.",
+    "ja": "Shizuku 不要でバックグラウンド操作：「ペアリング開始」を押し、ワイヤレスデバッグの「ペアリングコードでペアリング」を開き、通知バーでコードを入力。App を切り替えず、ペアリング画面を開いたままに。",
+    "ko": "Shizuku 없이 백그라운드 조작: 페어링 시작을 누르고, 무선 디버깅의 \"페어링 코드로 페어링\"을 연 뒤 알림바에서 코드 입력. 앱 전환 없이 페어링 화면을 열어두세요."
+  },
+  "开始配对（通知栏输码）": {
+    "en": "Start pairing (enter code in notification)",
+    "ja": "ペアリング開始（通知バーで入力）",
+    "ko": "페어링 시작(알림바에서 입력)"
   }
 }

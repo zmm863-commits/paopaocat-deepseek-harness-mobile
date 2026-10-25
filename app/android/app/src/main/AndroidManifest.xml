@@ -2,6 +2,9 @@
     xmlns:tools="http://schemas.android.com/tools">
     <!-- 与电脑端桥（WebSocket）通信所必需 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 泡泡猫免装配对：mDNS 发现 adb 配对/连接端口（NsdManager 收组播包必需，
+         否则 discoverServices 一直空转、永远找不到配对服务）。 -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <!-- ⚠️ 这里原来还声明了 ACCESS_NETWORK_STATE（审计 P2：声明了但没人用）。
          已核实：本 App 没有任何代码读系统网络状态（会话页那个 isConnected 是**桥的
          WebSocket 状态**，见 bridge_state.dart）；依赖里也没有声明它
@@ -198,6 +201,11 @@
         <!-- 定时任务保活服务：常驻通知 + 前台服务 -->
         <service
             android:name=".DshSchedulerService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".VdShellPairingService"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />

@@ -107,11 +107,12 @@ class VdShellClient(private val context: Context) : AbsAdbConnectionManager() {
             issuer,
             pair.public,
         )
+        // ⚠️ 不 setProvider("BC")：Android 上 BC 的 SHA256WITHRSA 算法注册不全，
+        // 会报 "no such algorithm: SHA256WITHRSA for provider BC"。用系统默认 provider
+        // （Android 内置 Conscrypt/BC 的 SHA256withRSA 与 X.509 工厂）反而稳。
         val signer = JcaContentSignerBuilder("SHA256withRSA")
-            .setProvider("BC")
             .build(pair.private)
         val cert = JcaX509CertificateConverter()
-            .setProvider("BC")
             .getCertificate(builder.build(signer))
 
         privateKey = pair.private

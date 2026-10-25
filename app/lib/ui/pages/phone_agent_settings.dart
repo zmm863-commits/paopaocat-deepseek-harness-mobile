@@ -398,8 +398,7 @@ class _VdShellBlock extends StatefulWidget {
 }
 
 class _VdShellBlockState extends State<_VdShellBlock> {
-  final TextEditingController _code = TextEditingController();
-  final TextEditingController _port = TextEditingController();
+
   bool _busy = false;
   bool _alive = false;
   String _msg = '';
@@ -412,8 +411,6 @@ class _VdShellBlockState extends State<_VdShellBlock> {
 
   @override
   void dispose() {
-    _code.dispose();
-    _port.dispose();
     super.dispose();
   }
 
@@ -436,37 +433,19 @@ class _VdShellBlockState extends State<_VdShellBlock> {
     }
   }
 
-  Future<void> _pairAndStart() async {
+  Future<void> _startPairing() async {
     if (_busy) return;
-    final String code = _code.text.trim();
-    if (code.length != 6) {
-      setState(() => _msg = '配对码是 6 位数字（在「使用配对码配对设备」里看）');
-      return;
-    }
     setState(() {
       _busy = true;
-      _msg = '正在配对…';
+      _msg = '正在搜索配对服务… 请去开「使用配对码配对设备」，然后在通知栏输码';
     });
-    final int? port = int.tryParse(_port.text.trim());
-    final bool ok = await PhoneAgentBridge.instance.vdshellPair(code, port: port);
-    if (!ok) {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _msg = '配对失败：确认「无线调试」开着、配对码是最新的（60 秒会变）';
-        });
-      }
-      return;
-    }
-    if (mounted) setState(() => _msg = '已配对，正在起引擎（约 3~10 秒）…');
-    // 连接端口不手填：App 自动读系统设置（adb_wifi_server_port），读不到走 mDNS。
-    final ({bool ok, String error}) r = await PhoneAgentBridge.instance
-        .vdshellBootstrap();
+    final bool ok = await PhoneAgentBridge.instance.vdshellStartPairing();
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _alive = r.ok;
-      _msg = r.ok ? '引擎已就绪 —— 现在去后台操作台建屏' : '启动失败：${r.error}';
+      _msg = ok
+          ? '已开始配对：下拉通知栏，在输入框填 6 位配对码'
+          : '启动配对服务失败，请重试';
     });
   }
 
@@ -513,8 +492,9 @@ class _VdShellBlockState extends State<_VdShellBlock> {
           ),
           const SizedBox(height: 6),
           Text(
-            context.tr('不装 Shizuku 也能后台操作：打开「无线调试」，把配对码填进来，'
-                'App 会用 adb 通道把引擎起在 shell 里。配对码 60 秒过期，用最新的那个。'),
+            context.tr('不装 Shizuku 也能后台操作：点「开始配对」，再去开无线调试的'
+                '「使用配对码配对设备」，然后在通知栏输配对码 —— 不用切回 App，'
+                '配对界面保持开着才能成功。'),
             style: TextStyle(color: DshColors.textDim, fontSize: 11, height: 1.45),
           ),
           const SizedBox(height: 8),
@@ -532,40 +512,6 @@ class _VdShellBlockState extends State<_VdShellBlock> {
           Row(
             children: <Widget>[
               Expanded(
-                flex: 3,
-                child: TextField(
-                  controller: _code,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  style: TextStyle(color: DshColors.text, fontSize: 13),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    counterText: '',
-                    labelText: context.tr('配对码'),
-                    hintText: '6 位数字',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: _port,
-                  keyboardType: TextInputType.number,
-                  style: TextStyle(color: DshColors.text, fontSize: 13),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    labelText: context.tr('配对端口'),
-                    hintText: context.tr('弹窗里的端口'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: <Widget>[
-              Expanded(
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(40),
@@ -573,10 +519,10 @@ class _VdShellBlockState extends State<_VdShellBlock> {
                   icon: Icon(_busy ? Icons.hourglass_top : Icons.play_arrow,
                       size: 18),
                   label: Text(
-                    _busy ? context.tr('处理中…') : context.tr('配对并启动引擎'),
+                    _busy ? context.tr('处理中…') : context.tr('开始配对（通知栏输码）'),
                     style: const TextStyle(fontSize: 12.5),
                   ),
-                  onPressed: _busy ? null : _pairAndStart,
+                  onPressed: _busy ? null : _startPairing,
                 ),
               ),
               if (_alive) ...<Widget>[

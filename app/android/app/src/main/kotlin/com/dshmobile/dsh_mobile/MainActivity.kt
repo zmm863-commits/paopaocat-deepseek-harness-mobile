@@ -377,6 +377,23 @@ class MainActivity : FlutterActivity() {
                     // 必须放后台线程，否则主线程 ANR。
                     "vdshellStatus" -> result.success(VdShellManager.status())
 
+                    // 免装通道的一步式配对：起前台服务，mDNS 自动找配对端口，
+                    // 通知栏 RemoteInput 输配对码（见 VdShellPairingService）。
+                    "vdshellStartPairing" -> {
+                        val i = Intent(this, VdShellPairingService::class.java)
+                            .setAction(VdShellPairingService.ACTION_START)
+                        try {
+                            if (Build.VERSION.SDK_INT >= 26) {
+                                startForegroundService(i)
+                            } else {
+                                startService(i)
+                            }
+                            result.success(true)
+                        } catch (e: Throwable) {
+                            result.error("vdshellStartPairing", e.message, null)
+                        }
+                    }
+
                     // 免装通道要做「无线调试配对」，先得把用户送到那个页面
                     "openWirelessDebuggingSettings" -> {
                         val ok = try {

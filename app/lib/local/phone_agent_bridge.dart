@@ -260,6 +260,17 @@ class PhoneAgentBridge {
   }
 
   /// 连接 → 部署 dex → 起 shell 进程 → 等 binder。
+  /// 免装通道的一步式配对：起前台服务（mDNS 找端口 + 通知栏输码）。
+  Future<bool> vdshellStartPairing() async {
+    try {
+      final bool? ok =
+          await DshHost.channel.invokeMethod<bool>('vdshellStartPairing');
+      return ok == true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<({bool ok, String error})> vdshellBootstrap({int? connectPort}) async {
     try {
       final Map<Object?, Object?>? m = await DshHost.channel
