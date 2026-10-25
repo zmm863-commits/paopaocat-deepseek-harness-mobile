@@ -89,6 +89,18 @@ node toolbox/phone-agent.mjs release          # 释放虚拟屏
 - 坐标：**虚拟屏像素**（`create` 的分辨率，默认 1080×1920）。
 - 截图：`shot` 出来的 PNG 就是虚拟屏真实内容，OCR 的坐标也在这个坐标系里。
 
+## 规则引擎（录制回放的「回放」半边）
+
+`price` / `run` 内部跑的是**固定规则脚本**（OCR 锚定，点文字不点坐标，换手机也能用）。
+内置三条比价规则：淘宝比价 / 京东比价 / 拼多多比价。
+
+```bash
+node toolbox/phone-agent.mjs price PS5 淘宝        # = 执行「淘宝比价」规则，关键词 PS5
+node toolbox/phone-agent.mjs run 淘宝比价 关键词=PS5  # 通用：执行任意规则，参数显式/位置填
+```
+
+以后用户自己录的规则也走 `run`，格式就是 `{steps:[{action, ...}]}`（launch/waitText/tapText/input/tap/swipe/waitMs/key/collectPrices/release）。
+
 ## 比价 / 查最低价（泡泡猫高频场景）
 
 用户说「泡泡猫帮我在淘宝搜 PS5 最低价」「泡泡猫帮我比一下 XX 哪家便宜」时，**优先用固定规则的快速比价命令**（秒级，别用逐步 OCR+LLM 决策）：

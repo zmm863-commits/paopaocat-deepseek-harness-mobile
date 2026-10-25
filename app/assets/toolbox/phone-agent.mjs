@@ -78,6 +78,138 @@ function die(msg) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ── 规则引擎（录制回放的「回放」半边）──────────────────────────────────
+// 规则 = 一段「OCR 锚定」的操作脚本：点击用 tapText（点「某文字」，OCR 实时定位），
+// 不是绝对坐标，所以换手机/分辨率/App 小改版都还能用。占位符 {参数名} 执行时替换。
+// 这是「用户自己写/录规则」的落点：规则就是普通 JSON，以后用户录完就存成这样。
+
+const BUILTIN_RULES = {
+  '淘宝比价': {
+    name: '淘宝比价',
+    params: ['关键词'],
+    steps: [
+      { action: 'launch', pkg: 'com.taobao.taobao' },
+      { action: 'waitText', text: '搜索', timeout: 12000 },
+      { action: 'tapText', text: '搜索' },
+      { action: 'waitMs', ms: 1200 },
+      { action: 'input', text: '{关键词}' },
+      { action: 'waitMs', ms: 1000 },
+      { action: 'tapText', text: '搜索' },
+      { action: 'waitMs', ms: 3500 },
+      { action: 'collectPrices' },
+      { action: 'release' },
+    ],
+  },
+  '京东比价': {
+    name: '京东比价',
+    params: ['关键词'],
+    steps: [
+      { action: 'launch', pkg: 'com.jingdong.app.mall' },
+      { action: 'waitText', text: '搜索', timeout: 12000 },
+      { action: 'tapText', text: '搜索' },
+      { action: 'waitMs', ms: 1200 },
+      { action: 'input', text: '{关键词}' },
+      { action: 'waitMs', ms: 1000 },
+      { action: 'tapText', text: '搜索' },
+      { action: 'waitMs', ms: 3500 },
+      { action: 'collectPrices' },
+      { action: 'release' },
+    ],
+  },
+  '拼多多比价': {
+    name: '拼多多比价',
+    params: ['关键词'],
+    steps: [
+      { action: 'launch', pkg: 'com.xunmeng.pinduoduo' },
+      { action: 'waitText', text: '搜索', timeout: 12000 },
+      { action: 'tapText', text: '搜索' },
+      { action: 'waitMs', ms: 1200 },
+      { action: 'input', text: '{关键词}' },
+      { action: 'waitMs', ms: 1000 },
+      { action: 'tapText', text: '搜索' },
+      { action: 'waitMs', ms: 3500 },
+      { action: 'collectPrices' },
+      { action: 'release' },
+    ],
+  },
+};
+
+function fillParams(text, params) {
+  return text.replace(/\{(\w+)\}/g, (_, k) => (params[k] ?? ''));
+}
+
+/** 执行一条规则。返回 true=跑完；false=某步失败（错误已打 stderr）。 */
+async function runRule(rule, params) {
+  let priceResult = null;
+  for (const st of rule.steps) {
+    const a = st.action;
+    if (a === 'launch') {
+      await call(key, 'POST', '/launch', { pkg: st.pkg });
+    } else if (a === 'waitText') {
+      const q = fillParams(st.text, params);
+      const ms = st.timeout || 8000;
+      const r = await call(key, 'GET', `/wait-text?q=${encodeURIComponent(q)}&timeout=${ms}`);
+      if (r.found !== true) {
+        console.error(`✗ 等了 ${ms}ms 没等到「${q}」（步骤 waitText）。可能 App 没加载出来或有弹窗。`);
+        return false;
+      }
+    } else if (a === 'tapText') {
+      const q = fillParams(st.text, params);
+      const r = await call(key, 'GET', `/find-text?q=${encodeURIComponent(q)}`);
+      if (!r.count) {
+        console.error(`✗ 没 OCR 到「${q}」（步骤 tapText）。可能界面还没加载，或这是个纯图标按钮。`);
+        return false;
+      }
+      const line = r.lines[0];
+      await call(key, 'POST', '/tap', { x: line.cx, y: line.cy });
+      await sleep(600);
+    } else if (a === 'input') {
+      await call(key, 'POST', '/input', { text: fillParams(st.text, params) });
+    } else if (a === 'tap') {
+      await call(key, 'POST', '/tap', { x: st.x, y: st.y });
+    } else if (a === 'swipe') {
+      await call(key, 'POST', '/swipe', {
+        x1: st.x1, y1: st.y1, x2: st.x2, y2: st.y2, ms: st.ms || 300,
+      });
+    } else if (a === 'waitMs') {
+      await sleep(st.ms || 1000);
+    } else if (a === 'key') {
+      await call(key, 'GET', `/key?action=${encodeURIComponent(st.key)}`);
+    } else if (a === 'collectPrices') {
+      const r = await call(key, 'GET', '/ocr');
+      const re = /[¥￥]\s*(\d+(?:\.\d+)?)/;
+      const items = [];
+      for (const l of (r.lines || [])) {
+        const m = l.text.match(re);
+        if (m) items.push({ price: parseFloat(m[1]), text: l.text.slice(0, 44) });
+      }
+      items.sort((x, y) => x.price - y.price);
+      const uniq = [];
+      for (const it of items) {
+        if (!uniq.some((u) => Math.abs(u.price - it.price) < 0.01)) uniq.push(it);
+      }
+      priceResult = {
+        count: uniq.length,
+        lowest: uniq[0] || null,
+        prices: uniq.slice(0, 12).map((i) => ({ price: i.price, text: i.text })),
+      };
+    } else if (a === 'release') {
+      await call(key, 'GET', '/release');
+    } else {
+      console.error(`✗ 不认识的步骤动作「${a}」。`);
+      return false;
+    }
+  }
+  if (priceResult) {
+    console.log(JSON.stringify(priceResult, null, 2));
+    if (!priceResult.count) {
+      console.error('✗ 结果页没 OCR 到带 ¥/￥ 的价格（可能关键词没输进去，或结果没加载出来）。');
+      return false;
+    }
+  }
+  return true;
+}
+
 // ── HTTP ──────────────────────────────────────────────────────────────
 function req(key, method, pathAndQuery, body) {
   return new Promise((resolve, reject) => {
@@ -300,74 +432,38 @@ switch (cmd) {
     break;
   }
 
+  case 'run': {
+    // 执行一条规则（内置或以后用户录的）。参数：位置参数按规则 params 顺序填，
+    // 或 key=value 显式填。
+    const name = args[0];
+    if (!name) die('用法：phone-agent.mjs run <规则名> [参数=值 ...]');
+    const rule = BUILTIN_RULES[name];
+    if (!rule) die(`不认识的规则「${name}」。内置：${Object.keys(BUILTIN_RULES).join(' / ')}`);
+    const params = {};
+    let pi = 0;
+    for (const a of args.slice(1)) {
+      const i = a.indexOf('=');
+      if (i > 0) params[a.slice(0, i)] = a.slice(i + 1);
+      else { const k = rule.params[pi++]; if (k) params[k] = a; }
+    }
+    const ok = await runRule(rule, params);
+    if (!ok) process.exit(1);
+    break;
+  }
+
   case 'price': {
-    // ── 快速比价（固定规则，不用 LLM 逐步决策）────────────────────────
-    // 对标 aladdin 的 getMobileSearchRule：预定义「搜索比价」的固定步骤，
-    // 每步 OCR 定位 + 直接执行，秒级跑完。比 Agent 逐步「截图→思考→点」快一个量级。
+    // 快速比价 = 执行「平台+比价」这条内置规则（固定脚本，秒级，不走 LLM）。
     const keyword = args[0];
     if (!keyword) die('用法：phone-agent.mjs price <关键词> [淘宝|京东|拼多多]');
     const platform = args[1] || '淘宝';
-    const PKG = {
-      '淘宝': 'com.taobao.taobao',
-      '京东': 'com.jingdong.app.mall',
-      '拼多多': 'com.xunmeng.pinduoduo',
-    };
-    const pkg = PKG[platform];
-    if (!pkg) die(`不认识的平台「${platform}」，支持：${Object.keys(PKG).join('/')}`);
-
-    // 1) 拉平台进虚拟屏（没建屏会懒建）
-    await call(key, 'POST', '/launch', { pkg });
-    await sleep(6500);
-
-    // 2) OCR 找搜索框 → 点
-    let r = await call(key, 'GET', `/find-text?q=${encodeURIComponent('搜索')}`);
-    if (!r.count) {
-      console.error(`✗ ${platform} 首页没 OCR 到「搜索」框（可能还没加载完，或页面有弹窗）。`);
-      console.error('  先跑 `node phone-agent.mjs launch ' + platform + '` + `shot` 看看首页长啥样。');
-      process.exit(1);
-    }
-    const box = r.lines[0];
-    await call(key, 'POST', '/tap', { x: box.cx, y: box.cy });
-    await sleep(1500);
-
-    // 3) 输入关键词（中文可能敲不进，后面回读校验）
-    await call(key, 'POST', '/input', { text: keyword });
-    await sleep(1200);
-
-    // 4) 点「搜索」按钮（键盘或页面上）
-    r = await call(key, 'GET', `/find-text?q=${encodeURIComponent('搜索')}`);
-    if (r.count) {
-      await call(key, 'POST', '/tap', { x: r.lines[0].cx, y: r.lines[0].cy });
-    }
-    await sleep(3500);
-
-    // 5) OCR 抓价格
-    r = await call(key, 'GET', '/ocr');
-    const re = /[¥￥]\s*(\d+(?:\.\d+)?)/;
-    const items = [];
-    for (const l of (r.lines || [])) {
-      const m = l.text.match(re);
-      if (m) items.push({ price: parseFloat(m[1]), text: l.text.slice(0, 44) });
-    }
-    items.sort((a, b) => a.price - b.price);
-    const uniq = [];
-    for (const it of items) {
-      if (!uniq.some((u) => Math.abs(u.price - it.price) < 0.01)) uniq.push(it);
-    }
-    console.log(JSON.stringify({
-      platform, keyword,
-      count: uniq.length,
-      lowest: uniq[0] || null,
-      prices: uniq.slice(0, 12).map((i) => ({ price: i.price, text: i.text })),
-    }, null, 2));
-    if (!uniq.length) {
-      console.error('✗ 结果页没 OCR 到带 ¥/￥ 的价格（可能关键词没输进去，或结果没加载出来）。');
-      process.exit(1);
-    }
-    await call(key, 'GET', '/release');
+    const rule = BUILTIN_RULES[platform + '比价'];
+    if (!rule) die(`不认识的平台「${platform}」，支持：淘宝 / 京东 / 拼多多`);
+    console.error(`（执行内置规则：${rule.name}，关键词「${keyword}」）`);
+    const ok = await runRule(rule, { 关键词: keyword });
+    if (!ok) process.exit(1);
     break;
   }
 
   default:
-    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / price`);
+    die(`不认识的子命令 "${cmd}"。支持：status / shot / create / release / ocr / findtext / tap / swipe / key / input / waittext / apps / launch / run / price`);
 }
