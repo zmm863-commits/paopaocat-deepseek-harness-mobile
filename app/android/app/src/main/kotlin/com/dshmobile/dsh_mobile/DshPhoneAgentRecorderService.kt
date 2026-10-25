@@ -63,11 +63,16 @@ class DshPhoneAgentRecorderService : AccessibilityService() {
 
         /** 无障碍服务是否已在系统里开启。 */
         fun isEnabled(context: Context): Boolean {
-            val expected = ComponentName(
-                context, DshPhoneAgentRecorderService::class.java).flattenToString()
+            val cn = ComponentName(context, DshPhoneAgentRecorderService::class.java)
+            // 系统存的是「短格式」：com.dshmobile.dsh_mobile/.DshPhoneAgentRecorderService
+            //（`/.` 后是相对短类名）。之前用 flattenToString()（长格式）对不上，
+            // 所以服务明明开了 App 还判「未开启」。两种格式都认。
+            val short = cn.flattenToShortString()
+            val long = cn.flattenToString()
             val enabled = Settings.Secure.getString(
                 context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            return enabled?.split(':')?.contains(expected) == true
+                ?: return false
+            return enabled.split(':').any { it == short || it == long }
         }
     }
 
