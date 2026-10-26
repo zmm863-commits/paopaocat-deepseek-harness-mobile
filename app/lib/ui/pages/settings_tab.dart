@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../widgets/dsh_panel.dart';
+import '../widgets/computer_access_panel.dart';
 import '../widgets/wechat_qr_block.dart';
 
 
@@ -395,6 +396,17 @@ class _SettingsTabState extends State<SettingsTab> {
                     title: context.tr('泡泡猫助手'),
                     child: _card(
                         child: PhoneAgentSettingsSection(settings: widget.appSettings)),
+                  ),
+                  const SizedBox(height: 10),
+                  // 「电脑访问」：把手机上的 DSH 网页服务绑到某张网卡，电脑用浏览器
+                  // 直接打开（2026-10-26 用户提出「手机当移动电脑」）。
+                  //
+                  // 为什么放这里而不是模型设置页：模型设置页在这个 App 里只有
+                  // "缺 Key 时的提示条"才能进到，正常路径根本找不到 —— 功能再好
+                  // 也是隐形的。放「设置 → 应用」里一眼就能看到。
+                  DshCollapsibleSection(
+                    title: context.tr('电脑访问'),
+                    child: _card(child: ComputerAccessPanel(runtime: widget.runtime)),
                   ),
                   const SizedBox(height: 10),
                   // 用户要求：原来的「关于」改名「文件地址」（它本来列的就是各种路径），

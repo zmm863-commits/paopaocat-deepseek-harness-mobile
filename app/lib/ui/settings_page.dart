@@ -1,13 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../data/configured_models.dart';
-import '../local/bot_server.dart';
 import '../local/dsh_runtime.dart';
-import '../local/lan_endpoints.dart';
 
 import '../i18n/dsh_i18n.dart';
 import 'widgets/common.dart';
@@ -42,24 +39,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _busy = false;
   String? _message;
 
-  /// ── 电脑访问 ──────────────────────────────────────────────
-  ///
-  /// 目标场景（2026-10-26 用户提出）：手机就是"移动电脑"，一根线连到任意一台
-  /// 电脑，电脑不装任何客户端，浏览器打开一个网址就能开发 —— 资料和运行时都在
-  /// 手机上。
-  ///
-  /// 这里只做「把 web 服务绑到某张网卡」这一件事。真正的线要这样通：
-  ///   手机打开「USB 网络共享」（RNDIS）→ 电脑自动多出一张网卡 →
-  ///   手机侧地址通常固定（如 192.168.42.129）→ 浏览器打开下面这个 URL。
-  /// 普通 App 开不了 USB 网络共享（要系统权限），所以那一步仍然在系统设置里。
-  List<LanEndpoint> _lan = const [];
-  String? _lanSelected;
-  String? _lanUrl;
-  String? _lanError;
-  String? _lanNote;
-  bool _lanBusy = false;
-  bool _lanOn = false;
-
   /// 读已保存的设置失败的原因（null = 正常）。失败时页面**必须**把它显示出来。
   String? _loadError;
 
@@ -67,7 +46,6 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _load();
-    _loadLan();
   }
 
   @override
@@ -112,77 +90,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// 刷新候选网卡地址（USB 共享 / Wi-Fi），并把「已经在跑的服务」状态带回来。
-  Future<void> _loadLan() async {
-    final eps = await LanEndpoints.list();
-    if (!mounted) return;
-    setState(() {
-      _lan = eps;
-      final keep =
-          _lanSelected != null && eps.any((e) => e.address == _lanSelected);
-      if (!keep) _lanSelected = eps.isEmpty ? null : eps.first.address;
-      // 服务可能是在 Bot 页起的：这里要把它真实的绑定状态显示出来，
-      // 否则用户会看到"开关是关的，但电脑其实连得上"。
-      final cur = BotServer.current;
-      if (cur != null && cur.listenHost != null) {
-        _lanOn = true;
-        _lanUrl = cur.url;
-      }
-    });
-  }
-
-  /// 开启 / 关闭对外监听。
-  ///
-  /// ⚠️ 会**重启** web 服务：`--host` 是启动参数，热改不了。重启期间 Bot 页的
-  /// WebView 会断开重连（[BotServer.live] 会通知它新地址）。
-  Future<void> _applyLan({required bool on}) async {
-    if (_lanBusy) return;
-    setState(() {
-      _lanBusy = true;
-      _lanError = null;
-    });
-    try {
-      if (on) {
-        final host = _lanSelected;
-        if (host == null) {
-          throw StateError(context.tr(
-              '没找到可用网卡地址。先在系统里打开「USB 网络共享」，再点刷新。'));
-        }
-        final server = await BotServer.ensureStarted(
-          runtime: widget.runtime,
-          listenHost: host,
-        );
-        if (!mounted) return;
-        setState(() {
-          _lanUrl = server.url;
-          _lanOn = server.listenHost != null;
-          if (!_lanOn) {
-            _lanError = context.tr('这个运行时版本不支持对外监听，已退回本机模式。');
-          }
-        });
-      } else {
-        if (BotServer.current == null) {
-          if (!mounted) return;
-          setState(() {
-            _lanOn = false;
-            _lanUrl = null;
-          });
-          return;
-        }
-        await BotServer.ensureStarted(runtime: widget.runtime, listenHost: null);
-        if (!mounted) return;
-        setState(() {
-          _lanOn = false;
-          _lanUrl = null;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _lanError = '$e');
-    } finally {
-      if (mounted) setState(() => _lanBusy = false);
-    }
-  }
-
   Future<void> _save() async {
     if (_busy) return;
     setState(() {
@@ -221,147 +128,6 @@ class _SettingsPageState extends State<SettingsPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  /// 「电脑访问」区块：选一张网卡 → 把 web 服务绑上去 → 显示可直接打开的网址。
-  Widget _lanSection(ColorScheme scheme) {
-    final hasLan = _lan.isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(DshMetrics.radius(8)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.computer_outlined, size: 18, color: scheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  context.tr('电脑访问（一根线 / 同一网络）'),
-                  style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-              ),
-              if (_lanBusy)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Switch(
-                  value: _lanOn,
-                  onChanged: (v) => _applyLan(on: v),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            context.tr(
-                '把网页服务绑到手机的一张网卡上，电脑用浏览器打开下面的网址就能开发；资料和模型都在手机上，电脑只需要浏览器。'),
-            style: TextStyle(fontSize: 11, color: scheme.outline, height: 1.5),
-          ),
-          const SizedBox(height: 10),
-          if (!hasLan)
-            Text(
-              context.tr('没找到可用网卡。先在系统里打开「USB 网络共享」，再点刷新。'),
-              style:
-                  TextStyle(fontSize: 11.5, color: scheme.error, height: 1.5),
-            )
-          else
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: scheme.surface,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: scheme.outlineVariant, width: 0.8),
-              ),
-              child: DropdownButton<String>(
-                value: _lanSelected,
-                isExpanded: true,
-                underline: const SizedBox.shrink(),
-                style: TextStyle(fontSize: 12, color: scheme.onSurface),
-                items: <DropdownMenuItem<String>>[
-                  for (final e in _lan)
-                    DropdownMenuItem<String>(
-                      value: e.address,
-                      child: Text(e.display,
-                          style: const TextStyle(fontSize: 12)),
-                    ),
-                ],
-                // 已经绑着的时候不让改：改要重启服务，先关掉开关更不容易懵。
-                onChanged: _lanOn
-                    ? null
-                    : (v) => setState(() {
-                          _lanSelected = v;
-                          _lanNote = null;
-                        }),
-              ),
-            ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              TextButton.icon(
-                onPressed: _lanBusy ? null : _loadLan,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(context.tr('刷新网卡'),
-                    style: const TextStyle(fontSize: 12)),
-              ),
-              const Spacer(),
-              if (_lanOn && _lanUrl != null)
-                TextButton.icon(
-                  onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: _lanUrl!));
-                    if (!mounted) return;
-                    setState(() => _lanNote = context.tr('网址已复制'));
-                  },
-                  icon: const Icon(Icons.copy_all_outlined, size: 16),
-                  label: Text(context.tr('复制网址'),
-                      style: const TextStyle(fontSize: 12)),
-                ),
-            ],
-          ),
-          if (_lanOn && _lanUrl != null) ...[
-            const SizedBox(height: 4),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: scheme.surface,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: SelectableText(
-                _lanUrl!,
-                style: const TextStyle(
-                    fontSize: 11.5, height: 1.5, fontFamily: 'monospace'),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              context.tr(
-                  '这个网址带身份凭证（token），别发给别人。电脑和手机要在同一张网上（USB 共享或同一 Wi-Fi）。'),
-              style:
-                  TextStyle(fontSize: 10.5, color: scheme.outline, height: 1.5),
-            ),
-          ],
-          if (_lanNote != null) ...[
-            const SizedBox(height: 6),
-            Text(_lanNote!,
-                style: TextStyle(fontSize: 11, color: scheme.outline)),
-          ],
-          if (_lanError != null) ...[
-            const SizedBox(height: 6),
-            Text(_lanError!,
-                style:
-                    TextStyle(fontSize: 11, color: scheme.error, height: 1.5)),
-          ],
-        ],
-      ),
-    );
   }
 
   @override
@@ -476,8 +242,6 @@ class _SettingsPageState extends State<SettingsPage> {
             Text(_message!,
                 style: TextStyle(fontSize: 12, color: scheme.outline)),
           ],
-          const SizedBox(height: 24),
-          _lanSection(scheme),
           const SizedBox(height: 24),
           Text(
             context.tr(
