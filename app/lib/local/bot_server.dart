@@ -39,16 +39,33 @@ class BotServer {
     required this.process,
     required this.url,
     required this.port,
+    this.listenHost,
   });
 
   final Process process;
 
   /// 带 token 的地址：`http://127.0.0.1:<port>/?token=…`。WebView 打开它。
+  ///
+  /// 开了「电脑访问」之后，这里会是 `http://<网卡地址>:<port>/?token=…`（DSH 按
+  /// `--public-url` 打印）。手机本机访问自己的对外地址同样可用，所以 WebView 不用
+  /// 为了绑定地址的改变而单独区分。
   final String url;
 
   final int port;
 
+  /// 这次服务绑定的对外地址；null = 只绑回环。
+  final String? listenHost;
+
   static BotServer? _current;
+
+  /// 当前期望的对外绑定地址（null = 只绑回环）。
+  ///
+  /// 存成静态而不是只放在实例上：`ensureStarted` 被多个页面调用，重启判定要看
+  /// 「这次请求的 host」和「上次启动用的 host」是否一致，实例可能已经没了。
+  static String? _listenHost;
+
+  /// 「调用方没指定绑定地址」的哨兵值（区别于「明确要求退回回环」）。
+  static const Object _keepListenHost = Object();
 
   /// Bot 服务地址变化通知。
   ///
@@ -211,7 +228,7 @@ class BotServer {
     if (running == null || !running.alive) return;
     try {
       await running.stop();
-      await ensureStarted(runtime: runtime, onLog: onLog);
+      await ensureStarted(runtime: runtime, onLog: onLog, listenHost: _listenHost);
       DiagnosticsLog.add('dsh-bot', '模型配置已变更 → Bot 服务已重启（带上新的 overlay）');
     } catch (e) {
       DiagnosticsLog.add('dsh-bot', '模型配置变更后重启 Bot 服务失败：$e');
@@ -268,13 +285,33 @@ class BotServer {
   /// 起服务（已起着就直接复用）。
   ///
   /// [onLog] 收启动过程的原始行，供调用方显示"卡在哪一步"。
+  ///
+  /// [listenHost] 传一个本机网卡地址（`LanEndpoints` 里的 `address`）就绑到它、
+  /// 并对该网络开放；**明确传 null** 表示退回只绑回环；**不传**表示沿用当前设置。
+  /// **换地址必须重启进程** —— DSH 的 `--host` 是启动参数，改不了热绑定。
+  ///
+  /// 为什么用哨兵而不是 `String? listenHost = null`：Bot 页调用时不带这个参数，
+  /// 如果默认值就是 null，那么用户刚在设置里开了「电脑访问」，一进 Bot 页就会被
+  /// 静默重起回回环 —— 表现是「电脑突然连不上了，还不知道为什么」。
   static Future<BotServer> ensureStarted({
     required DshRuntime runtime,
     void Function(String line)? onLog,
+    Object? listenHost = _keepListenHost,
   }) async {
+    final wanted = identical(listenHost, _keepListenHost)
+        ? _listenHost
+        : _normalizeHost(listenHost is String ? listenHost : null);
     final running = _current;
-    if (running != null && running.alive) return running;
-    if (running != null) await running.stop();
+    if (running != null && running.alive) {
+      if (running.listenHost == wanted) return running;
+      // 绑定地址变了（用户开了/关了「电脑访问」）→ 只能重启。
+      DiagnosticsLog.add('dsh-bot',
+          '绑定地址变化（${running.listenHost ?? '回环'} → ${wanted ?? '回环'}）→ 重启 web 服务');
+      await running.stop();
+    } else if (running != null) {
+      await running.stop();
+    }
+    _listenHost = wanted;
 
     // 运行时的 Android 兼容补丁：附件上传的 durable 提升会 fsync 到 /data/user/0
     // （App 沙箱内不可 open）→ 上传必失败。幂等，每次启动都过一遍。
@@ -303,6 +340,10 @@ class BotServer {
     await _ensureOverlay(runtime);
     // 完全权限单独一份 patch、**永远传**（即使 overlay 因为任何原因仍不存在）。
     final fullAccessPatch = await _ensureFullAccessPatch(runtime);
+
+    // 这次要绑哪个地址（null = 只绑回环）。读静态值而不是参数：降级重试时会把
+    // `_listenHost` 清空，proc 起来之前这里必须拿到的是**最终**决定。
+    final host = _listenHost;
 
     final args = <String>[
       // ⚠️ 必须在最前：见类注释「硬约束 1」。
@@ -335,9 +376,29 @@ class BotServer {
       //   改成"这一次 App 生命周期内用同一个端口"：服务重启后端口不变，
       //   ds-bot 自己会重连，页面状态（打开的设置页、输入框里的字）都还在。
       '--port', '$_pinnedPort',
+      // ── 「电脑访问」：绑到某一张具体网卡 ────────────────────────────────
+      //
+      // 为什么必须给具体地址：`dsh --profile web --help` 明确写着 wildcard 地址
+      // 会被拒绝，`--host` 只能是某个本地接口的 IPv4/IPv6 字面量。
+      //
+      // --public-url：让 DSH 在**打印/打开/运行时上下文**里都用对外地址，
+      //   这样 App 从 stdout 解析到的就是 `http://192.168.42.129:3080/?token=…`，
+      //   直接能拿去显示/生成二维码，不用自己拼。
+      // --trusted-host：浏览器的 `/api` 信任围栏（fence）要认这个 authority。
+      //   少了它，电脑上首页能打开、接口全被拒 —— 表现为「界面空壳」。
+      //
+      // ⚠️ 这三项都是 web app 的参数，必须留在 `--no-open` **之后**：`dsh` 的
+      //    launcher 一旦遇到自己不认识的 token，后面全部当 profile 内部参数
+      //   （踩过，见上面 --patch 那段 2026-10-19 的记录）。
+      if (host != null) ...[
+        '--host', host,
+        '--public-url', 'http://$host:$_pinnedPort/',
+        '--trusted-host', '$host:$_pinnedPort',
+      ],
     ];
 
-    onLog?.call('[dsh-bot] 启动：--profile $profileName --no-open --port 0');
+    onLog?.call('[dsh-bot] 启动：--profile $profileName --no-open --port $_pinnedPort'
+        '${host == null ? '' : ' --host $host'}');
     DiagnosticsLog.add('dsh-bot', '启动 web 服务：--profile $profileName');
 
     // 留痕：**这次到底挂了几份 patch**。排查「怎么又要我批准」时，这一行是第一现场
@@ -441,22 +502,58 @@ class BotServer {
 
     // 首次启动要把 dsh 的插件树拉起来，冷启实测 10~25 秒；给足 90 秒，
     // 超时如实把两个流最后几行抛出去（用户才知道卡在哪）。
-    final url = await urlCompleter.future.timeout(
-      const Duration(seconds: 90),
-      onTimeout: () => throw StateError(
-          'Bot 服务 90 秒内没有报告地址${exited ? '' : '（进程还在跑）'}：'
-          '${_tail(errTail, outTail)}'),
-    );
+    late final Uri url;
+    try {
+      url = await urlCompleter.future.timeout(
+        const Duration(seconds: 90),
+        onTimeout: () => throw StateError(
+            'Bot 服务 90 秒内没有报告地址${exited ? '' : '（进程还在跑）'}：'
+            '${_tail(errTail, outTail)}'),
+      );
+    } catch (e) {
+      // 随包运行时可能比本地打包的那份老（手机上是用户装的那个 APK 自带的 zip），
+      // 老版本 web app 不认 `--host` / `--public-url` / `--trusted-host` →
+      // dsh 以 `error: unknown option '--host'` 直接退出（这正是 2026-10-19
+      // `--patch` 顺序踩过的坑）。**不能把整个 Bot 页带崩**：退回只绑回环，
+      // 本机照常用，只在日志里说清楚「电脑访问没开成」。
+      final msg = '$e';
+      if (host != null && msg.contains('unknown option')) {
+        try {
+          process.kill(ProcessSignal.sigkill);
+        } catch (_) {}
+        _listenHost = null;
+        DiagnosticsLog.add('dsh-bot',
+            '运行时不吃 --host/--trusted-host（unknown option）→ 已退回只绑回环，电脑访问不可用：$msg');
+        onLog?.call('[dsh-bot] 运行时太老，不支持对外监听 → 已退回本机模式');
+        return ensureStarted(runtime: runtime, onLog: onLog, listenHost: null);
+      }
+      rethrow;
+    }
 
     final server = BotServer._(
       process: process,
       url: url.toString(),
       port: url.port,
+      listenHost: host,
     );
     _current = server;
     live.value = server;
-    DiagnosticsLog.add('dsh-bot', 'Bot 服务已就绪：端口 ${server.port}');
+    DiagnosticsLog.add('dsh-bot',
+        'Bot 服务已就绪：端口 ${server.port}，绑定 ${host ?? '回环（仅本机）'}');
     return server;
+  }
+
+  /// 把「用户/界面传进来的 host」规整成绑定决定：空串、回环、`0.0.0.0` 一律当"不对外"。
+  ///
+  /// 为什么连 `0.0.0.0` 也要拦：DSH 的 `--host` **拒绝 wildcard**，传了会直接退出
+  /// （`--help` 里写明「wildcard addresses are rejected」）。与其让它报错，不如老老实实
+  /// 退回回环，界面再提示「请选择一张网卡」。
+  static String? _normalizeHost(String? raw) {
+    final h = (raw ?? '').trim();
+    if (h.isEmpty) return null;
+    if (h == '127.0.0.1' || h == 'localhost' || h == '::1') return null;
+    if (h == '0.0.0.0' || h == '::' || h == '*') return null;
+    return h;
   }
 
   /// 调 Bot 的 HTTP API（`POST /api/bot`）。
