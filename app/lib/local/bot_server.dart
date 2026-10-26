@@ -46,9 +46,10 @@ class BotServer {
 
   /// 带 token 的地址：`http://127.0.0.1:<port>/?token=…`。WebView 打开它。
   ///
-  /// 开了「电脑访问」之后，这里会是 `http://<网卡地址>:<port>/?token=…`（DSH 按
-  /// `--public-url` 打印）。手机本机访问自己的对外地址同样可用，所以 WebView 不用
-  /// 为了绑定地址的改变而单独区分。
+  /// 开了「电脑访问」之后，这里会是 `http://<网卡地址>:<port>/?token=…` ——
+  /// **由 App 自己把 host 换掉**（见 [_withHost]），不是 DSH 打印的：
+  /// 随包运行时 0.1.7-rc.2 没有 `--public-url`，它只会打印回环地址。
+  /// 手机本机访问自己的对外地址同样可用，所以 WebView 不用为绑定地址单独区分。
   final String url;
 
   final int port;
@@ -381,18 +382,23 @@ class BotServer {
       // 为什么必须给具体地址：`dsh --profile web --help` 明确写着 wildcard 地址
       // 会被拒绝，`--host` 只能是某个本地接口的 IPv4/IPv6 字面量。
       //
-      // --public-url：让 DSH 在**打印/打开/运行时上下文**里都用对外地址，
-      //   这样 App 从 stdout 解析到的就是 `http://192.168.42.129:3080/?token=…`，
-      //   直接能拿去显示/生成二维码，不用自己拼。
       // --trusted-host：浏览器的 `/api` 信任围栏（fence）要认这个 authority。
       //   少了它，电脑上首页能打开、接口全被拒 —— 表现为「界面空壳」。
       //
-      // ⚠️ 这三项都是 web app 的参数，必须留在 `--no-open` **之后**：`dsh` 的
+      // ⚠️⚠️ **绝对不要在这里加 `--public-url`**（2026-10-26 真机踩的坑）：
+      //   随包运行时是 `dsh-web-app 0.1.7-rc.2`，它的选项白名单只有
+      //   `--host` / `--port` / `--no-open` / `--trusted-host` 四个，
+      //   `--public-url` 是 0.2.x 才加的。多传一个它不认识的选项 → 进程
+      //   直接 `error: unknown option '--public-url'` 退出 → 表现就是
+      //   「打开开关、服务起了一下、又退回 127.0.0.1」，而且界面上只有一句
+      //   「不支持对外监听」，根本看不出是哪一个参数惹的祸。
+      //   对外地址改为拿到 token 之后自己拼（见 [_withHost]）。
+      //
+      // ⚠️ 这些是 web app 的参数，必须留在 `--no-open` **之后**：`dsh` 的
       //    launcher 一旦遇到自己不认识的 token，后面全部当 profile 内部参数
       //   （踩过，见上面 --patch 那段 2026-10-19 的记录）。
       if (host != null) ...[
         '--host', host,
-        '--public-url', 'http://$host:$_pinnedPort/',
         '--trusted-host', '$host:$_pinnedPort',
       ],
     ];
@@ -530,9 +536,14 @@ class BotServer {
       rethrow;
     }
 
+    // 绑了网卡时，stdout 那行打印的仍然是 `127.0.0.1`（0.1.7-rc.2 没有
+    // --public-url 能改它）→ 自己把 host 换掉，token 原样保留。
+    // 不换的话交给用户的地址在电脑上指向**电脑自己**，永远打不开。
+    final exposedUrl = host == null ? url : _withHost(url, host);
+
     final server = BotServer._(
       process: process,
-      url: url.toString(),
+      url: exposedUrl.toString(),
       port: url.port,
       listenHost: host,
     );
@@ -554,6 +565,18 @@ class BotServer {
     if (h == '127.0.0.1' || h == 'localhost' || h == '::1') return null;
     if (h == '0.0.0.0' || h == '::' || h == '*') return null;
     return h;
+  }
+
+  /// 把 DSH 打印的回环地址换成对外地址，token 原样保留。
+  ///
+  /// 为什么必须自己换（2026-10-26 真机）：随包运行时 `dsh-web-app 0.1.7-rc.2`
+  /// **不认识 `--public-url`**（那是 0.2.x 的选项），所以即使成功绑了 `--host`，
+  /// 它在 stdout 里打印的仍然是 `http://127.0.0.1:<port>/?token=…`。
+  /// 把这个地址给用户 = 在电脑上打开电脑自己的回环，永远连不上。
+  static Uri _withHost(Uri url, String host) {
+    final token = url.queryParameters['token'];
+    final q = (token == null || token.isEmpty) ? '' : '?token=$token';
+    return Uri.parse('http://$host:${url.port}/$q');
   }
 
   /// 调 Bot 的 HTTP API（`POST /api/bot`）。

@@ -5,6 +5,7 @@ import '../../i18n/dsh_i18n.dart';
 import '../../local/bot_server.dart';
 import '../../local/dsh_runtime.dart';
 import '../../local/lan_endpoints.dart';
+import '../../local/port_forwarder.dart';
 import '../theme/dsh_tokens.dart';
 
 /// 「电脑访问」面板：把手机上的 DSH 网页服务绑到某张网卡，让电脑用浏览器直接打开。
@@ -56,12 +57,17 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
       _lan = eps;
       final keep = _selected != null && eps.any((e) => e.address == _selected);
       if (!keep) _selected = eps.isEmpty ? null : eps.first.address;
-      // 服务可能已经在别处起来了（例如进过 Bot 页）：把它真实的绑定状态显示出来，
+      // 转发器可能已经在跑（离开页面再进来）：把真实状态显示出来，
       // 否则用户会看到"开关是关的，但电脑其实连得上"。
-      final cur = BotServer.current;
-      if (cur != null && cur.listenHost != null) {
+      if (PortForwarder.instance.running) {
         _on = true;
-        _url = cur.url;
+        final cur = BotServer.current;
+        final fwd = PortForwarder.instance.port;
+        if (cur != null && fwd != null && _selected != null) {
+          final token = Uri.parse(cur.url).queryParameters['token'] ?? '';
+          _url = 'http://$_selected:$fwd/'
+              '${token.isEmpty ? '' : '?token=$token'}';
+        }
       }
     });
   }
@@ -80,29 +86,25 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
           throw StateError(context.tr(
               '没找到可用网卡。先在系统里打开「USB 网络共享」，或连上同一个 Wi-Fi，再点刷新。'));
         }
-        final server = await BotServer.ensureStarted(
-          runtime: widget.runtime,
-          listenHost: host,
-        );
+        // ⚠️ 关键：**不要让 DSH 绑网卡**（2026-10-26 真机结论）。
+        //    `dsh-web-app 0.1.7-rc.2` 一旦绑非回环地址，它自己的内部插件
+        //    （file-upload / ui-deliverables / sessionController）就再也连不上
+        //    "自己"，整个 profile 激活失败、进程退出码 1。
+        //    所以 DSH 继续绑 127.0.0.1，App 在对外端口上开一个转发。
+        final server = await BotServer.ensureStarted(runtime: widget.runtime);
+        if (!mounted) return;
+        final fwdPort =
+            await PortForwarder.instance.start(targetPort: server.port);
+        final token = Uri.parse(server.url).queryParameters['token'] ?? '';
+        final url =
+            'http://$host:$fwdPort/${token.isEmpty ? '' : '?token=$token'}';
         if (!mounted) return;
         setState(() {
-          _url = server.url;
-          _on = server.listenHost != null;
-          if (!_on) {
-            _error = context.tr(
-                '这个运行时版本不支持对外监听（不认识 --host），已退回本机模式。');
-          }
+          _url = url;
+          _on = true;
         });
       } else {
-        if (BotServer.current == null) {
-          if (!mounted) return;
-          setState(() {
-            _on = false;
-            _url = null;
-          });
-          return;
-        }
-        await BotServer.ensureStarted(runtime: widget.runtime, listenHost: null);
+        await PortForwarder.instance.stop();
         if (!mounted) return;
         setState(() {
           _on = false;
