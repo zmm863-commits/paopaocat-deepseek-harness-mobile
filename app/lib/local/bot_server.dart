@@ -457,7 +457,12 @@ class BotServer {
       args,
       environment: env,
       includeParentEnvironment: true,
-      workingDirectory: runtime.nodeHome,
+      // ⚠️ 工作目录必须和 App 主界面**同一个**（2026-10-27 定位到的根因）：
+      //    DSH 的会话是**按 cwd 分组**存在 `<DSH_HOME>/sessions/--<路径转义>--/` 下的。
+      //    以前这里写死 nodeHome，于是 bottest 读写的是
+      //    `sessions/--<dshhome>--`，而 App 对话写在 `sessions/--<workspace>--`
+      //    —— 两套目录互不相干，所以浏览器里永远是「暂无会话」。
+      workingDirectory: _sessionWorkingDir(runtime),
     );
 
     final urlCompleter = Completer<Uri>();
@@ -565,6 +570,42 @@ class BotServer {
     if (h == '127.0.0.1' || h == 'localhost' || h == '::1') return null;
     if (h == '0.0.0.0' || h == '::' || h == '*') return null;
     return h;
+  }
+
+  /// 会话应该归属的工作目录 —— **必须和 App 主界面是同一个目录**。
+  ///
+  /// 为什么（2026-10-27 用户报「网页打得开，但看不到手机上的会话和模型」）：
+  /// DSH 的会话是**按 cwd 分组**存在 `<DSH_HOME>/sessions/--<路径转义>--/` 里的。
+  /// App 主界面（ACP）启动时的 cwd 是用户选中的工作区
+  /// （默认 `${filesDir}/workspace`，自建的在 `${filesDir}/workspaces/<名字>`，
+  /// 清单在 `${filesDir}/workspaces.json`）。而这里以前用的是 `nodeHome`，
+  /// 于是 bottest 读写的是 `sessions/--<dshhome>--`，和主界面**不是同一棵目录树**
+  /// —— 表现就是网页里永远「暂无会话」。
+  ///
+  /// 目录不存在时兜底建默认工作区（DSH 不接受一个不存在的 cwd）。
+  static String _sessionWorkingDir(DshRuntime runtime) {
+    final def = '${runtime.filesDir}/workspace';
+    var path = def;
+    try {
+      final f = File('${runtime.filesDir}/workspaces.json');
+      if (f.existsSync()) {
+        final raw = jsonDecode(f.readAsStringSync());
+        if (raw is Map) {
+          final cur = raw['currentPath'];
+          if (cur is String && cur.trim().isNotEmpty) path = cur.trim();
+        }
+      }
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '读 workspaces.json 失败（回退默认工作区）：$e');
+    }
+    try {
+      final d = Directory(path);
+      if (!d.existsSync()) d.createSync(recursive: true);
+    } catch (_) {
+      path = def;
+    }
+    DiagnosticsLog.add('dsh-bot', 'Bot 服务工作目录：$path（与主界面同源）');
+    return path;
   }
 
   /// 把 DSH 打印的回环地址换成对外地址，token 原样保留。
