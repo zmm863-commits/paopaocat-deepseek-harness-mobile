@@ -144,7 +144,11 @@ $scriptMarker
     if (document.getElementById('dshm-design-entry')) return;
     var a = document.createElement('a');
     a.id = 'dshm-design-entry';
-    a.href = '/$mountName/';
+    // ⚠️ 必须带 index.html（2026-10-27 实测）：frontend-static 的 fallback
+    //    按**文件**读，`/design/` 是目录 → readFile 报 EISDIR → 404。
+    //    而 Next 产物里的资源引用全是带扩展名的具体文件（含 /design/_next/…），
+    //    所以入口指 index.html 之后，页面内部不会再产生任何"目录形式"的请求。
+    a.href = '/$mountName/index.html';
     a.target = '_blank';
     a.rel = 'noopener';
     a.title = '泡泡猫设计站';
