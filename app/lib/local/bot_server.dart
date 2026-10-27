@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 
 import '../data/atomic_file.dart';
 import '../data/configured_models.dart';
-import 'design_site.dart';
 import 'diagnostics_log.dart';
 import 'dsh_runtime.dart';
 
@@ -347,11 +346,6 @@ class BotServer {
     // 运行时的 Android 兼容补丁：附件上传的 durable 提升会 fsync 到 /data/user/0
     // （App 沙箱内不可 open）→ 上传必失败。幂等，每次启动都过一遍。
     await _patchAttachmentDurability(runtime);
-
-    // 「泡泡猫设计站」：解包进前端 dist 的 /design/，并给入口页注入悬浮按钮
-    // （只在**外部访问**时显示 —— 判据是 location.hostname 非回环）。
-    // 失败不拦启动：网页其它功能照常，只留一条诊断日志。
-    await DesignSite.publish(runtime);
 
     // 端口必须在拼 args 之前定好（重启复用同一个，见 [_pinnedPort]）。
     await _pickPort();

@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#f0f4fc">
+<link rel="icon" type="image/png" href="./img/paopaocat-logo.png">
+    <link rel="apple-touch-icon" href="./img/paopaocat-logo.png">
+    <meta name="theme-color" content="#16203F">
+    <title>泡泡猫影视工具</title>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<div class="shell" id="shell">
+
+  <!-- ══════════ 顶栏 ══════════ -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">🐾</span>
+      <div class="brand-text">
+        <h1>泡泡猫影视工具</h1>
+        <p>生图 · 生视频 · 创作</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="glass-btn" id="settingsBtn" type="button" title="API 密钥" aria-label="API 密钥">
+        <span class="key-dot" id="keyDot"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ══════════ 胶囊 Tab（可横滑）══════════ -->
+  <nav class="tabs" id="tabs" aria-label="功能切换">
+    <button class="tab active" data-panel="home" role="tab" type="button">🏠 首页</button>
+
+    <span class="tab-group">写</span>
+    <button class="tab" data-panel="ohstory" role="tab" type="button">创作台</button>
+    <button class="tab" data-panel="novel-split" role="tab" type="button">小说工具</button>
+
+    <span class="tab-group">画</span>
+    <button class="tab" data-panel="image" role="tab" type="button">生图</button>
+    <button class="tab" data-panel="cover" role="tab" type="button">封面</button>
+
+    <span class="tab-group">动</span>
+    <button class="tab" data-panel="video" role="tab" type="button">生视频</button>
+    <button class="tab" data-panel="anchor" role="tab" type="button">口播</button>
+    <button class="tab" data-panel="storyboard" role="tab" type="button">短剧</button>
+    <button class="tab" data-panel="mv" role="tab" type="button">MTV</button>
+    <button class="tab" data-panel="bgvideo" role="tab" type="button">背景视频</button>
+    <button class="tab" data-panel="slice" role="tab" type="button">剪视频</button>
+
+    <span class="tab-group">工具</span>
+    <button class="tab" data-panel="videoparse" role="tab" type="button">看懂视频</button>
+    <button class="tab" data-panel="toolbox" role="tab" type="button">多能宝箱</button>
+    <button class="tab" data-panel="canvas" role="tab" type="button">APP界面设计站</button>
+    <button class="tab" data-panel="expert" role="tab" type="button">提示词</button>
+
+    <span class="tab-group">发布</span>
+    <button class="tab" data-panel="wechat" role="tab" type="button">公众号</button>
+
+    <span class="tab-group">资料</span>
+    <button class="tab" data-panel="assets" role="tab" type="button">资料库</button>
+
+    <span class="tab-group">配置</span>
+    <button class="tab" data-panel="settings" role="tab" type="button">设置</button>
+  </nav>
+
+  <!-- ══════════ 内容区 ══════════ -->
+  <main class="content" id="content">
+
+    <!-- ────────── 首页 ────────── -->
+    <section class="panel active" data-panel="home" role="tabpanel">
+      <div class="home-hero">
+        <img class="home-logo" src="./img/paopaocat-logo.png" alt="泡泡猫">
+        <div class="home-hero-text">
+          <h1>泡泡猫影视工具</h1>
+          <p>写小说 · 画插图 · 做视频 · 拼界面 —— 一句话就能开始</p>
+        </div>
+      </div>
+
+      <div class="home-grid" id="homeGrid"></div>
+
+      <div class="home-mascot">
+        <img src="./img/paopaocat-mascot.webp" alt="泡泡猫吉祥物">
+        <div>
+          <b>密钥只存在你自己的浏览器里</b>
+          <p>服务器不保存、不收费。所有生成都用你自己填的 API Key —— 想用哪个模型由你决定。</p>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ────────── 生图 ────────── -->
+    <section class="panel" data-panel="image" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">画面描述</span></div>
+        <textarea id="imgPrompt" rows="4" placeholder="例如：赛博朋克城市夜景，雨后湿滑的街道倒映霓虹灯，电影感，高细节"></textarea>
+
+        <div class="chips" id="imgPresets">
+          <button class="chip" type="button" data-fill="电影感光影，浅景深，胶片颗粒">电影感</button>
+          <button class="chip" type="button" data-fill="二次元插画，干净线条，鲜明配色">二次元</button>
+          <button class="chip" type="button" data-fill="国风水墨，留白构图，淡雅设色">国风水墨</button>
+          <button class="chip" type="button" data-fill="等距3D渲染，柔和阴影，马卡龙配色">3D 渲染</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">参数</span></div>
+        <label class="field">
+          <span>模型</span>
+          <select id="imgModel"></select>
+        </label>
+        <div class="grid-2">
+          <label class="field">
+            <span>尺寸</span>
+            <select id="imgSize"></select>
+          </label>
+          <label class="field">
+            <span>张数</span>
+            <div class="stepper" id="imgCountStepper">
+              <button type="button" data-step="-1" aria-label="减少">−</button>
+              <output id="imgCount">1</output>
+              <button type="button" data-step="1" aria-label="增加">＋</button>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <button class="cta" id="imgGenBtn" type="button">生成图片</button>
+      <p class="hint" id="imgHint"></p>
+
+      <div class="results" id="imgResults"></div>
+    </section>
+
+    <!-- ────────── 生视频 ────────── -->
+    <section class="panel" data-panel="video" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">视频描述</span></div>
+        <textarea id="vidPrompt" rows="4" placeholder="例如：镜头缓慢推近，一只橘猫坐在窗台上看向雨中的城市，暖色灯光，浅景深"></textarea>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">参数</span></div>
+        <label class="field">
+          <span>模型</span>
+          <select id="vidModel"></select>
+        </label>
+        <div class="grid-3">
+          <label class="field">
+            <span>时长</span>
+            <select id="vidSeconds">
+              <option value="5" selected>5 秒</option>
+              <option value="10">10 秒</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>比例</span>
+            <select id="vidRatio">
+              <option value="16:9" selected>16:9</option>
+              <option value="9:16">9:16</option>
+              <option value="1:1">1:1</option>
+              <option value="4:3">4:3</option>
+              <option value="3:4">3:4</option>
+              <option value="21:9">21:9</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>清晰度</span>
+            <select id="vidSize">
+              <option value="720P" selected>720P</option>
+              <option value="1080P">1080P</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <button class="cta" id="vidGenBtn" type="button">生成视频</button>
+      <p class="hint" id="vidHint">通常需要 1–3 分钟，期间请不要关闭页面</p>
+
+      <div class="progress-wrap" id="vidProgressWrap" hidden>
+        <div class="progress"><div class="progress-bar" id="vidProgressBar"></div></div>
+        <p class="progress-text" id="vidProgressText">排队中…</p>
+      </div>
+
+      <div class="results" id="vidResults"></div>
+    </section>
+
+    <!-- ────────── 设置 ────────── -->
+    <section class="panel" data-panel="slice" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">选视频</span></div>
+        <label class="field">
+          <span>视频链接或服务器路径</span>
+          <input type="text" id="slSrc" placeholder="https://…/video.mp4 或 /data/videos/demo.mp4">
+        </label>
+        <div class="row-actions">
+          <button class="btn" id="slProbe" type="button">先读一下时长</button>
+        </div>
+        <p class="hint" id="slInfo">先读时长，才知道能从哪里切到哪里。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">怎么剪</span></div>
+        <div class="grid-2">
+          <label class="field">
+            <span>剪法</span>
+            <select id="slMode">
+              <option value="cut">截取一段（我要 0:30 到 1:15 这段）</option>
+              <option value="split">平均切成几段（把长视频分成 N 段）</option>
+            </select>
+          </label>
+          <label class="field" id="slCountWrap" hidden>
+            <span>切成几段</span>
+            <input type="number" id="slCount" value="4" min="1" max="60">
+          </label>
+        </div>
+        <div class="grid-2" id="slRangeWrap">
+          <label class="field">
+            <span>从第几秒开始</span>
+            <input type="number" id="slStart" value="0" min="0" step="0.5">
+          </label>
+          <label class="field">
+            <span>到第几秒结束（留空 = 到结尾）</span>
+            <input type="number" id="slEnd" min="0" step="0.5" placeholder="留空表示到结尾">
+          </label>
+        </div>
+        <label class="inline-check">
+          <input type="checkbox" id="slPrecise">
+          <span>精确切割（切点更准，但要重新编码、慢一些）</span>
+        </label>
+      </div>
+
+      <button class="cta" id="slBtn" type="button">开始剪切</button>
+      <p class="hint" id="slHint"></p>
+
+      <div class="progress-wrap" id="slProgress" hidden>
+        <div class="progress"><div class="progress-bar" id="slBar"></div></div>
+        <p class="progress-text" id="slPtext">准备中…</p>
+      </div>
+
+      <div class="card" id="slResultCard" hidden>
+        <div class="card-head"><span class="card-title">剪好的片段</span></div>
+        <div class="chips" id="slParts"></div>
+        <video id="slPlayer" controls playsinline style="width:100%;margin-top:10px;border-radius:10px;background:#000"></video>
+        <p class="hint" id="slResultHint"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">以前剪过的片段</span></div>
+        <div class="file-list" id="slList"></div>
+        <div class="row-actions">
+          <button class="btn ghost" id="slRefresh" type="button">刷新列表</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="assets" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">资料库</span></div>
+        <p class="note" id="libNote">这里放你生成的所有东西，也放你自己电脑上的素材。</p>
+        <div class="seg-switch" id="libTabs" role="tablist">
+          <button class="seg on" data-lib="gen" role="tab" type="button">我的生成</button>
+          <button class="seg" data-lib="asset" role="tab" type="button">我的素材</button>
+          <button class="seg" data-lib="local" role="tab" type="button">本机目录</button>
+        </div>
+      </div>
+
+      <!-- ── 我的生成 ── -->
+      <div id="libGenPane">
+        <div class="card">
+          <div class="card-head"><span class="card-title">生成的图片 / 视频 / 音频</span></div>
+          <div class="grid-2">
+            <label class="field">
+              <span>搜索文件名</span>
+              <input type="text" id="libSearch" placeholder="输入关键词">
+            </label>
+            <label class="field">
+              <span>只看</span>
+              <select id="libKind">
+                <option value="">全部类型</option>
+                <option value="image">图片</option>
+                <option value="video">视频</option>
+                <option value="audio">音频</option>
+                <option value="text">文本（小说/字幕）</option>
+              </select>
+            </label>
+          </div>
+          <div class="row-actions">
+            <button class="btn primary" id="libRefresh" type="button">刷新</button>
+          </div>
+          <p class="hint" id="libHint">点一张图看大图，点视频直接播放。</p>
+        </div>
+        <div class="card">
+          <div class="asset-grid" id="libGrid"></div>
+          <p class="hint" id="libEmpty" hidden>这里还是空的 —— 去「生图」「剪视频」这些模块生成点什么，就会出现在这里。</p>
+        </div>
+        <div class="card" id="libViewCard" hidden>
+          <div class="card-head"><span class="card-title" id="libViewName">预览</span></div>
+          <div id="libViewBody"></div>
+          <div class="row-actions">
+            <a class="btn" id="libOpenRaw" target="_blank" rel="noopener">新窗口打开</a>
+            <button class="btn ghost" id="libDelete" type="button">删除这个</button>
+            <button class="btn ghost" id="libCloseView" type="button">收起</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 我的素材（原来的素材库）── -->
+      <div id="libAssetPane" hidden>
+      <div class="card">
+        <div class="card-head"><span class="card-title">我的素材</span></div>
+        <p class="note" id="asNote">正在读取素材目录…</p>
+        <div class="grid-2">
+          <label class="field">
+            <span>搜索文件名</span>
+            <input type="text" id="asSearch" placeholder="输入关键词，回车搜索">
+          </label>
+          <label class="field">
+            <span>只看</span>
+            <select id="asKind">
+              <option value="">全部类型</option>
+              <option value="image">图片</option>
+              <option value="archive">压缩包（设计稿套件）</option>
+              <option value="design">设计源文件</option>
+              <option value="video">视频</option>
+              <option value="audio">音频</option>
+              <option value="doc">文档</option>
+            </select>
+          </label>
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost" id="asUp" type="button">⬆ 返回上级</button>
+          <button class="btn primary" id="asRefresh" type="button">刷新这一层</button>
+          <button class="btn ghost" id="asRescan" type="button">重新统计</button>
+        </div>
+        <p class="hint">素材还在下载中？点「重新统计」就能把新下到的文件算进来（平时 60 秒内会复用缓存，不用反复点）。</p>
+        <p class="hint" id="asPath">/</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">内容（点文件夹进入，点图片看大图）</span></div>
+        <div class="asset-grid" id="asGrid"></div>
+        <div class="row-actions">
+          <button class="btn ghost" id="asMore" type="button" hidden>加载更多</button>
+        </div>
+        <p class="hint" id="asHint"></p>
+      </div>
+
+      <div class="card" id="asViewCard" hidden>
+        <div class="card-head"><span class="card-title" id="asViewName">预览</span></div>
+        <img id="asViewImg" alt="素材预览" style="max-width:100%;border-radius:10px;border:1px solid var(--line)">
+        <p class="hint">要在「APP界面设计站」里用这张图：先点下面的复制地址，再到那里的图片部件里粘贴（设计稿只存地址，不内嵌图片）。</p>
+        <div class="row-actions">
+          <button class="btn primary" id="asCopyUrl" type="button">复制图片地址</button>
+          <a class="btn" id="asOpenRaw" target="_blank" rel="noopener">新窗口打开原图</a>
+          <button class="btn ghost" id="asCloseView" type="button">收起</button>
+        </div>
+      </div>
+      </div>
+
+      <!-- ── 本机目录（用户自己电脑上的文件夹）── -->
+      <div id="libLocalPane" hidden>
+        <div class="card">
+          <div class="card-head"><span class="card-title">本机目录</span></div>
+          <p class="note" id="libLocalNote">把网页连到你电脑上的一个文件夹，方便把生成的东西存进去、或读里面的稿子。</p>
+          <div class="row-actions">
+            <button class="btn primary" id="libPickDir" type="button">选择我的文件夹</button>
+          </div>
+          <p class="hint" id="libLocalHint">数据不会上传到服务器，读写在你的浏览器里完成。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="settings" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">API 密钥</span></div>
+        <p class="note">
+          密钥只存在<strong>这台设备的浏览器</strong>里，随每次请求发给你自己部署的这一个服务、再转发给厂商。
+          服务端不保存、不写日志、不落盘——容器被人拖走也拿不到能花钱的凭据。
+        </p>
+        <div id="keyFields"></div>
+        <div class="row-actions">
+          <button class="btn ghost" id="clearKeys" type="button">清空全部</button>
+          <button class="btn" id="testKeys" type="button">测试这些 Key</button>
+          <button class="btn primary" id="saveKeys" type="button">保存</button>
+        </div>
+        <p class="hint" id="keyHint"></p>
+        <div id="keyTestResult" hidden></div>
+      </div>
+    </section>
+
+    <!-- ────────── 其余模块（先放统一风格的占位，逐个接入）────────── -->
+    <section class="panel" data-panel="storyboard" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">故事想法</span></div>
+        <textarea id="drPrompt" rows="5" placeholder="例如：一个外卖员在雨夜捡到一只会说人话的猫，从此人生翻盘…"></textarea>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">参数</span></div>
+        <div class="grid-2">
+          <label class="field">
+            <span>文本模型</span>
+            <select id="drTextModel">
+              <option value="agnes-3.0-flash">Agnes 3.0 Flash</option>
+              <option value="deepseek-chat">DeepSeek Chat</option>
+              <option value="qwen-plus">Qwen Plus</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>每镜时长（秒）</span>
+            <input type="number" id="drShotDur" value="5" min="3" max="15">
+          </label>
+        </div>
+        <label class="field">
+          <span>图片模型</span>
+          <select id="drImageModel"></select>
+        </label>
+        <label class="field">
+          <span>视频模型</span>
+          <select id="drVideoModel"></select>
+        </label>
+      </div>
+
+      <button class="cta" id="drBtn" type="button">开始制作短剧</button>
+      <p class="hint" id="drHint">流水线：故事 → 剧本 → 分镜 → <strong>素材确认</strong> → 视频 → 合成。中途会停下等你确认一次。</p>
+
+      <div class="progress-wrap" id="drProgress" hidden>
+        <div class="progress"><div class="progress-bar" id="drBar"></div></div>
+        <p class="progress-text" id="drPtext">准备中…</p>
+      </div>
+
+      <div class="row-actions" id="drActions" hidden>
+        <button class="btn primary" id="drConfirmAssets" type="button">素材没问题，继续生成视频</button>
+      </div>
+
+      <div class="results" id="drResults"></div>
+    </section>
+
+    <section class="panel" data-panel="ohstory" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">本机工作区</span></div>
+        <p class="note" id="ohEnvNote">正在检测浏览器能力…</p>
+        <div class="row-actions">
+          <button class="btn ghost" id="ohForget" type="button" hidden>断开</button>
+          <button class="btn ghost" id="ohReconnect" type="button" hidden>重新连接</button>
+          <button class="btn primary" id="ohPick" type="button">选择本机文件夹</button>
+        </div>
+        <p class="hint" id="ohHint">选一个你电脑上的文件夹，创作台直接在里面读写；服务器全程不碰文件。</p>
+      </div>
+
+      <div class="card" id="ohProjectsCard" hidden>
+        <div class="card-head"><span class="card-title">创作项目</span></div>
+        <div class="chips" id="ohProjects"></div>
+        <div class="field" style="margin-top:14px">
+          <span>新建项目</span>
+          <input type="text" id="ohNewName" placeholder="项目名，例如 我的第一部长篇">
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost" id="ohNewShort" type="button">新建短篇</button>
+          <button class="btn ghost" id="ohNewLong" type="button">新建长篇</button>
+        </div>
+      </div>
+
+      <div class="card" id="ohFilesCard" hidden>
+        <div class="card-head"><span class="card-title">文件</span></div>
+        <div class="file-list" id="ohFiles"></div>
+      </div>
+
+      <div class="card" id="ohEditCard" hidden>
+        <div class="card-head"><span class="card-title" id="ohFileName">文件</span></div>
+        <textarea id="ohContent" rows="16"></textarea>
+        <div class="row-actions">
+          <button class="btn primary" id="ohSave" type="button">保存</button>
+        </div>
+        <p class="hint" id="ohEditHint"></p>
+      </div>
+
+      <div class="card" id="aiCard" hidden>
+        <div class="card-head"><span class="card-title">AI 创作</span></div>
+        <div class="chips" id="aiTaskChips"></div>
+        <p class="hint" id="aiTaskDesc">选一个任务，它会读你项目里的文件当上下文。</p>
+        <div id="aiFields" style="margin-top:12px"></div>
+        <div class="field">
+          <span>模型</span>
+          <input type="text" id="aiModel" list="aiModelList" value="agnes-2.5-flash" placeholder="厂商模型名，如 deepseek-chat">
+          <datalist id="aiModelList">
+            <option value="agnes-2.5-flash"></option>
+            <option value="agnes-2.0-flash"></option>
+            <option value="deepseek-chat"></option>
+            <option value="qwen-plus"></option>
+            <option value="doubao-pro-32k"></option>
+            <option value="MiniMax-Text-01"></option>
+            <option value="ollama:llama3"></option>
+          </datalist>
+        </div>
+        <div class="row-actions">
+          <button class="btn primary" id="aiRun" type="button">生成</button>
+        </div>
+        <p class="hint" id="aiHint">用你自己在「设置」里填的 Key 调用模型，服务端只做透传。</p>
+
+        <div id="aiResultWrap" hidden>
+          <div class="field" style="margin-top:14px">
+            <span>生成结果（可直接改）</span>
+            <textarea id="aiResult" rows="14"></textarea>
+          </div>
+          <div class="row-actions">
+            <button class="btn ghost" id="aiCopy" type="button">复制</button>
+            <button class="btn primary" id="aiWrite" type="button">写入文件</button>
+          </div>
+          <p class="hint" id="aiWriteHint"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="bgvideo" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">文稿 / 主题</span></div>
+        <textarea id="bgScript" rows="6" placeholder="把要配画面的文稿粘进来（旁白、文案、歌词都行），模型会按它分幕"></textarea>
+        <label class="field">
+          <span>或者给一个文稿文件（服务器路径或 http 链接）</span>
+          <input type="text" id="bgScriptFile" placeholder="/data/scripts/demo.txt 或 https://…/demo.txt">
+        </label>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">参数</span></div>
+        <div class="grid-3">
+          <label class="field"><span>分几幕</span><input type="number" id="bgScenes" value="8" min="3" max="24"></label>
+          <label class="field"><span>文本模型</span><select id="bgTextModel"></select></label>
+          <label class="field"><span>图像模型</span><input type="text" id="bgImageModel" value="agnes-image-2.5-flash"></label>
+        </div>
+        <label class="field">
+          <span>配乐（可选，服务器路径或 http 链接；给了就按它的时长铺满全片）</span>
+          <input type="text" id="bgAudio" placeholder="/data/music/bgm.mp3 或 https://…/bgm.mp3">
+        </label>
+      </div>
+
+      <button class="cta" id="bgBtn" type="button">开始生成背景视频</button>
+      <p class="hint" id="bgHint">流程：文稿分幕（文本模型）→ 逐幕生图 → 每幕转片段 → 拼接 → 配乐。</p>
+
+      <div class="progress-wrap" id="bgProgress" hidden>
+        <div class="progress"><div class="progress-bar" id="bgBar"></div></div>
+        <p class="progress-text" id="bgPtext">准备中…</p>
+      </div>
+
+      <div class="card" id="bgSegCard" hidden>
+        <div class="card-head"><span class="card-title">分幕（点开看画面描述）</span></div>
+        <div class="chips" id="bgSegList"></div>
+        <p class="hint" id="bgSegHint"></p>
+      </div>
+
+      <div class="card" id="bgResultCard" hidden>
+        <div class="card-head"><span class="card-title">成片</span></div>
+        <video id="bgVideo" controls playsinline style="width:100%;border-radius:10px;background:#000"></video>
+        <p class="hint" id="bgResultHint"></p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="mv" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">素材</span></div>
+        <label class="field">
+          <span>音乐（服务器路径或 http 链接；不填就出无音轨成片）</span>
+          <input type="text" id="mvAudio" placeholder="/data/music/song.mp3 或 https://…/song.mp3">
+        </label>
+        <label class="field">
+          <span>歌词 / 主题</span>
+          <textarea id="mvLyrics" rows="5" placeholder="把歌词粘进来；没有歌词就写一句主题，模型按情绪自由发挥"></textarea>
+        </label>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">参数</span></div>
+        <div class="grid-3">
+          <label class="field"><span>镜头数</span><input type="number" id="mvSegments" value="6" min="3" max="12"></label>
+          <label class="field"><span>文本模型</span><select id="mvTextModel"></select></label>
+          <label class="field"><span>图像模型</span><input type="text" id="mvImageModel" value="agnes-image-2.5-flash"></label>
+        </div>
+      </div>
+
+      <button class="cta" id="mvBtn" type="button">开始生成 MTV</button>
+      <p class="hint" id="mvHint">流程：拆分镜（文本模型）→ 逐张生图 → 每图转片段 → 拼接 → 配乐。整片时长跟着音乐走。</p>
+
+      <div class="progress-wrap" id="mvProgress" hidden>
+        <div class="progress"><div class="progress-bar" id="mvBar"></div></div>
+        <p class="progress-text" id="mvPtext">准备中…</p>
+      </div>
+
+      <div class="card" id="mvResultCard" hidden>
+        <div class="card-head"><span class="card-title">成片</span></div>
+        <video id="mvVideo" controls playsinline style="width:100%;border-radius:10px;background:#000"></video>
+        <div class="chips" id="mvScenes" style="margin-top:10px"></div>
+        <p class="hint" id="mvResultHint"></p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="novel-split" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">导入原稿</span></div>
+        <textarea id="nsText" rows="8" placeholder="把小说全文粘贴到这里，或点下面的按钮选一个 .txt / .md 文件"></textarea>
+        <div class="row-actions">
+          <input type="file" id="nsFile" accept=".txt,.md,text/plain,text/markdown" hidden>
+          <button class="btn ghost" id="nsPickFile" type="button">选择文件</button>
+          <span class="hint" id="nsFileHint" style="margin:0"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">拆分参数</span></div>
+        <div class="grid-3">
+          <label class="field">
+            <span>拆成几集</span>
+            <input type="number" id="nsEps" value="10" min="1" max="200">
+          </label>
+          <label class="field">
+            <span>模型</span>
+            <select id="nsModel"></select>
+          </label>
+          <label class="field">
+            <span>作品名</span>
+            <input type="text" id="nsTitle" placeholder="可不填">
+          </label>
+        </div>
+      </div>
+
+      <button class="cta" id="nsBtn" type="button">开始拆分</button>
+      <p class="hint" id="nsHint">只在情节断点切分，<strong>正文逐字取自原文</strong>，不会被改写；超长文自动改为按段落保真切分，再让模型逐集起标题。</p>
+
+      <div class="progress-wrap" id="nsProgress" hidden>
+        <div class="progress"><div class="progress-bar" id="nsBar"></div></div>
+        <p class="progress-text" id="nsPtext">准备中…</p>
+      </div>
+
+      <div class="card" id="nsEpsCard" hidden>
+        <div class="card-head"><span class="card-title">分集结果（点开看正文）</span></div>
+        <div class="chips" id="nsEpsList"></div>
+      </div>
+
+      <div class="card" id="nsViewCard" hidden>
+        <div class="card-head"><span class="card-title" id="nsViewTitle">内容</span></div>
+        <textarea id="nsView" rows="14"></textarea>
+        <div class="row-actions">
+          <button class="btn ghost" id="nsCopyEp" type="button">复制这一集</button>
+          <button class="btn primary" id="nsSaveEp" type="button">保存为 .md</button>
+        </div>
+        <p class="hint" id="nsViewHint"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">去 AI 味</span></div>
+        <textarea id="deText" rows="6" placeholder="粘贴要处理的正文…"></textarea>
+        <div class="grid-2">
+          <label class="field">
+            <span>力度</span>
+            <select id="deOp">
+              <option value="light">轻度（只删禁用词）</option>
+              <option value="medium" selected>标准（删词 + 改句式）</option>
+              <option value="heavy">重度（重写句子，保留事实）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>模型</span>
+            <select id="deModel"></select>
+          </label>
+        </div>
+        <div class="row-actions">
+          <button class="btn primary" id="deBtn" type="button">处理</button>
+        </div>
+        <p class="hint" id="deHint">按禁用词与句式清单改写，事实、剧情、人名一律不动。</p>
+      </div>
+
+      <div class="card" id="deResultCard" hidden>
+        <div class="card-head"><span class="card-title">处理结果</span></div>
+        <textarea id="deResult" rows="12"></textarea>
+        <div class="row-actions">
+          <button class="btn ghost" id="deCopy" type="button">复制</button>
+          <button class="btn primary" id="deSave" type="button">保存为 .md</button>
+        </div>
+        <p class="hint" id="deSaveHint"></p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="toolbox" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">视频下载</span></div>
+        <input type="text" id="tbUrl" placeholder="视频链接（B 站 / YouTube / 直链 都可以）">
+        <div class="grid-2">
+          <label class="field">
+            <span>清晰度</span>
+            <select id="tbQuality">
+              <option value="best">最高画质</option>
+              <option value="720">720P</option>
+              <option value="480">480P</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>开始</span>
+            <button class="btn primary" id="tbDlBtn" type="button" style="width:100%">下载</button>
+          </label>
+        </div>
+        <p class="hint" id="tbHint">本机已装 yt-dlp：支持 B 站 / YouTube 等站点；其它链接自动走直链下载。</p>
+        <pre class="prompt-out" id="tbLog" hidden></pre>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">已下载（点文件名取回）</span></div>
+        <div class="file-list" id="tbList"></div>
+        <div class="row-actions">
+          <button class="btn ghost" id="tbRefresh" type="button">刷新列表</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">文本转语音</span></div>
+        <textarea id="tbText" rows="5" placeholder="粘贴要朗读的文字…"></textarea>
+        <div class="grid-2">
+          <label class="field">
+            <span>音色</span>
+            <select id="tbVoice">
+              <option value="local">🔌 本地离线配音（免费，不用 Key）</option>
+              <option value="male-qn-qingse">青涩男声（需 MiniMax）</option>
+              <option value="female-shaonv">少女音</option>
+              <option value="male-qn-jingying">精英男声</option>
+              <option value="female-yujie">御姐音</option>
+              <option value="presenter_male">男主播</option>
+              <option value="presenter_female">女主播</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>开始</span>
+            <button class="btn primary" id="tbTtsBtn" type="button" style="width:100%">合成语音</button>
+          </label>
+        </div>
+        <p class="hint" id="tbTtsHint">走 MiniMax TTS，需要在「设置」里填 MiniMax 的 Key。</p>
+        <div id="tbTtsResult" hidden>
+          <audio id="tbAudio" controls style="width:100%;margin-top:10px"></audio>
+          <div class="row-actions">
+            <a class="btn" id="tbDownload" download="tts.mp3">下载音频</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="videoparse" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">视频来源</span></div>
+        <input type="text" id="vpUrl" placeholder="视频直链（https://…），或服务器上的本地路径">
+        <p class="hint">抽帧用本机 ffmpeg；读图用你配的多模态模型——<strong>必须支持图片输入</strong>（如 agnes-2.5-flash）。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">参数</span></div>
+        <div class="grid-3">
+          <label class="field"><span>抽几帧</span><input type="number" id="vpFrames" value="6" min="2" max="12"></label>
+          <label class="field"><span>厂商</span><select id="vpVendor"></select></label>
+          <label class="field"><span>模型</span><input type="text" id="vpModel" value="agnes-2.5-flash"></label>
+        </div>
+      </div>
+
+      <button class="cta" id="vpBtn" type="button">开始解析</button>
+      <p class="hint" id="vpHint"></p>
+
+      <div class="progress-wrap" id="vpProgress" hidden>
+        <div class="progress"><div class="progress-bar" id="vpBar"></div></div>
+        <p class="progress-text" id="vpPtext">准备中…</p>
+      </div>
+
+      <div class="card" id="vpResultCard" hidden>
+        <div class="card-head"><span class="card-title">内容索引</span></div>
+        <textarea id="vpSummary" rows="6"></textarea>
+        <div class="chips" id="vpFramesList" style="margin-top:10px"></div>
+        <div id="vpFrameView" hidden style="margin-top:12px">
+          <img id="vpFrameImg" alt="关键帧" style="max-width:100%;border-radius:10px;border:1px solid var(--line)">
+          <p class="hint" id="vpFrameDesc"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">生成视频提示词</span></div>
+        <p class="hint">基于上面这次解析的结果，生成可直接用的图生 / 文生视频提示词。</p>
+        <div class="row-actions">
+          <button class="btn primary" id="vptBtn" type="button">生成提示词</button>
+        </div>
+        <p class="hint" id="vptHint"></p>
+        <div id="vptResultWrap" hidden>
+          <pre class="prompt-out" id="vptResult"></pre>
+          <div class="row-actions"><button class="btn ghost" id="vptCopy" type="button">复制</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="wechat" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">公众号凭据</span></div>
+        <p class="note">AppSecret 只随本次推送使用，服务端不落盘、不回显明文。调用前请把服务器出网 IP 加入公众号「IP 白名单」，否则会报 40164。</p>
+        <label class="field">
+          <span>AppID</span>
+          <input type="text" id="wxAppid" autocomplete="off" placeholder="wx 开头的 AppID">
+        </label>
+        <label class="field">
+          <span>AppSecret</span>
+          <input type="password" id="wxSecret" autocomplete="off" placeholder="公众号 AppSecret">
+        </label>
+        <div class="row-actions">
+          <button class="btn ghost" id="wxTestBtn" type="button">检测凭据</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">文章</span></div>
+        <label class="field">
+          <span>标题</span>
+          <input type="text" id="wxTitle" placeholder="文章标题">
+        </label>
+        <div class="grid-2">
+          <label class="field">
+            <span>作者</span>
+            <input type="text" id="wxAuthor" placeholder="作者名">
+          </label>
+          <label class="field">
+            <span>摘要（可选）</span>
+            <input type="text" id="wxDigest" placeholder="转发时显示的摘要">
+          </label>
+        </div>
+        <label class="field">
+          <span>正文</span>
+          <textarea id="wxContent" rows="9" placeholder="粘贴正文，空行会分段…"></textarea>
+        </label>
+        <label class="field">
+          <span>封面图（必填）</span>
+          <input type="file" id="wxCover" accept="image/png,image/jpeg">
+          <img id="wxCoverPreview" class="cover-preview" hidden alt="封面预览">
+        </label>
+      </div>
+
+      <button class="cta" id="wxPushBtn" type="button">推送到草稿箱</button>
+      <p class="hint" id="wxHint">只发草稿箱，不群发、不发布。</p>
+    </section>
+
+    <section class="panel" data-panel="canvas" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">泡泡猫 APP 界面设计站</span></div>
+        <p class="note">在浏览器里拖拽拼 <strong>Material 3</strong> 界面 → 连线成流程 → 预览里点击走查 → <strong>一键生成给 AI 编程工具（Claude Code / Codex / Cursor）的自然语言提示词</strong>，目标平台可选 Android 或 Web。</p>
+        <p class="hint">整个工具是纯静态的，设计稿存在你自己浏览器的 localStorage 里，不经过服务器。</p>
+        <div class="row-actions">
+          <button class="btn ghost" id="cvReload" type="button">重新载入</button>
+          <button class="btn primary" id="cvOpen" type="button">新窗口打开 ↗</button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden">
+        <iframe id="cvFrame" src="/design/" title="泡泡猫 APP 界面设计站"
+                style="width:100%;height:72vh;min-height:560px;border:0;display:block;background:#eef3fb"></iframe>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="anchor" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">口播文稿</span></div>
+        <textarea id="anText" rows="8" placeholder="粘贴文稿，会按标点自动分段…"></textarea>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">参数</span></div>
+        <label class="field">
+          <span>画面模式</span>
+          <select id="anMode">
+            <option value="static">静态图 · 一图铺满</option>
+            <option value="clip">素材片段 · 用已有视频</option>
+            <option value="ai">AI 生成画面</option>
+          </select>
+        </label>
+        <div class="grid-2">
+          <label class="field">
+            <span>音色</span>
+            <select id="anVoice">
+              <option value="mimo_default">默认音色</option>
+              <option value="mimo_female_1">女声 · 温柔</option>
+              <option value="mimo_male_1">男声 · 沉稳</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>最短分段（秒）</span>
+            <input type="number" id="anMinSeg" value="4" min="3" max="20">
+          </label>
+        </div>
+        <label class="check-row">
+          <input type="checkbox" id="anSubs" checked>
+          <span>烧录字幕</span>
+        </label>
+      </div>
+
+      <button class="cta" id="anBtn" type="button">开始生成口播</button>
+      <p class="hint" id="anHint">按文稿分段 → 生成语音 → 合成画面，通常需要几分钟。</p>
+
+      <div class="progress-wrap" id="anProgress" hidden>
+        <div class="progress"><div class="progress-bar" id="anBar"></div></div>
+        <p class="progress-text" id="anPtext">准备中…</p>
+      </div>
+
+      <div class="results" id="anResults"></div>
+    </section>
+
+    <section class="panel" data-panel="cover" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">书籍信息</span></div>
+        <label class="field">
+          <span>书名</span>
+          <input type="text" id="cvTitle" placeholder="例如：剑来">
+        </label>
+        <div class="grid-2">
+          <label class="field">
+            <span>作者</span>
+            <input type="text" id="cvAuthor" placeholder="笔名">
+          </label>
+          <label class="field">
+            <span>风格</span>
+            <select id="cvStyle"></select>
+          </label>
+        </div>
+        <label class="field">
+          <span>故事简介 / 题材</span>
+          <textarea id="cvSummary" rows="3" placeholder="一句话故事，用来决定画面内容…"></textarea>
+        </label>
+        <label class="field">
+          <span>补充要求（可选）</span>
+          <input type="text" id="cvExtra" placeholder="例如：主角是白发少年，背景要有雪山">
+        </label>
+      </div>
+
+      <button class="cta" id="cvBtn" type="button">生成封面提示词</button>
+      <p class="hint" id="cvHint">生成的是一段可直接投喂给生图模型的提示词（竖版构图、预留标题位、不含文字）。</p>
+
+      <div class="results" id="cvResults"></div>
+    </section>
+
+    <section class="panel" data-panel="expert" role="tabpanel">
+      <div class="card">
+        <div class="card-head"><span class="card-title">专家类型</span></div>
+        <div class="chips" id="pxTypes"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">你的想法</span></div>
+        <textarea id="pxIdea" rows="5" placeholder="用一句话描述你想要的东西…"></textarea>
+        <div id="pxFields" style="margin-top:12px"></div>
+      </div>
+
+      <button class="cta" id="pxBtn" type="button">生成提示词</button>
+      <p class="hint" id="pxHint">选一个专家类型，写下粗糙的想法，它会扩写成专业提示词。</p>
+
+      <div class="results" id="pxResults"></div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    密钥自持 · 服务端不留存
+    <span class="build" id="buildTag"></span>
+  </footer>
+</div>
+
+<!-- ══════════ 鼠标拖尾（纯装饰，只在指针移动时出现）══════════ -->
+<div class="trail" aria-hidden="true"></div>
+
+<script src="./localfs.js"></script>
+<script src="./studio-ai.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

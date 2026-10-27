@@ -1,0 +1,263 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/services.dart' show AssetManifest, rootBundle;
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import '../data/atomic_file.dart';
+import '../data/configured_models.dart';
+import 'diagnostics_log.dart';
+import 'dsh_runtime.dart';
+
+/// 「泡泡猫设计站」的**本机后端**：把 paopaocat-studio-web 的 Node 服务跑在手机里。
+///
+/// ## 为什么必须跑后端（不能只托管静态文件）
+///
+/// 设计站是「前端 + Node 后端」一体架构：前端所有能力都打 `/agnes-studio/api/*`
+/// （`proxy` 转发模型请求、`models` 列模型、`library/save` 存资料、`cover`/`drama`/
+/// `mv`/`slice` 等 15 个引擎）。只托管 `public/` 的结果是**界面能开、一用就 404**
+/// —— 这正是 2026-10-27 第一版踩的坑。
+///
+/// ## 两个用户要求（2026-10-27）怎么满足
+///
+/// 1. **资料存手机、下次还能看到** → `AGNES_DATA_DIR` 指到
+///    `<filesDir>/workspace/.agnes`，也就是 App 资料库扫描的那棵树。
+/// 2. **模型用手机上配好的** → App 写一份 `dsh-models.json`（厂商 → baseUrl + Key），
+///    后端 `parseKeyHeaders()` 在没有前端凭据时用它兜底。**Key 不出手机**：
+///    它只在这个文件里，浏览器拿不到，前端也不需要填。
+///
+/// 服务只绑 `127.0.0.1`，对外由 [PortForwarder] 开的那条转发暴露。
+class AgnesWeb {
+  AgnesWeb._(this.process, this.port);
+
+  final Process process;
+  final int port;
+
+  static AgnesWeb? _current;
+  static AgnesWeb? get current => _current;
+
+  /// assets 里的后端与前端前缀。
+  static const String serverAssetPrefix = 'assets/agnes-server/';
+  static const String siteAssetPrefix = 'assets/studio-site/';
+
+  /// 部署根（`server/` 与 `public/` 必须在同一个父目录下，
+  /// 因为 `index.mjs` 用的是 `resolve(HERE, '..', 'public')`）。
+  static String rootOf(DshRuntime rt) => '${rt.filesDir}/agnes-web';
+
+  static String _modelsFile(DshRuntime rt) => '${rootOf(rt)}/dsh-models.json';
+
+  /// 解包 + 写模型配置（幂等）。失败抛异常，由调用方如实显示。
+  static Future<void> prepare(DshRuntime rt) async {
+    final root = Directory(rootOf(rt));
+    await _unpackTo(serverAssetPrefix, root, 'server', rt);
+    await _unpackTo(siteAssetPrefix, root, 'public', rt);
+    await writeModelsFile(rt);
+  }
+
+  /// 把 App 的模型配置写成后端认的 `dsh-models.json`。
+  ///
+  /// ⚠️ 这个文件里有明文 Key —— 它落在 App 私有目录（沙箱内），
+  /// **不会**被下发给浏览器（`/api/vendors` 只返回 id/label/baseUrl）。
+  static Future<void> writeModelsFile(DshRuntime rt) async {
+    try {
+      final cfg = ConfiguredModels.readConfig(rt.filesDir);
+      // Key 在系统安全存储里（设置页写的是同一个 key），不是配置 JSON 里。
+      final key = await _readApiKey(rt);
+      final vendors = <String, Map<String, Object?>>{};
+      for (final p in cfg.providers) {
+        final base = p.baseUrl.trim();
+        if (base.isEmpty) continue;
+        // provider.id 直接当厂商 id：后端 createHostHandler() 已把设备厂商
+        // 并进端点表，所以 getVendorFromModel() 认得出这些自定义 id。
+        //
+        // Key 只有一份（设置页存的那个），所以按「当前选中的 provider」决定
+        // 给谁 —— 其余家只写 baseUrl/label，界面上会显示"还没填 Key"。
+        final isSelected = (cfg.selected ?? '').startsWith('${p.id}/');
+        vendors[p.id] = <String, Object?>{
+          'baseUrl': base,
+          'label': p.label.isEmpty ? p.id : p.label,
+          if (isSelected && key.isNotEmpty) 'apiKey': key,
+        };
+      }
+      final body = const JsonEncoder.withIndent('  ')
+          .convert(<String, Object?>{'vendors': vendors});
+      writeStringAtomicSync(File(_modelsFile(rt)), '$body\n');
+      DiagnosticsLog.add('agnes',
+          '已写模型配置：${vendors.length} 家（Key 不出手机）');
+    } catch (e) {
+      DiagnosticsLog.add('agnes', '写模型配置失败（设计站会提示没填 Key）：$e');
+    }
+  }
+
+  /// 读当前激活模型的 Key（`flutter_secure_storage` 里设置页写的那一份）。
+  static Future<String> _readApiKey(DshRuntime rt) async {
+    try {
+      const storage = FlutterSecureStorage();
+      final v = await storage.read(key: 'dsh_model_api_key');
+      if (v != null && v.trim().isNotEmpty) return v.trim();
+    } catch (e) {
+      debugPrint('[agnes] 读安全存储失败：$e');
+    }
+    // 与设置页同源的开发注入通道（自动化/调试时用）。
+    try {
+      final dev = File('${rt.filesDir}/dev-api-key.txt');
+      if (dev.existsSync()) return dev.readAsStringSync().trim();
+    } catch (_) {}
+    return '';
+  }
+
+  /// 起服务（已起着就复用）。返回带端口的实例。
+  static Future<AgnesWeb> ensureStarted(DshRuntime rt) async {
+    final running = _current;
+    if (running != null && running.process.pid != 0) return running;
+
+    await prepare(rt);
+    final port = await _pickFreePort();
+    final root = rootOf(rt);
+
+    final env = <String, String>{
+      ...rt.environment,
+      'PORT': '$port',
+      // 只绑回环：对外由 App 的 TCP 转发暴露，别直接把后端挂到网卡上。
+      'HOST': '127.0.0.1',
+      // 资料根 = App 资料库扫描的那棵树 → 「生成的资料进资料库、重启还在」。
+      'AGNES_DATA_DIR': '${rt.filesDir}/workspace/.agnes',
+      // 手机模型配置（Key 兜底的唯一来源）。
+      'DSH_MOBILE_MODELS_FILE': _modelsFile(rt),
+      if (!rt.environment.containsKey('NODE_OPTIONS'))
+        'NODE_OPTIONS': '--max-old-space-size=1024',
+    };
+
+    final args = <String>[
+      // 与 BotServer 同款：Android 上缺原生 addon，必须开 internals 再挂 shim。
+      '--expose-internals',
+      '--require', rt.fsShim,
+      '--require', rt.execShimPath,
+      '$root/server/index.mjs',
+    ];
+
+    final process = await Process.start(
+      rt.nodeBinary,
+      args,
+      environment: env,
+      includeParentEnvironment: true,
+      workingDirectory: root,
+    );
+    final logs = <String>[];
+    process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((l) {
+      if (l.trim().isEmpty) return;
+      logs.add(l);
+      if (logs.length > 40) logs.removeAt(0);
+      DiagnosticsLog.add('agnes', l);
+    }, onError: (Object e) => debugPrint('[agnes] stdout: $e'));
+    process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((l) {
+      if (l.trim().isEmpty) return;
+      logs.add(l);
+      if (logs.length > 40) logs.removeAt(0);
+      DiagnosticsLog.add('agnes:err', l);
+    }, onError: (Object e) => debugPrint('[agnes] stderr: $e'));
+
+    unawaited(process.exitCode.then((code) {
+      if (_current?.process == process) _current = null;
+      DiagnosticsLog.add('agnes', '设计站后端退出，码=$code（最近输出：${logs.join(' / ')}）');
+    }));
+
+    // 等它真的能应答（最多 45 秒），而不是"进程起来了"就当好了。
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+    var ready = false;
+    for (var i = 0; i < 45; i++) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      try {
+        final req = await client.getUrl(Uri.parse('http://127.0.0.1:$port/healthz'));
+        final res = await req.close();
+        await res.drain<void>();
+        if (res.statusCode == 200) {
+          ready = true;
+          break;
+        }
+      } catch (_) {
+        // 还没起来，继续等
+      }
+    }
+    client.close(force: true);
+    if (!ready) {
+      try {
+        process.kill(ProcessSignal.sigkill);
+      } catch (_) {}
+      throw StateError('设计站后端 45 秒内没有就绪：${logs.take(6).join(' / ')}');
+    }
+
+    final w = AgnesWeb._(process, port);
+    _current = w;
+    DiagnosticsLog.add('agnes', '设计站后端已就绪：127.0.0.1:$port（数据根 workspace/.agnes）');
+    return w;
+  }
+
+  static Future<void> stop() async {
+    final w = _current;
+    _current = null;
+    if (w == null) return;
+    try {
+      w.process.kill(ProcessSignal.sigterm);
+      await w.process.exitCode.timeout(const Duration(seconds: 5));
+    } catch (_) {
+      try {
+        w.process.kill(ProcessSignal.sigkill);
+      } catch (_) {}
+    }
+  }
+
+  static Future<int> _pickFreePort() async {
+    final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final p = s.port;
+    await s.close();
+    return p;
+  }
+
+  /// 把 [prefix] 下的资产解到 `<root>/<sub>/`（按清单指纹幂等）。
+  static Future<void> _unpackTo(
+      String prefix, Directory root, String sub, DshRuntime rt) async {
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final assets = manifest.listAssets().where((p) => p.startsWith(prefix)).toList()
+      ..sort();
+    if (assets.isEmpty) throw StateError('安装包里没有 $prefix —— 构建时没把设计站打进去');
+
+    var sum = 7;
+    var bytes = 0;
+    for (final a in assets) {
+      for (final c in a.codeUnits) {
+        sum = (sum * 31 + c) & 0x7fffffff;
+      }
+      bytes += (await rootBundle.load(a)).lengthInBytes;
+    }
+    sum = (sum * 31 + bytes) & 0x7fffffff;
+
+    final target = Directory('${root.path}/$sub');
+    final stamp = File('${root.path}/.$sub-$sum');
+    if (target.existsSync() && stamp.existsSync()) return;
+
+    if (target.existsSync()) {
+      try {
+        target.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+    target.createSync(recursive: true);
+    for (final a in assets) {
+      final rel = a.substring(prefix.length);
+      if (rel.isEmpty) continue;
+      final out = File('${target.path}/$rel');
+      out.parent.createSync(recursive: true);
+      final data = await rootBundle.load(a);
+      out.writeAsBytesSync(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+        flush: false,
+      );
+    }
+    writeStringAtomicSync(stamp, '$sum\n');
+    DiagnosticsLog.add('agnes',
+        '已解包 $sub：${assets.length} 个文件 / ${(bytes / 1048576).toStringAsFixed(1)} MB');
+  }
+}

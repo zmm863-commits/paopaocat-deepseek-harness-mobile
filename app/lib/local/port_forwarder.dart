@@ -31,7 +31,11 @@ import 'diagnostics_log.dart';
 class PortForwarder {
   PortForwarder._();
 
+  /// DSH 自己那条转发（`instance` 只为兼容既有调用点保留）。
   static final PortForwarder instance = PortForwarder._();
+
+  /// 另开一条独立转发（设计站后端用）——每条转发各有自己的监听端口。
+  factory PortForwarder.create() => PortForwarder._();
 
   ServerSocket? _server;
   final List<Socket> _open = <Socket>[];

@@ -19,7 +19,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  const studioRoot = 'assets/studio';
+  const studioRoot = 'assets/studio-site';
 
   test('产物在（跑了 next build 并拷进来）', () {
     final dir = Directory(studioRoot);

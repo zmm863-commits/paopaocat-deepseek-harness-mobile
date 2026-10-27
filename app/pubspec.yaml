@@ -65,24 +65,29 @@ flutter:
     #    由 test/toolbox_assets_test.dart 守着（磁盘上有的必须都在包里）。
     - assets/toolbox/vendor/seek-bzip/
     - assets/toolbox/vendor/seek-bzip/lib/
-    # 「APP界面设计台」（创作台里的入口）：泡泡猫设计工作站（基于 m3e-canvas，MIT）的
-    # **静态产物**（Next.js `output: export`）。字体也在这里（`fonts/`）。
-    # ⚠️ Flutter 的 assets **不递归**：子目录必须逐个列，少一行手机上就白屏/图标消失。
+    # 「泡泡猫设计站」（创作台入口 + 网页版入口）：paopaocat-studio-web 的**完整**
+    # 静态产物（15 个模块的影视工具网页版），内含 Next 导出的设计工作站 `design/`。
+    # ⚠️ Flutter 的 assets **不递归**：子目录必须逐个列，少一行手机上就白屏。
     #    清单由脚本枚举生成，`test/studio_assets_test.dart` 守着两边一致。
-    # 重新生成：cd /root/软件/m3e-canvas && npx next build && cp -r out/. <这里>
-    - assets/studio/
-    - assets/studio/404/
-    - assets/studio/_next/static/99-ByTwOlN0_VX127xjXT/
-    - assets/studio/_next/static/chunks/
-    - assets/studio/_next/static/media/
-    - assets/studio/_not-found/
-    - assets/studio/fonts/
-    - assets/studio/fonts/material-symbols/
-    - assets/studio/fonts/roboto/
-    - assets/studio/fonts/roboto-flex/
-    - assets/studio/fonts/roboto-serif/
-    - assets/studio/icons/
-    - assets/studio/logos/
+    # 重新生成：见该测试的说明（从 paopaocat-studio-web/public 同步）。
+    - assets/studio-site/
+    - assets/studio-site/design/
+    - assets/studio-site/img/
+    - assets/studio-site/design/404/
+    - assets/studio-site/design/_not-found/
+    - assets/studio-site/design/fonts/
+    - assets/studio-site/design/icons/
+    - assets/studio-site/design/logos/
+    - assets/studio-site/design/fonts/material-symbols/
+    - assets/studio-site/design/fonts/roboto-flex/
+    - assets/studio-site/design/fonts/roboto-serif/
+    - assets/studio-site/design/fonts/roboto/
+    - assets/studio-site/design/_next/static/99-ByTwOlN0_VX127xjXT/
+    - assets/studio-site/design/_next/static/chunks/
+    - assets/studio-site/design/_next/static/media/
+    # 设计站的 Node 后端（index.mjs + engines.bundle.mjs + 三个小模块）：
+    # 15 个引擎都在 bundle 里，只依赖 Node 内置模块，手机上那个 Node 直接能跑。
+    - assets/agnes-server/
     # 随包内置技能：App 启动时由 `data/builtin_skills.dart` 装到
     # `<DSH_HOME>/skills/<name>/SKILL.md`（DSH 的用户级技能根）。
     # 首页 12 条「内置会话」各自绑定这里的一个技能 —— 技能不在设备上，

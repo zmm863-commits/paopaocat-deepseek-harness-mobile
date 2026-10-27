@@ -4,6 +4,8 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../i18n/dsh_i18n.dart';
 import '../../local/bot_server.dart';
 import '../../local/dsh_runtime.dart';
+import '../../local/agnes_web.dart';
+import '../../local/design_site.dart';
 import '../../local/lan_endpoints.dart';
 import '../../local/port_forwarder.dart';
 import '../theme/dsh_tokens.dart';
@@ -43,6 +45,11 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
   String? _note;
   bool _busy = false;
   bool _on = false;
+
+  /// 设计站那条独立转发（与 DSH 那条互不影响）。
+  final PortForwarder _designForward = PortForwarder.create();
+  String? _designUrl;
+  String? _designError;
 
   @override
   void initState() {
@@ -112,13 +119,36 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         );
         final token = Uri.parse(server.url).queryParameters['token'] ?? '';
         final url = 'http://$host:$fwdPort/${token.isEmpty ? '' : '?token=$token'}';
+
+        // ── 设计站：手机里的 Node 后端 + 第二条转发 ──────────────────────
+        // 它不是纯静态站（15 个引擎都走 /agnes-studio/api/*），必须把后端跑起来。
+        // 资料根指向 workspace/.agnes（进资料库），模型凭据由 dsh-models.json
+        // 提供（Key 不出手机）。失败不影响 DSH 网页本身。
+        String? designUrl;
+        String? designErr;
+        try {
+          final agnes = await AgnesWeb.ensureStarted(widget.runtime);
+          final dPort = await _designForward.start(
+              targetPort: agnes.port,
+              listenPort: await _designForward.reservePort());
+          designUrl = 'http://$host:$dPort/';
+          await DesignSite.injectEntry(widget.runtime, designUrl);
+        } catch (e) {
+          designErr = '$e';
+          await DesignSite.removeEntry(widget.runtime);
+        }
         if (!mounted) return;
         setState(() {
           _url = url;
           _on = true;
+          _designUrl = designUrl;
+          _designError = designErr;
         });
       } else {
         await PortForwarder.instance.stop();
+        await _designForward.stop();
+        await AgnesWeb.stop();
+        await DesignSite.removeEntry(widget.runtime);
         // 关掉时也要把信任白名单清掉，否则下次起服务还带着旧 authority
         // （端口会变，留着没用还多一次重启）。
         await BotServer.ensureStarted(
@@ -249,6 +279,19 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
             context.tr('这个网址带身份凭证（token），别发给别人。'),
             style:
                 TextStyle(fontSize: 10.5, color: scheme.outline, height: 1.5),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _designUrl != null
+                ? context.tr('设计站（资料存手机、用手机模型）：{0}', [_designUrl!])
+                : (_designError != null
+                    ? context.tr('设计站没能启动：{0}', [_designError!])
+                    : context.tr('设计站未启动')),
+            style: TextStyle(
+              fontSize: 10.5,
+              height: 1.55,
+              color: _designError != null ? scheme.error : scheme.outline,
+            ),
           ),
         ],
         if (_note != null) ...[
