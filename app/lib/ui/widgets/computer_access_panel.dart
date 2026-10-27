@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
@@ -57,6 +58,14 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
     _load();
   }
 
+  @override
+  void dispose() {
+    // 设计站那条转发是**本面板创建**的，面板走了必须收掉；
+    // DSH 那条是全局单例（Bot 页也在用），不能在这里停。
+    unawaited(_designForward.stop());
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final eps = await LanEndpoints.list();
     if (!mounted) return;
@@ -68,6 +77,8 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
       // 否则用户会看到"开关是关的，但电脑其实连得上"。
       if (PortForwarder.instance.running) {
         _on = true;
+        _designUrl = AgnesWeb.publicUrl;
+        _designError = AgnesWeb.lastError;
         final cur = BotServer.current;
         final fwd = PortForwarder.instance.port;
         if (cur != null && fwd != null && _selected != null) {
@@ -133,9 +144,12 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
               targetPort: agnes.port,
               listenPort: await _designForward.reservePort());
           designUrl = 'http://$host:$dPort/';
+          AgnesWeb.publicUrl = designUrl;
+          AgnesWeb.lastError = null;
           await DesignSite.injectEntry(widget.runtime, designUrl);
         } catch (e) {
           designErr = '$e';
+          AgnesWeb.lastError = designErr;
           await DesignSite.removeEntry(widget.runtime);
         }
         if (!mounted) return;
@@ -150,6 +164,8 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         await _designForward.stop();
         AgnesWeb.setKeepAlive(false);
         await AgnesWeb.stop();
+        AgnesWeb.publicUrl = null;
+        AgnesWeb.lastError = null;
         await DesignSite.removeEntry(widget.runtime);
         // 关掉时也要把信任白名单清掉，否则下次起服务还带着旧 authority
         // （端口会变，留着没用还多一次重启）。

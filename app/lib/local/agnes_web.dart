@@ -49,6 +49,20 @@ class AgnesWeb {
   /// 当前服务的本机地址（`http://127.0.0.1:<port>/`），没起就是 null。
   static String? get localUrl => _current == null ? null : 'http://127.0.0.1:${_current!.port}/';
 
+  /// 对外地址（`http://<网卡IP>:<转发端口>/`）。
+  ///
+  /// 存成静态而不是只放面板里：设置页退出再进来时，面板是**新 State**，
+  /// 拿不到上次算的地址 —— 用户会看到「设计站未启动」，而其实它正在跑。
+  static String? publicUrl;
+  static String? lastError;
+
+  /// 健康巡检定时器（后端挂了自动拉起，见 [_watch]）。
+  static Timer? _watchdog;
+
+  /// 上次用的端口。**自动拉起必须复用同一个** —— 对外那条 TCP 转发是
+  /// 按 `targetPort` 建的，端口一变转发就指向空气，「自愈」等于没愈。
+  static int? _preferredPort;
+
   /// assets 里的后端与前端前缀。
   static const String serverAssetPrefix = 'assets/agnes-server/';
   static const String siteAssetPrefix = 'assets/studio-site/';
@@ -207,8 +221,66 @@ class AgnesWeb {
 
     final w = AgnesWeb._(process, port);
     _current = w;
+    _watch(rt, port);
     DiagnosticsLog.add('agnes', '设计站后端已就绪：127.0.0.1:$port（数据根 workspace/.agnes）');
     return w;
+  }
+
+  /// 后端健康巡检：每 30 秒 ping 一次 `/healthz`，连续 2 次失败就重启一次。
+  ///
+  /// 为什么需要（真机踩过）：node 进程会因为内存压力被系统杀掉，而「电脑访问」
+  /// 的转发还开着 —— 表现是**设计站突然 502，用户不知道要关开一次开关**。
+  /// 自己拉回来，除非连拉起也失败（那时把原因记进 [lastError]）。
+  static void _watch(DshRuntime rt, int port) {
+    _watchdog?.cancel();
+    var fails = 0;
+    var restarting = false;
+    _watchdog = Timer.periodic(const Duration(seconds: 30), (t) async {
+      if (restarting || !identical(_current?.port, port)) return;
+      if (_current == null) {
+        t.cancel();
+        return;
+      }
+      final ok = await _ping(port);
+      if (ok) {
+        fails = 0;
+        return;
+      }
+      fails++;
+      if (fails < 2) return;
+      fails = 0;
+      restarting = true;
+      DiagnosticsLog.add('agnes', '后端连续 2 次 /healthz 失败 → 尝试重启');
+      try {
+        await stop();
+        if (_keepAlive) {
+          // 端口会复用 [_preferredPort]，所以对外转发地址保持不变。
+          await ensureStarted(rt);
+          lastError = null;
+          DiagnosticsLog.add('agnes', '后端已自动拉起');
+        }
+      } catch (e) {
+        lastError = '$e';
+        DiagnosticsLog.add('agnes', '自动拉起失败：$e');
+      } finally {
+        restarting = false;
+        t.cancel();
+      }
+    });
+  }
+
+  static Future<bool> _ping(int port) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+    try {
+      final req = await client.getUrl(Uri.parse('http://127.0.0.1:$port/healthz'));
+      final res = await req.close();
+      await res.drain<void>();
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
   }
 
   /// 标记「外部正在用」：置 true 后 [releaseIfUnused] 不会再停服务。
@@ -224,6 +296,8 @@ class AgnesWeb {
   }
 
   static Future<void> stop() async {
+    _watchdog?.cancel();
+    _watchdog = null;
     final w = _current;
     _current = null;
     if (w == null) return;
@@ -238,9 +312,21 @@ class AgnesWeb {
   }
 
   static Future<int> _pickFreePort() async {
+    // 优先复用上次的端口（重启时）；占用失败再让系统挑。
+    final want = _preferredPort;
+    if (want != null) {
+      try {
+        final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, want);
+        await probe.close();
+        return want;
+      } catch (_) {
+        DiagnosticsLog.add('agnes', '上次的端口 $want 被占用，改让系统挑');
+      }
+    }
     final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     final p = s.port;
     await s.close();
+    _preferredPort = p;
     return p;
   }
 
