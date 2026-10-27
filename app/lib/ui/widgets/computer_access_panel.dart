@@ -91,13 +91,27 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         //    （file-upload / ui-deliverables / sessionController）就再也连不上
         //    "自己"，整个 profile 激活失败、进程退出码 1。
         //    所以 DSH 继续绑 127.0.0.1，App 在对外端口上开一个转发。
-        final server = await BotServer.ensureStarted(runtime: widget.runtime);
+        //
+        // ⚠️⚠️ 第二个坑（2026-10-27）：**必须先定转发端口，再起 DSH**。
+        //    浏览器是拿 `网卡地址:转发端口` 访问的，而 DSH 自认为绑在回环上 ——
+        //    它的 browser-trust fence 会把所有 `/api/*` 以 **403** 拒掉
+        //    （真机实测：directoryPicker/list、llm/listProviders 全 403，
+        //    表现为「工作区选不出来 + 模型列表加载失败 + 暂无会话」）。
+        //    要让它放行，就得在**启动参数**里带上 `--trusted-host <地址:端口>`，
+        //    而那是启动参数、改不了热 —— 所以顺序只能是：挑端口 → 带信任启动 → 开转发。
+        final fwdPort = await PortForwarder.instance.reservePort();
+        final authority = '$host:$fwdPort';
+        final server = await BotServer.ensureStarted(
+          runtime: widget.runtime,
+          trustedAuthorities: <String>[authority],
+        );
         if (!mounted) return;
-        final fwdPort =
-            await PortForwarder.instance.start(targetPort: server.port);
+        await PortForwarder.instance.start(
+          targetPort: server.port,
+          listenPort: fwdPort,
+        );
         final token = Uri.parse(server.url).queryParameters['token'] ?? '';
-        final url =
-            'http://$host:$fwdPort/${token.isEmpty ? '' : '?token=$token'}';
+        final url = 'http://$host:$fwdPort/${token.isEmpty ? '' : '?token=$token'}';
         if (!mounted) return;
         setState(() {
           _url = url;
@@ -105,6 +119,12 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         });
       } else {
         await PortForwarder.instance.stop();
+        // 关掉时也要把信任白名单清掉，否则下次起服务还带着旧 authority
+        // （端口会变，留着没用还多一次重启）。
+        await BotServer.ensureStarted(
+          runtime: widget.runtime,
+          trustedAuthorities: const <String>[],
+        );
         if (!mounted) return;
         setState(() {
           _on = false;

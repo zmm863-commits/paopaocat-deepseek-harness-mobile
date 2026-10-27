@@ -68,6 +68,25 @@ class BotServer {
   /// 「调用方没指定绑定地址」的哨兵值（区别于「明确要求退回回环」）。
   static const Object _keepListenHost = Object();
 
+  /// 传给 DSH 的信任围栏白名单（authority 列表，`host:port` 形式）。
+  ///
+  /// 为什么必须有（2026-10-27 用户报「网页能打开，但会话/模型/插件全空」）：
+  /// 浏览器是用 `192.168.1.100:38747` 访问的，而 DSH 认为自己绑在
+  /// `127.0.0.1:44033` —— 于是**所有 `/api/*` 请求都被 browser-trust fence
+  /// 以 403 拒掉**（真机实测：`/api/directoryPicker/list`、
+  /// `/api/llm/listProviders` 全是 `HTTP 403`），表现为工作区选不出来、
+  /// 模型列表加载失败、插件读不全。页面本身是静态资源，所以看着能打开。
+  static List<String> _trusted = const <String>[];
+
+  /// 列表内容比较（顺序无关；[ensureStarted] 用它决定要不要重启）。
+  static bool _sameList(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   /// Bot 服务地址变化通知。
   ///
   /// 为什么需要（2026-10-18 真机 bug，而且是我自己上一版引入的）：
@@ -298,21 +317,31 @@ class BotServer {
     required DshRuntime runtime,
     void Function(String line)? onLog,
     Object? listenHost = _keepListenHost,
+    List<String> trustedAuthorities = const <String>[],
   }) async {
     final wanted = identical(listenHost, _keepListenHost)
         ? _listenHost
         : _normalizeHost(listenHost is String ? listenHost : null);
+    final trusted = trustedAuthorities
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList()
+      ..sort();
     final running = _current;
     if (running != null && running.alive) {
-      if (running.listenHost == wanted) return running;
-      // 绑定地址变了（用户开了/关了「电脑访问」）→ 只能重启。
+      if (running.listenHost == wanted && _sameList(_trusted, trusted)) {
+        return running;
+      }
+      // 绑定地址或信任列表变了 → 只能重启（都是启动参数，热改不了）。
       DiagnosticsLog.add('dsh-bot',
-          '绑定地址变化（${running.listenHost ?? '回环'} → ${wanted ?? '回环'}）→ 重启 web 服务');
+          '启动参数变化（绑定 ${running.listenHost ?? '回环'} → ${wanted ?? '回环'}，'
+          'trusted ${_trusted.length} → ${trusted.length} 条）→ 重启 web 服务');
       await running.stop();
     } else if (running != null) {
       await running.stop();
     }
     _listenHost = wanted;
+    _trusted = trusted;
 
     // 运行时的 Android 兼容补丁：附件上传的 durable 提升会 fsync 到 /data/user/0
     // （App 沙箱内不可 open）→ 上传必失败。幂等，每次启动都过一遍。
@@ -401,6 +430,10 @@ class BotServer {
         '--host', host,
         '--trusted-host', '$host:$_pinnedPort',
       ],
+      // 信任围栏白名单：浏览器从「网卡地址:转发端口」访问时，`/api/*` 的
+      // Host 不是 DSH 自己（它绑回环），不加这几条 → 全部 403。
+      // 0.1.7-rc.2 的 `--trusted-host <authority...>` 是可重复的。
+      for (final a in _trusted) ...['--trusted-host', a],
     ];
 
     onLog?.call('[dsh-bot] 启动：--profile $profileName --no-open --port $_pinnedPort'

@@ -42,16 +42,44 @@ class PortForwarder {
 
   bool get running => _server != null;
 
+  /// 提前挑一个空闲端口并**记住它**，之后再 [start] 时就绑这一个。
+  ///
+  /// 为什么需要"先挑"（2026-10-27）：DSH 的 `--trusted-host` 是**启动参数**，
+  /// 必须在我们知道对外端口之后、启动 DSH 之前就传进去（否则浏览器所有
+  /// `/api/*` 都 403）。而正常顺序是"先起 DSH、再起转发"——那就永远拿不到
+  /// 端口。所以先 reserve 一个，用它当 trusted-host 起 DSH，再绑同一个端口。
+  ///
+  /// 挑选方式：bind 到 0 拿到系统分配的端口后立刻释放。Release 到 re-bind
+  /// 之间有个极小窗口（几十微秒），被别的进程抢走的概率可以忽略；真被抢了
+  /// [start] 会抛出来，界面上看得到，不会静默错。
+  Future<int> reservePort() async {
+    final probe = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
+    final p = probe.port;
+    await probe.close();
+    _reserved = p;
+    return p;
+  }
+
+  int? _reserved;
+
   /// 在 [listenPort] 上等连接，全部转到 `127.0.0.1:[targetPort]`。
   ///
-  /// [listenPort] 传 0 表示让系统挑一个空闲端口（返回值是真实端口）。
+  /// [listenPort] 传 0 表示"用 [reservePort] 预定的那个；没预定就让系统挑"。
   Future<int> start({required int targetPort, int listenPort = 0}) async {
+    final want = listenPort != 0 ? listenPort : (_reserved ?? 0);
     await stop();
-    final server = await ServerSocket.bind(InternetAddress.anyIPv4, listenPort);
+    final server = await ServerSocket.bind(InternetAddress.anyIPv4, want);
     _server = server;
     _port = server.port;
+    _reserved = null;
     DiagnosticsLog.add('lan',
         '端口转发已启动：0.0.0.0:${server.port} → 127.0.0.1:$targetPort');
+    if (listenPort != 0 && server.port != listenPort) {
+      // 不该发生：bind 指定端口成功时返回的就是它。真出现说明平台层有转换，
+      // 必须留痕 —— 否则 trusted-host 与真实端口不一致，又是满屏 403。
+      DiagnosticsLog.add('lan',
+          '⚠ 实际监听端口(${server.port})与预定($listenPort)不一致，/api 可能 403');
+    }
 
     server.listen((client) {
       _open.add(client);
