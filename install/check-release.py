@@ -385,7 +385,15 @@ def check_assets(apk: str, repo: str, results: list) -> None:
     with zipfile.ZipFile(apk) as z:
         runtime = [n for n in z.namelist() if norm(n).endswith("dsh-runtime.zip")]
         if not runtime:
-            results.append(("warn", "运行时包", "包里没有 dsh-runtime.zip —— 端侧 DSH 起不来"))
+            # ⚠️ 2026-10-27 用户定死：**不允许出精简包**，任何开发周期只能出完整包。
+            #    原来是 warn（于是 82MB 的精简包能过闸），现在必须是 fail：
+            #    精简包依赖手机上已有运行时，全新安装还要联网下载，不符合
+            #    「拿来就能用」。重新出包：构建时带 DSH_ANDROID_INCLUDE_RUNTIME=1。
+            results.append((
+                "fail",
+                "运行时包",
+                "包里没有 dsh-runtime.zip —— 这是精简包，已被明令禁止。"
+                "请带 DSH_ANDROID_INCLUDE_RUNTIME=1 重新构建完整包"))
         else:
             info = z.getinfo(runtime[0])
             results.append(("ok", "运行时包", f"{norm(runtime[0])}  {info.file_size / 1048576:.1f} MB"))

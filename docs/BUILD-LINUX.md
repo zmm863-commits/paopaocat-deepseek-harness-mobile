@@ -148,7 +148,21 @@ cp build/app/outputs/flutter-apk/app-release.apk \
 
 ---
 
-## 5.1 两个包：精简包（默认）与完整包（`DSH_ANDROID_INCLUDE_RUNTIME=1`）
+## 5.1 ⚠️ 只出完整包（2026-10-27 用户定死）
+
+**「精简包」已被明令禁止 —— 任何开发周期只能出完整包。** 出包命令必须带
+`DSH_ANDROID_INCLUDE_RUNTIME=1`：
+
+```bash
+DSH_ANDROID_INCLUDE_RUNTIME=1 flutter build apk --release --target-platform android-arm64
+# → 约 113 MB（含 assets/dsh-runtime.zip 32.9 MB）
+```
+
+理由：精简包依赖手机上已有运行时，全新安装还要联网下载 `dsh-runtime.zip`，
+不符合「拿来就能用」。`install/check-release.py` 已把「缺 dsh-runtime.zip」
+从 `warn` 改成 **`fail`**，出精简包过不了闸。
+
+> 历史（存档）：早期区分为「精简包 83MB（给应用内更新）/ 完整包 106MB（给全新安装）」。
 
 0.75 起**每次出包都要出两个**（同 versionCode、同签名，可互相覆盖）：
 
