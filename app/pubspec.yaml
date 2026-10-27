@@ -72,9 +72,9 @@ flutter:
     # 重新生成：cd /root/软件/m3e-canvas && npx next build && cp -r out/. <这里>
     - assets/studio/
     - assets/studio/404/
+    - assets/studio/_next/static/99-ByTwOlN0_VX127xjXT/
     - assets/studio/_next/static/chunks/
     - assets/studio/_next/static/media/
-    - assets/studio/_next/static/rexaG2S0zLQn--z9fjBst/
     - assets/studio/_not-found/
     - assets/studio/fonts/
     - assets/studio/fonts/material-symbols/
