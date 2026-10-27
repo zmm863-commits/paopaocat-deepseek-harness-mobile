@@ -360,6 +360,7 @@ async function handler(req, res) {
     const device = readDeviceVendors()
     const ids = new Set([...Object.keys(VENDOR_BASE_URLS), ...Object.keys(device)])
     json(res, 200, {
+      phoneMode: Object.keys(device).length > 0,
       vendors: [...ids].map((id) => ({
         id,
         label: VENDOR_LABELS[id] || (device[id] ? device[id].label || id : id),

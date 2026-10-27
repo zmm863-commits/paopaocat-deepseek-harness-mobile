@@ -827,6 +827,34 @@ function deviceVendors() {
 function mergeDeviceVendors() {
 	for (const [id, v] of Object.entries(deviceVendors())) if (!VENDOR_BASE_URLS[id]) VENDOR_BASE_URLS[id] = v.baseUrl;
 }
+/** 手机侧是否配了模型（=运行在手机 App 里，而不是独立部署）。 */
+function phoneMode() {
+	return Object.keys(deviceVendors()).length > 0;
+}
+/**
+* 按「某个模型属于哪家」反查设备厂商。
+*
+* 为什么需要：手机里配的模型 id 是**纯 id**（`deepseek-v4.1-flash`），
+* 不带厂商前缀；而 `getVendorFromModel()` 是靠前缀猜的，猜不到就会默认发去
+* agnes。设备厂商表里既然写了每家有哪些模型，就直接查表 —— 这是唯一可靠的
+* 依据，也保证「模型 → 端点」与手机上配的完全一致。
+*/
+function deviceVendorOfModel(model) {
+	const m = String(model || "").trim();
+	if (!m) return void 0;
+	for (const [id, v] of Object.entries(deviceVendors())) if (Array.isArray(v.models) && v.models.includes(m)) return id;
+}
+/** 手机侧配的全部模型（去重、保序），给 `/api/models` 的兜底目录用。 */
+function deviceModels() {
+	const seen = /* @__PURE__ */ new Set();
+	const out = [];
+	for (const v of Object.values(deviceVendors())) for (const m of v.models ?? []) {
+		if (!m || seen.has(m)) continue;
+		seen.add(m);
+		out.push(m);
+	}
+	return out;
+}
 //#endregion
 //#region server/engines/drama-engine.ts
 /**
@@ -6938,6 +6966,22 @@ const SKIP_NAMES = /* @__PURE__ */ new Set([
 	"localfiles",
 	"wechat-config.json"
 ]);
+/** 手机模式递归列资料库时要跳过的目录（重 / 不是内容）。 */
+const PHONE_SKIP = /* @__PURE__ */ new Set([
+	"node_modules",
+	"tmp",
+	"logs",
+	"cache",
+	"dist",
+	"build"
+]);
+function readdirSyncOrEmpty(d) {
+	try {
+		return readdirSync(d);
+	} catch {
+		return [];
+	}
+}
 const KIND_BY_EXT = {
 	".png": "image",
 	".jpg": "image",
@@ -6966,7 +7010,7 @@ function libraryPath(rel) {
 	const segs = String(rel || "").split("/").filter((s) => s && s !== "." && s !== "..");
 	if (!segs.length) throw new Error("缺少路径");
 	const top = segs[0];
-	if (!SOURCES[top] && top !== "toolbox") throw new Error("不允许访问这个目录：" + top);
+	if (!phoneMode() && !SOURCES[top] && top !== "toolbox") throw new Error("不允许访问这个目录：" + top);
 	const root = resolve(dataRoot());
 	const abs = resolve(root, ...segs);
 	if (abs !== root && !abs.startsWith(root + sep)) throw new Error("路径超出资料库");
@@ -6983,7 +7027,8 @@ function listLibrary(opts = {}) {
 	const wantKind = String(opts.kind || "").trim();
 	const q = String(opts.q || "").trim().toLowerCase();
 	const limit = Math.max(1, Math.min(500, opts.limit || 200));
-	for (const top of Object.keys(SOURCES)) {
+	const tops = phoneMode() ? readdirSyncOrEmpty(root).filter((n) => !SKIP_NAMES.has(n) && !n.startsWith(".") && !PHONE_SKIP.has(n)) : Object.keys(SOURCES);
+	for (const top of tops) {
 		const dir = join(root, top);
 		if (!existsSync(dir)) continue;
 		const walk = (d, depth) => {
@@ -7004,6 +7049,7 @@ function listLibrary(opts = {}) {
 					continue;
 				}
 				if (st.isDirectory()) {
+					if (phoneMode() && PHONE_SKIP.has(name)) continue;
 					walk(p, depth + 1);
 					continue;
 				}
@@ -7091,11 +7137,16 @@ async function libraryThumb(rel, width = 320) {
 * 下载到 data/images、data/videos，之后就能在资料库里翻到。
 */
 async function saveToLibrary(src, kind, name) {
-	const sub = {
+	const dirMap = phoneMode() ? {
+		image: "media/图片",
+		video: "media/视频",
+		audio: "media/音频"
+	} : {
 		image: "images",
 		video: "videos",
 		audio: "audios"
-	}[kind] || "images";
+	};
+	const sub = dirMap[kind] || dirMap.image;
 	const dir = join(dataRoot(), sub);
 	mkdirSync(dir, { recursive: true });
 	const v = String(src || "").trim();
@@ -7224,6 +7275,38 @@ async function handleLibraryRoute(method, path) {
 * 因此下面 1000 行路由分发逻辑**一行都不用改**。
 */
 const requestStore = new AsyncLocalStorage();
+/**
+* 按名字判断「这是图像模型 / 视频模型」。
+*
+* 手机侧的模型配置只给了 id，没有类型；而设计站的生图/生视频页要各自只列
+* 能用的模型。所以按业界通用的名字片段归类，认不出来的当文本模型。
+*/
+const IMAGE_HINTS = [
+	"seedream",
+	"wanx",
+	"cogview",
+	"flux",
+	"sdxl",
+	"sd3",
+	"dall-e",
+	"dalle",
+	"image",
+	"imagen",
+	"kolors",
+	"qwen-image"
+];
+const VIDEO_HINTS = [
+	"seedance",
+	"cogvideo",
+	"kling",
+	"sora",
+	"veo",
+	"hailuo",
+	"video",
+	"wan2",
+	"t2v",
+	"i2v"
+];
 /** Stable cordis plugin name. */
 const name = "agnes-studio";
 /** Required services. */
@@ -7611,6 +7694,24 @@ function apply(ctx) {
 					}
 					return;
 				}
+				if (phoneMode()) {
+					const dev = deviceModels();
+					const image = {};
+					const video = {};
+					const text = {};
+					for (const m of dev) if (IMAGE_HINTS.some((h) => m.toLowerCase().includes(h))) image[m] = m;
+					else if (VIDEO_HINTS.some((h) => m.toLowerCase().includes(h))) video[m] = m;
+					else text[m] = m;
+					jsonResponse(res, 200, {
+						textModels: text,
+						imageModels: image,
+						videoModels: video,
+						imageSizes: DEFAULT_IMAGE_SIZES,
+						phoneMode: true,
+						note: "模型来自手机 DSH 的模型设置"
+					});
+					return;
+				}
 				jsonResponse(res, 200, {
 					textModels: TEXT_MODEL_OPTIONS,
 					imageModels: IMAGE_MODEL_OPTIONS,
@@ -7835,7 +7936,8 @@ function apply(ctx) {
 					const parsed = JSON.parse(body);
 					const { endpoint, params, timeoutMs, baseUrl: customUrl } = parsed;
 					if (!endpoint) return textResponse(res, 400, "missing endpoint");
-					const vendor = parsed.vendor || getVendorFromModel(parsed.model || "");
+					const modelHint = String(parsed.model || params?.model || "");
+					const vendor = parsed.vendor || deviceVendorOfModel(modelHint) || getVendorFromModel(modelHint);
 					const apiKey = await resolveApiKeyForVendor(ctx, vendor);
 					const url = buildUpstreamUrl(getVendorBaseUrl(vendor, customUrl), endpoint);
 					const upstreamMethod = parsed.method === "GET" ? "GET" : "POST";

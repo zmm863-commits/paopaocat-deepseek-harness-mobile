@@ -5,10 +5,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../data/atomic_file.dart';
 import '../data/configured_models.dart';
+import '../state/provider_keys.dart';
 import 'diagnostics_log.dart';
 import 'dsh_runtime.dart';
 
@@ -88,22 +88,30 @@ class AgnesWeb {
   static Future<void> writeModelsFile(DshRuntime rt) async {
     try {
       final cfg = ConfiguredModels.readConfig(rt.filesDir);
-      // Key 在系统安全存储里（设置页写的是同一个 key），不是配置 JSON 里。
-      final key = await _readApiKey(rt);
       final vendors = <String, Map<String, Object?>>{};
       for (final p in cfg.providers) {
         final base = p.baseUrl.trim();
         if (base.isEmpty) continue;
-        // provider.id 直接当厂商 id：后端 createHostHandler() 已把设备厂商
-        // 并进端点表，所以 getVendorFromModel() 认得出这些自定义 id。
-        //
-        // Key 只有一份（设置页存的那个），所以按「当前选中的 provider」决定
-        // 给谁 —— 其余家只写 baseUrl/label，界面上会显示"还没填 Key"。
-        final isSelected = (cfg.selected ?? '').startsWith('${p.id}/');
+        // ⚠️ Key 是**按厂商分开存**的（`dsh_provider_key_<id>`，见
+        //    state/provider_keys.dart）。这里必须逐家读 —— 一开始我只读了
+        //    legacy 的单 Key（`dsh_model_api_key`），于是「一家都读不到 →
+        //    所有厂商的模型都空」，设计站下拉里一个模型都没有。
+        final key = await ProviderKeys.read(p.id);
+        final hasKey = key != null && key.trim().isNotEmpty;
+        // 无需 Key 的厂商（本机 ollama）也算可用。
+        final keyless = p.id == 'ollama';
+        final models = cfg.models
+            .where((m) => m.provider == p.id)
+            .map((m) => m.id)
+            .where((id) => id.trim().isNotEmpty)
+            .toList();
         vendors[p.id] = <String, Object?>{
           'baseUrl': base,
           'label': p.label.isEmpty ? p.id : p.label,
-          if (isSelected && key.isNotEmpty) 'apiKey': key,
+          // 只有「真能用」的厂商才导出模型：否则下拉里全是选了就报
+          // 「没填 Key」的项 —— 正是用户说的那种坏体验。
+          'models': (hasKey || keyless) ? models : <String>[],
+          if (hasKey) 'apiKey': key.trim(),
         };
       }
       final body = const JsonEncoder.withIndent('  ')
@@ -114,23 +122,6 @@ class AgnesWeb {
     } catch (e) {
       DiagnosticsLog.add('agnes', '写模型配置失败（设计站会提示没填 Key）：$e');
     }
-  }
-
-  /// 读当前激活模型的 Key（`flutter_secure_storage` 里设置页写的那一份）。
-  static Future<String> _readApiKey(DshRuntime rt) async {
-    try {
-      const storage = FlutterSecureStorage();
-      final v = await storage.read(key: 'dsh_model_api_key');
-      if (v != null && v.trim().isNotEmpty) return v.trim();
-    } catch (e) {
-      debugPrint('[agnes] 读安全存储失败：$e');
-    }
-    // 与设置页同源的开发注入通道（自动化/调试时用）。
-    try {
-      final dev = File('${rt.filesDir}/dev-api-key.txt');
-      if (dev.existsSync()) return dev.readAsStringSync().trim();
-    } catch (_) {}
-    return '';
   }
 
   /// 起服务（已起着就复用）。返回带端口的实例。
@@ -147,13 +138,17 @@ class AgnesWeb {
       'PORT': '$port',
       // 只绑回环：对外由 App 的 TCP 转发暴露，别直接把后端挂到网卡上。
       'HOST': '127.0.0.1',
-      // 资料根 = App 资料库扫描的那棵树 → 「生成的资料进资料库、重启还在」。
+      // 资料根 = **手机资料库本身**（用户 2026-10-27 第二次明确：连着手机资料库，
+      // 不要另建目录）。
       //
-      // ⚠️ **不能是点目录**（2026-10-27 审计发现）：资料库扫描器有一条
-      //    `baseName.startsWith('.')` 的跳过规则，把根设成 `workspace/.agnes`
-      //    等于"生成了但资料库永远看不见"。用中文目录名，用户在资料库里
-      //    直接看到「设计站/covers」「设计站/dramas」这样的分组。
-      'AGNES_DATA_DIR': '${rt.filesDir}/workspace/设计站',
+      // 于是三件事同时成立：
+      //   ① 已有文件（shots/、随手存的图……）在设计站的资料库面板里看得到；
+      //   ② 生成的新文件直接落进这棵树（后端用 `media/图片|视频|音频`，
+      //      与 App 自己的约定一致），App 资料库立刻可见；
+      //   ③ 重启后仍在（同一个目录，不复制不搬家）。
+      //
+      // ⚠️ 不要加子目录、也不要用点目录：扫描器会跳过 `.` 开头的目录。
+      'AGNES_DATA_DIR': '${rt.filesDir}/workspace',
       // 手机模型配置（Key 兜底的唯一来源）。
       'DSH_MOBILE_MODELS_FILE': _modelsFile(rt),
       if (!rt.environment.containsKey('NODE_OPTIONS'))
