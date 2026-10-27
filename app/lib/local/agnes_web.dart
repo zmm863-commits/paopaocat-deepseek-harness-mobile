@@ -39,6 +39,16 @@ class AgnesWeb {
   static AgnesWeb? _current;
   static AgnesWeb? get current => _current;
 
+  /// 外部（电脑访问的转发）是否正在用这个服务。
+  ///
+  /// 「电脑访问」开着时，手机页面退出**不能**把它停掉 —— 否则电脑那边
+  /// 突然 502。反过来，只在 App 内设计站页用过它、页面走了就该停，避免
+  /// 一个 7MB 的静态站 + Node 后端在后台白占内存。
+  static bool _keepAlive = false;
+
+  /// 当前服务的本机地址（`http://127.0.0.1:<port>/`），没起就是 null。
+  static String? get localUrl => _current == null ? null : 'http://127.0.0.1:${_current!.port}/';
+
   /// assets 里的后端与前端前缀。
   static const String serverAssetPrefix = 'assets/agnes-server/';
   static const String siteAssetPrefix = 'assets/studio-site/';
@@ -124,7 +134,12 @@ class AgnesWeb {
       // 只绑回环：对外由 App 的 TCP 转发暴露，别直接把后端挂到网卡上。
       'HOST': '127.0.0.1',
       // 资料根 = App 资料库扫描的那棵树 → 「生成的资料进资料库、重启还在」。
-      'AGNES_DATA_DIR': '${rt.filesDir}/workspace/.agnes',
+      //
+      // ⚠️ **不能是点目录**（2026-10-27 审计发现）：资料库扫描器有一条
+      //    `baseName.startsWith('.')` 的跳过规则，把根设成 `workspace/.agnes`
+      //    等于"生成了但资料库永远看不见"。用中文目录名，用户在资料库里
+      //    直接看到「设计站/covers」「设计站/dramas」这样的分组。
+      'AGNES_DATA_DIR': '${rt.filesDir}/workspace/设计站',
       // 手机模型配置（Key 兜底的唯一来源）。
       'DSH_MOBILE_MODELS_FILE': _modelsFile(rt),
       if (!rt.environment.containsKey('NODE_OPTIONS'))
@@ -194,6 +209,18 @@ class AgnesWeb {
     _current = w;
     DiagnosticsLog.add('agnes', '设计站后端已就绪：127.0.0.1:$port（数据根 workspace/.agnes）');
     return w;
+  }
+
+  /// 标记「外部正在用」：置 true 后 [releaseIfUnused] 不会再停服务。
+  static void setKeepAlive(bool v) {
+    _keepAlive = v;
+    DiagnosticsLog.add('agnes', '设计站保活=${v ? '开' : '关'}');
+  }
+
+  /// 页面退出时调用：没人用（电脑访问没开）才真正停。
+  static Future<void> releaseIfUnused() async {
+    if (_keepAlive) return;
+    await stop();
   }
 
   static Future<void> stop() async {

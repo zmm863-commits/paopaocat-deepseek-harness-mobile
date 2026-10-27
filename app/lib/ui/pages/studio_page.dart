@@ -5,7 +5,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../i18n/dsh_i18n.dart';
 import '../../local/dsh_runtime.dart';
-import '../../local/studio_server.dart';
+import '../../local/agnes_web.dart';
 import '../theme/dsh_tokens.dart';
 
 /// 「APP界面设计台」—— 泡泡猫设计工作站（基于 m3e-canvas，MIT）的手机版。
@@ -30,7 +30,6 @@ class StudioPage extends StatefulWidget {
 }
 
 class _StudioPageState extends State<StudioPage> {
-  StudioServer? _server;
   WebViewController? _web;
   bool _loading = true;
   String? _error;
@@ -43,17 +42,22 @@ class _StudioPageState extends State<StudioPage> {
 
   @override
   void dispose() {
-    // 页面走了就把 loopback 服务收掉：不留后台监听（这个服务只服务这一个页面）。
-    unawaited(_server?.stop());
+    // 页面走了要不要停后端，取决于「电脑访问」是否还在用它
+    // （开着的话电脑那边连着，停掉就是 502）。
+    unawaited(AgnesWeb.releaseIfUnused());
     super.dispose();
   }
 
   Future<void> _boot() async {
     if (mounted) setState(() { _loading = true; _error = null; });
     try {
-      final s = await StudioServer.start(filesDir: widget.runtime.filesDir);
+      // ⚠️ 2026-10-27：设计站不是纯静态站 —— 它的 15 个引擎都走
+      //    `/agnes-studio/api/*`。原来这里只起一个静态托管（StudioServer），
+      //    结果是「界面能开、点生成就 404」。现在改起完整后端（AgnesWeb），
+      //    和「电脑访问」共用同一个实例：资料存手机、模型用手机配置。
+      final s = await AgnesWeb.ensureStarted(widget.runtime);
       if (!mounted) {
-        await s.stop();
+        await AgnesWeb.releaseIfUnused();
         return;
       }
       final c = WebViewController();
@@ -74,13 +78,12 @@ class _StudioPageState extends State<StudioPage> {
           },
         ),
       );
-      await c.loadRequest(Uri.parse(s.url));
+      await c.loadRequest(Uri.parse('http://127.0.0.1:${s.port}/'));
       if (!mounted) {
-        await s.stop();
+        await AgnesWeb.releaseIfUnused();
         return;
       }
       setState(() {
-        _server = s;
         _web = c;
         _loading = false;
       });

@@ -127,6 +127,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         String? designUrl;
         String? designErr;
         try {
+          AgnesWeb.setKeepAlive(true);
           final agnes = await AgnesWeb.ensureStarted(widget.runtime);
           final dPort = await _designForward.start(
               targetPort: agnes.port,
@@ -147,6 +148,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
       } else {
         await PortForwarder.instance.stop();
         await _designForward.stop();
+        AgnesWeb.setKeepAlive(false);
         await AgnesWeb.stop();
         await DesignSite.removeEntry(widget.runtime);
         // 关掉时也要把信任白名单清掉，否则下次起服务还带着旧 authority
