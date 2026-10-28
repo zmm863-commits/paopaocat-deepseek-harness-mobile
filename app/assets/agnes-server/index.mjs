@@ -19,7 +19,7 @@
 import { createServer } from 'node:http'
 import { createServer as createTlsServer } from 'node:https'
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { resolve, extname, sep, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { timingSafeEqual } from 'node:crypto'
@@ -466,6 +466,73 @@ async function handler(req, res) {
   //
   //    这里只做一件事：把当前请求携带的密钥放进 AsyncLocalStorage，
   //    让引擎内部那句 ctx.credentials.resolve() 读到「使用者自己的 Key」。
+  // ── 服务器出网 IP（公众号 IP 白名单要填这个）─────────────────────────
+  // 用户 2026-10-29：公众号面板要**把出网 IP 标出来**，否则只报 40164，
+  // 用户根本不知道该把哪个 IP 加白名单。
+  if (url.pathname === '/agnes-studio/api/net/egress' && req.method === 'GET') {
+    const probe = async (u) => {
+      const r = await fetch(u, { signal: AbortSignal.timeout(6000) })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return (await r.text()).trim()
+    }
+    let ip = ''
+    let via = ''
+    const tried = []
+    // 先要 IPv4（公众号白名单几乎只收 IPv4），拿不到再退回任意地址。
+    for (const [u, name] of [
+      ['https://api4.ipify.org', 'api4.ipify.org'],
+      ['https://ipv4.ifconfig.me/ip', 'ipv4.ifconfig.me'],
+      ['https://api.ipify.org', 'api.ipify.org'],
+      ['https://ifconfig.me/ip', 'ifconfig.me'],
+      ['https://ipinfo.io/ip', 'ipinfo.io'],
+    ]) {
+      try {
+        const v = await probe(u)
+        if (/^[0-9a-fA-F:.]+$/.test(v)) {
+          ip = v
+          via = name
+          break
+        }
+        tried.push(`${name}: 返回不像 IP（${v.slice(0, 40)}）`)
+      } catch (e) {
+        tried.push(`${name}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    json(res, 200, { ip, via, tried })
+    return
+  }
+
+  // ── 本机工具清单（下载支持范围、离线配音是否可用）────────────────────
+  // 用户 2026-10-29：「视频下载支持多少网站就写多少」——所以这里**实测**
+  // yt-dlp / ffmpeg / espeak-ng 到底有没有，前端照着如实写。
+  if (url.pathname === '/agnes-studio/api/tools' && req.method === 'GET') {
+    const which = (name) => {
+      const exts = process.platform === 'win32' ? ['.exe', '.cmd', ''] : ['']
+      const dirs = String(process.env.PATH || '').split(sep).filter(Boolean)
+      for (const d of dirs) {
+        for (const ext of exts) {
+          const full = join(d, name + ext)
+          try {
+            if (existsSync(full)) return full
+          } catch { /* 忽略无权限目录 */ }
+        }
+      }
+      return ''
+    }
+    // ⚠️ 手机上的 ffmpeg 是随包的 `libffmpeg.so`，靠 AGNES_FFMPEG 指过去，
+    //    不在 PATH 里 —— 只查 PATH 会误判成"没有 ffmpeg"。
+    const envFfmpeg = String(process.env.AGNES_FFMPEG || process.env.DSH_ANDROID_FFMPEG || '')
+    const ffmpeg = envFfmpeg && existsSync(envFfmpeg) ? envFfmpeg : which('ffmpeg')
+    json(res, 200, {
+      ytdlp: which('yt-dlp'),
+      ffmpeg: ffmpeg,
+      espeak: which('espeak-ng') || which('espeak'),
+      node: process.version,
+      platform: `${process.platform}/${process.arch}`,
+    })
+    return
+  }
+
   if (url.pathname.startsWith('/agnes-studio/api')) {
     const keys = parseKeyHeaders(req.headers)
     requestStore.run({ keys }, () => {

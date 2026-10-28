@@ -184,7 +184,11 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
           await prefs.save();
           await _designForward.start(targetPort: agnes.port, listenPort: dPort);
           // URL 带口令：设计站端口不再裸奔（详见 AgnesWeb.accessToken 注释）。
-          designUrl = 'http://$host:$dPort/?token=${prefs.token}';
+          // ⚠️ 用**真正在跑的那个进程**的口令，而不是 prefs 里的值（2026-10-29 真机踩过）：
+          //    服务可能是上一轮起的（进程还活着），prefs 却被重置口令改过 →
+          //    面板显示的是新口令、服务认的是旧口令 → 电脑上打开就是「未通过访问口令」，
+          //    表现就是用户说的「网页版连不上手机」。agnes.token 才是服务手里的那把。
+          designUrl = 'http://$host:$dPort/?token=${agnes.token}';
           AgnesWeb.publicUrl = designUrl;
           AgnesWeb.lastError = null;
           await DesignSite.injectEntry(widget.runtime, designUrl);

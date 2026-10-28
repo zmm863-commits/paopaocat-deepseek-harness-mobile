@@ -36,7 +36,7 @@
     <button class="tab active" data-panel="home" role="tab" type="button">🏠 首页</button>
 
     <span class="tab-group">写</span>
-    <button class="tab" data-panel="ohstory" role="tab" type="button">创作台</button>
+    <button class="tab" data-panel="ohstory" role="tab" type="button">写作台</button>
     <button class="tab" data-panel="novel-split" role="tab" type="button">小说工具</button>
 
     <span class="tab-group">画</span>
@@ -109,6 +109,10 @@
       <div class="card">
         <div class="card-head"><span class="card-title">参数</span></div>
         <label class="field">
+          <span>厂家</span>
+          <select id="imgVendor"></select>
+        </label>
+        <label class="field">
           <span>模型</span>
           <select id="imgModel"></select>
         </label>
@@ -143,6 +147,10 @@
 
       <div class="card">
         <div class="card-head"><span class="card-title">参数</span></div>
+        <label class="field">
+          <span>厂家</span>
+          <select id="vidVendor"></select>
+        </label>
         <label class="field">
           <span>模型</span>
           <select id="vidModel"></select>
@@ -199,6 +207,7 @@
           <button class="btn" id="slProbe" type="button">先读一下时长</button>
         </div>
         <p class="hint" id="slInfo">先读时长，才知道能从哪里切到哪里。</p>
+        <p class="hint" id="slModelNote"></p>
       </div>
 
       <div class="card">
@@ -260,11 +269,7 @@
       <div class="card">
         <div class="card-head"><span class="card-title">资料库</span></div>
         <p class="note" id="libNote">这里放你生成的所有东西，也放你自己电脑上的素材。</p>
-        <div class="seg-switch" id="libTabs" role="tablist">
-          <button class="seg on" data-lib="gen" role="tab" type="button">我的生成</button>
-          <button class="seg" data-lib="asset" role="tab" type="button">我的素材</button>
-          <button class="seg" data-lib="local" role="tab" type="button">本机目录</button>
-        </div>
+
       </div>
 
       <!-- ── 我的生成 ── -->
@@ -290,6 +295,8 @@
           </div>
           <div class="row-actions">
             <button class="btn primary" id="libRefresh" type="button">刷新</button>
+            <button class="btn ghost" id="libUploadBtn" type="button">上传文件到资料库</button>
+            <input type="file" id="libUploadInput" multiple hidden>
           </div>
           <p class="hint" id="libHint">点一张图看大图，点视频直接播放。</p>
         </div>
@@ -403,6 +410,10 @@
         <div class="card-head"><span class="card-title">参数</span></div>
         <div class="grid-2">
           <label class="field">
+            <span>厂家</span>
+            <select id="drVendor"></select>
+          </label>
+          <label class="field">
             <span>文本模型</span>
             <select id="drTextModel">
               <option value="agnes-3.0-flash">Agnes 3.0 Flash</option>
@@ -449,7 +460,7 @@
           <button class="btn ghost" id="ohReconnect" type="button" hidden>重新连接</button>
           <button class="btn primary" id="ohPick" type="button">选择本机文件夹</button>
         </div>
-        <p class="hint" id="ohHint">选一个你电脑上的文件夹，创作台直接在里面读写；服务器全程不碰文件。</p>
+        <p class="hint" id="ohHint">选一个你电脑上的文件夹，写作台直接在里面读写；服务器全程不碰文件。</p>
       </div>
 
       <div class="card" id="ohProjectsCard" hidden>
@@ -530,8 +541,9 @@
         <div class="card-head"><span class="card-title">参数</span></div>
         <div class="grid-3">
           <label class="field"><span>分几幕</span><input type="number" id="bgScenes" value="8" min="3" max="24"></label>
+          <label class="field"><span>厂家</span><select id="bgVendor"></select></label>
           <label class="field"><span>文本模型</span><select id="bgTextModel"></select></label>
-          <label class="field"><span>图像模型</span><input type="text" id="bgImageModel" value="agnes-image-2.5-flash"></label>
+          <label class="field"><span>图像模型</span><select id="bgImageModel"></select></label>
         </div>
         <label class="field">
           <span>配乐（可选，服务器路径或 http 链接；给了就按它的时长铺满全片）</span>
@@ -577,8 +589,9 @@
         <div class="card-head"><span class="card-title">参数</span></div>
         <div class="grid-3">
           <label class="field"><span>镜头数</span><input type="number" id="mvSegments" value="6" min="3" max="12"></label>
+          <label class="field"><span>厂家</span><select id="mvVendor"></select></label>
           <label class="field"><span>文本模型</span><select id="mvTextModel"></select></label>
-          <label class="field"><span>图像模型</span><input type="text" id="mvImageModel" value="agnes-image-2.5-flash"></label>
+          <label class="field"><span>图像模型</span><select id="mvImageModel"></select></label>
         </div>
       </div>
 
@@ -615,6 +628,10 @@
           <label class="field">
             <span>拆成几集</span>
             <input type="number" id="nsEps" value="10" min="1" max="200">
+          </label>
+          <label class="field">
+            <span>厂家</span>
+            <select id="nsVendor"></select>
           </label>
           <label class="field">
             <span>模型</span>
@@ -663,6 +680,10 @@
             </select>
           </label>
           <label class="field">
+            <span>厂家</span>
+            <select id="deVendor"></select>
+          </label>
+          <label class="field">
             <span>模型</span>
             <select id="deModel"></select>
           </label>
@@ -702,7 +723,7 @@
             <button class="btn primary" id="tbDlBtn" type="button" style="width:100%">下载</button>
           </label>
         </div>
-        <p class="hint" id="tbHint">本机已装 yt-dlp：支持 B 站 / YouTube 等站点；其它链接自动走直链下载。</p>
+        <p class="hint" id="tbHint">正在检测本机下载能力…</p>
         <pre class="prompt-out" id="tbLog" hidden></pre>
       </div>
 
@@ -735,7 +756,7 @@
             <button class="btn primary" id="tbTtsBtn" type="button" style="width:100%">合成语音</button>
           </label>
         </div>
-        <p class="hint" id="tbTtsHint">走 MiniMax TTS，需要在「设置」里填 MiniMax 的 Key。</p>
+        <p class="hint" id="tbTtsHint">正在检测本机配音能力…</p>
         <div id="tbTtsResult" hidden>
           <audio id="tbAudio" controls style="width:100%;margin-top:10px"></audio>
           <div class="row-actions">
@@ -759,6 +780,7 @@
           <label class="field"><span>厂商</span><select id="vpVendor"></select></label>
           <label class="field"><span>模型</span><input type="text" id="vpModel" value="agnes-2.5-flash"></label>
         </div>
+        <p class="hint" id="vpModelNote"></p>
       </div>
 
       <button class="cta" id="vpBtn" type="button">开始解析</button>
@@ -797,6 +819,10 @@
       <div class="card">
         <div class="card-head"><span class="card-title">公众号凭据</span></div>
         <p class="note">AppSecret 只随本次推送使用，服务端不落盘、不回显明文。调用前请把服务器出网 IP 加入公众号「IP 白名单」，否则会报 40164。</p>
+        <div class="row-actions">
+          <p class="hint" id="wxEgress" style="margin:0;flex:1">服务器出网 IP：读取中…</p>
+          <button class="btn ghost" id="wxEgressBtn" type="button">重新检测</button>
+        </div>
         <label class="field">
           <span>AppID</span>
           <input type="text" id="wxAppid" autocomplete="off" placeholder="wx 开头的 AppID">
@@ -842,16 +868,6 @@
     </section>
 
     <section class="panel" data-panel="canvas" role="tabpanel">
-      <div class="card">
-        <div class="card-head"><span class="card-title">泡泡猫 APP 界面设计站</span></div>
-        <p class="note">在浏览器里拖拽拼 <strong>Material 3</strong> 界面 → 连线成流程 → 预览里点击走查 → <strong>一键生成给 AI 编程工具（Claude Code / Codex / Cursor）的自然语言提示词</strong>，目标平台可选 Android 或 Web。</p>
-        <p class="hint">整个工具是纯静态的，设计稿存在你自己浏览器的 localStorage 里，不经过服务器。</p>
-        <div class="row-actions">
-          <button class="btn ghost" id="cvReload" type="button">重新载入</button>
-          <button class="btn primary" id="cvOpen" type="button">新窗口打开 ↗</button>
-        </div>
-      </div>
-
       <div class="card" style="padding:0;overflow:hidden">
         <iframe id="cvFrame" src="/design/" title="泡泡猫 APP 界面设计站"
                 style="width:100%;height:72vh;min-height:560px;border:0;display:block;background:#eef3fb"></iframe>
@@ -895,6 +911,7 @@
       </div>
 
       <button class="cta" id="anBtn" type="button">开始生成口播</button>
+      <p class="hint" id="anModelNote"></p>
       <p class="hint" id="anHint">按文稿分段 → 生成语音 → 合成画面，通常需要几分钟。</p>
 
       <div class="progress-wrap" id="anProgress" hidden>
@@ -922,6 +939,16 @@
             <select id="cvStyle"></select>
           </label>
         </div>
+        <div class="grid-2">
+          <label class="field">
+            <span>厂家</span>
+            <select id="cvVendor"></select>
+          </label>
+          <label class="field">
+            <span>生图模型</span>
+            <select id="cvModel"></select>
+          </label>
+        </div>
         <label class="field">
           <span>故事简介 / 题材</span>
           <textarea id="cvSummary" rows="3" placeholder="一句话故事，用来决定画面内容…"></textarea>
@@ -932,7 +959,10 @@
         </label>
       </div>
 
-      <button class="cta" id="cvBtn" type="button">生成封面提示词</button>
+      <div class="row-actions">
+        <button class="btn primary" id="cvBtn" type="button">生成封面提示词</button>
+        <button class="btn ghost" id="cvGenBtn" type="button">用所选模型直接出图</button>
+      </div>
       <p class="hint" id="cvHint">生成的是一段可直接投喂给生图模型的提示词（竖版构图、预留标题位、不含文字）。</p>
 
       <div class="results" id="cvResults"></div>
@@ -948,6 +978,16 @@
         <div class="card-head"><span class="card-title">你的想法</span></div>
         <textarea id="pxIdea" rows="5" placeholder="用一句话描述你想要的东西…"></textarea>
         <div id="pxFields" style="margin-top:12px"></div>
+        <div class="grid-2" style="margin-top:12px">
+          <label class="field">
+            <span>厂家</span>
+            <select id="pxVendor"></select>
+          </label>
+          <label class="field">
+            <span>模型</span>
+            <select id="pxModel"></select>
+          </label>
+        </div>
       </div>
 
       <button class="cta" id="pxBtn" type="button">生成提示词</button>

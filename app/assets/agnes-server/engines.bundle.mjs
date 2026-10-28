@@ -815,6 +815,7 @@ function deviceVendors() {
 			out[id] = {
 				baseUrl: v.baseUrl.replace(/\/+$/, ""),
 				...typeof v.apiKey === "string" && v.apiKey ? { apiKey: v.apiKey } : {},
+				...typeof v.label === "string" && v.label ? { label: v.label } : {},
 				...Array.isArray(v.models) ? { models: v.models.filter((m) => typeof m === "string" && m) } : {}
 			};
 		}
@@ -7861,10 +7862,20 @@ function apply(ctx) {
 					for (const m of dev) if (IMAGE_HINTS.some((h) => m.toLowerCase().includes(h))) image[m] = m;
 					else if (VIDEO_HINTS.some((h) => m.toLowerCase().includes(h))) video[m] = m;
 					else text[m] = m;
+					// 模型 → 厂商 映射：网页要「先选厂家、再选模型」两级下拉，
+					// 只给一串模型名是不够的（用户要的是"能看出这模型是哪家的"）。
+					const modelVendors = {};
+					const vendorLabels = {};
+					for (const [vid, v] of Object.entries(deviceVendors())) {
+						if (v.label) vendorLabels[vid] = v.label;
+						for (const m of v.models ?? []) if (!(m in modelVendors)) modelVendors[m] = vid;
+					}
 					jsonResponse(res, 200, {
 						textModels: text,
 						imageModels: image,
 						videoModels: video,
+						modelVendors: modelVendors,
+						vendorLabels: vendorLabels,
 						imageSizes: DEFAULT_IMAGE_SIZES,
 						phoneMode: true,
 						note: "模型来自手机 DSH 的模型设置"

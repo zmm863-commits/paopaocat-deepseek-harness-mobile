@@ -392,6 +392,125 @@ async function attachModelSuggest(input, vendor, kind) {
   } catch { /* 忽略 */ }
 }
 
+/** 这个模型是哪家厂商的（手机模式下由后端给；拿不到就空串）。 */
+function vendorOfModel(id) {
+  return PHONE_MODEL_VENDOR[id] || ''
+}
+
+/** 厂商 id 的中文名。 */
+function vendorName(id) {
+  return PHONE_VENDOR_LABEL[id] || id || '未标注厂商'
+}
+
+/** 某一类模型按厂商分组：Map<vendorId, string[]>。 */
+function modelsByVendor(kind) {
+  const out = new Map()
+  for (const m of PHONE_MODELS[kind] || []) {
+    const v = vendorOfModel(m)
+    if (!out.has(v)) out.set(v, [])
+    out.get(v).push(m)
+  }
+  return out
+}
+
+/**
+ * 把「厂家 + 模型」两级下拉接起来（手机模式专用）。
+ *
+ * 为什么要有：用户 2026-10-29 明确「模型选择要能选厂家和模型」——
+ * 手机里配了好几家，只给一串模型名看不出是哪家的，也没法按家过滤。
+ *
+ * 非手机模式（电脑自己填 Key）下厂家这一栏直接隐藏，保持原样不动。
+ */
+function bindVendorModel(vendorSel, modelSel, kind, preferred) {
+  if (!vendorSel || !modelSel) return
+  const wrap = vendorSel.closest('.field')
+  const groups = modelsByVendor(kind)
+  if (!PHONE_MODE || groups.size === 0) {
+    if (wrap) wrap.hidden = true
+    return
+  }
+  if (wrap) wrap.hidden = false
+  const keep = vendorSel.value
+  const frag = document.createDocumentFragment()
+  for (const [v, list] of groups) {
+    const o = document.createElement('option')
+    o.value = v
+    o.textContent = `${vendorName(v)}（${list.length} 个）`
+    frag.appendChild(o)
+  }
+  vendorSel.replaceChildren(frag)
+  const current = modelSel.value
+  const has = (el, v) => Array.from(el.options).some((o) => o.value === v)
+  if (keep && has(vendorSel, keep)) vendorSel.value = keep
+  else if (current && groups.has(vendorOfModel(current))) vendorSel.value = vendorOfModel(current)
+  else vendorSel.value = vendorSel.options[0].value
+
+  const apply = () => {
+    fillModelSelect(modelSel, groups.get(vendorSel.value) || [], kind)
+    if (preferred && has(modelSel, preferred)) modelSel.value = preferred
+    paintModelHint(modelSel, kind)
+  }
+  vendorSel.onchange = apply
+  apply()
+}
+
+/**
+ * 一个「厂家」带**多个**模型下拉（短剧的文本/图片/视频、MTV 与背景视频的文本/图像）。
+ * 某一家没有这一类模型时，那个下拉禁用并写明原因，而不是留个空壳。
+ */
+function bindVendorGroup(vendorSel, specs) {
+  if (!vendorSel) return
+  const wrap = vendorSel.closest('.field')
+  const usable = specs.filter((sp) => sp.sel)
+  if (!PHONE_MODE || usable.length === 0) {
+    if (wrap) wrap.hidden = true
+    return
+  }
+  const vendorSet = new Map()
+  for (const sp of usable) {
+    for (const [v, list] of modelsByVendor(sp.kind)) {
+      if (!vendorSet.has(v)) vendorSet.set(v, new Set())
+      for (const m of list) vendorSet.get(v).add(m)
+    }
+  }
+  if (!vendorSet.size) {
+    if (wrap) wrap.hidden = true
+    return
+  }
+  if (wrap) wrap.hidden = false
+  const keep = vendorSel.value
+  const frag = document.createDocumentFragment()
+  for (const [v, set] of vendorSet) {
+    const o = document.createElement('option')
+    o.value = v
+    o.textContent = `${vendorName(v)}（${set.size} 个模型）`
+    frag.appendChild(o)
+  }
+  vendorSel.replaceChildren(frag)
+  const has = (v) => Array.from(vendorSel.options).some((o) => o.value === v)
+  if (keep && has(keep)) vendorSel.value = keep
+  else vendorSel.value = vendorSel.options[0].value
+
+  const apply = () => {
+    const v = vendorSel.value
+    for (const sp of usable) {
+      const list = (PHONE_MODELS[sp.kind] || []).filter((m) => vendorOfModel(m) === v)
+      if (list.length) {
+        fillModelSelect(sp.sel, list, sp.kind)
+      } else {
+        sp.sel.replaceChildren(new Option(`（这家没有${KIND_LABEL[sp.kind] || ''}模型）`, ''))
+        sp.sel.disabled = true
+      }
+      if (sp.preferred && Array.from(sp.sel.options).some((o) => o.value === sp.preferred)) {
+        sp.sel.value = sp.preferred
+      }
+      paintModelHint(sp.sel, sp.kind)
+    }
+  }
+  vendorSel.onchange = apply
+  apply()
+}
+
 function fillSelect(el, entries, selected) {
   if (!el) return
   el.replaceChildren()
@@ -566,6 +685,12 @@ let PHONE_MODELS = { text: [], image: [], video: [], audio: [] }
 /** 手机里真正配了凭据的厂商 id 列表（来自 /api/vendors 的 fromDevice）。 */
 let PHONE_VENDORS = []
 
+/** 模型 → 厂商 id（后端 /agnes-studio/api/models 的 modelVendors）。 */
+let PHONE_MODEL_VENDOR = {}
+
+/** 厂商 id → 中文名（同上 vendorLabels）。 */
+let PHONE_VENDOR_LABEL = {}
+
 async function detectPhoneMode() {
   try {
     const r = await fetch('/api/vendors', { cache: 'no-store' })
@@ -602,6 +727,10 @@ async function loadPhoneModels() {
       video: pick(d.videoModels),
       audio: pick(d.audioModels),
     }
+    // 「先选厂家、再选模型」需要这层映射；老后端没有这两项时退回空表，
+    // 界面自动降级成「只有模型下拉」，不会白屏。
+    PHONE_MODEL_VENDOR = d.modelVendors && typeof d.modelVendors === 'object' ? d.modelVendors : {}
+    PHONE_VENDOR_LABEL = d.vendorLabels && typeof d.vendorLabels === 'object' ? d.vendorLabels : {}
   } catch { /* 拉不到就保持空，下拉会显示"手机里没有这一类模型" */ }
 }
 
@@ -1266,6 +1395,30 @@ function init() {
 function initWechat() {
   let coverData = null
 
+  // 用户 2026-10-29：公众号面板要**把服务器出网 IP 标出来**（否则只看到 40164）。
+  const egress = $('wxEgress')
+  const loadEgress = async () => {
+    if (!egress) return
+    egress.className = 'hint'
+    egress.textContent = '服务器出网 IP：读取中…'
+    try {
+      const r = await fetch('/agnes-studio/api/net/egress', { cache: 'no-store' })
+      const d = await r.json()
+      if (d.ip) {
+        egress.className = 'hint ok'
+        egress.innerHTML = `服务器出网 IP：<b>${d.ip}</b> —— 把这个加进公众号后台的「IP 白名单」`
+      } else {
+        egress.className = 'hint error'
+        egress.textContent = '读不到出网 IP：' + ((d.tried || []).join('；') || '网络不通')
+      }
+    } catch (e) {
+      egress.className = 'hint error'
+      egress.textContent = '读不到出网 IP：' + (e instanceof Error ? e.message : String(e))
+    }
+  }
+  void loadEgress()
+  $('wxEgressBtn')?.addEventListener('click', () => { void loadEgress() })
+
   // 封面预览 + 转 base64
   $('wxCover')?.addEventListener('change', (e) => {
     const file = e.target.files?.[0]
@@ -1353,6 +1506,7 @@ function initWechat() {
 // ═══════════════════════════════════════════════════════════════════════
 
 async function initCover() {
+  let lastPrompt = ''
   const hint = $('cvHint')
   const btn = $('cvBtn')
   const results = $('cvResults')
@@ -1365,6 +1519,36 @@ async function initCover() {
     const map = Object.fromEntries((d.styles || []).map((s) => [s.key, s.name]))
     if (Object.keys(map).length) fillSelect($('cvStyle'), map)
   } catch { /* 拿不到就不填，其余字段仍可手动输入 */ }
+
+  // 用户 2026-10-29「封面没有选择厂家和模型的地方」：补了厂家+生图模型两个下拉，
+  // 并且**真的用它出图**（不是只摆一个空下拉）。
+  $('cvGenBtn')?.addEventListener('click', async () => {
+    const gen = $('cvGenBtn')
+    const model = $('cvModel')?.value || ''
+    if (!model) { hint.className = 'hint error'; hint.textContent = '手机里还没有可用的图像模型'; return }
+    if (!lastPrompt) { hint.className = 'hint error'; hint.textContent = '先点「生成封面提示词」'; return }
+    gen.disabled = true
+    const oldText = gen.textContent
+    gen.textContent = '出图中…'
+    hint.className = 'hint'
+    hint.textContent = `正在用 ${model} 出图…`
+    try {
+      const url = await generateOneImage(model, lastPrompt, '1024x1536')
+      const card = document.createElement('div')
+      card.className = 'result'
+      fillResultCard(card, 'image', url, '封面 · ' + model)
+      results.prepend(card)
+      archiveToLibrary(url, 'image', 'cover-' + Date.now())
+      hint.className = 'hint ok'
+      hint.textContent = `已用 ${model} 出图`
+    } catch (e) {
+      hint.className = 'hint error'
+      hint.textContent = '出图失败：' + (e instanceof Error ? e.message : String(e))
+    } finally {
+      gen.disabled = false
+      gen.textContent = oldText
+    }
+  })
 
   btn.addEventListener('click', async () => {
     const title = $('cvTitle').value.trim()
@@ -1395,6 +1579,7 @@ async function initCover() {
       if (!r.ok || d.error) throw new Error(d.error || `请求失败（HTTP ${r.status}）`)
       const styleName = $('cvStyle').selectedOptions[0]?.textContent || ''
       renderPromptCard(results, d.prompt, `${title} · ${styleName}`)
+      lastPrompt = d.prompt
       hint.className = 'hint ok'
       hint.textContent = '已生成，点「复制」拿去生图'
     } catch (error) {
@@ -1502,7 +1687,8 @@ async function initExpert() {
       const r = await fetch('/agnes-studio/api/prompt-expert/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: current.key, idea: text, params, model: 'agnes-3.0-flash' }),
+        // 模型不再写死：用上面「厂家 + 模型」下拉选的那一个（手机模式下就是手机里的模型）。
+        body: JSON.stringify({ type: current.key, idea: text, params, model: ($('pxModel')?.value || '') }),
       })
       const d = await r.json()
       if (!r.ok || d.error) throw new Error(d.error || `请求失败（HTTP ${r.status}）`)
@@ -1555,6 +1741,16 @@ function renderPromptCard(container, text, caption) {
 // ═══════════════════════════════════════════════════════════════════════
 
 async function initAnchor() {
+  // 用户 2026-10-29：口播到底调什么模型，要写清楚。
+  const anchorNote = $('anModelNote')
+  if (anchorNote) {
+    const img = (PHONE_MODELS.image || [])[0]
+    anchorNote.innerHTML = '配音：选「本地离线配音」= 手机本机 espeak-ng 合成（免费、不联网）；'
+      + '选其它音色 = MiniMax 语音合成（需要手机设置里填 MiniMax 的 Key）。<br>'
+      + '配图：用手机里的图像模型' + (img ? `（当前：<b>${img}</b>）` : '（手机里还没配图像模型）')
+      + '；选「素材片段」则直接用你给的视频，不生成画面。'
+  }
+
   const btn = $('anBtn')
   const hint = $('anHint')
   const results = $('anResults')
@@ -1809,6 +2005,12 @@ async function initSlice() {
 
   const hint = $('slHint')
   const info = $('slInfo')
+  // 用户 2026-10-29：剪视频到底用的是什么，要写清楚。
+  const modelNote = $('slModelNote')
+  if (modelNote) {
+    modelNote.textContent = '剪视频用的是手机本机的 ffmpeg：只做切片、拼接、转码，**不调用任何模型**，不花 Key、不联网。'
+    modelNote.innerHTML = modelNote.textContent.replace('**不调用任何模型**', '<strong>不调用任何模型</strong>')
+  }
   const progress = $('slProgress')
   const bar = $('slBar')
   const ptext = $('slPtext')
@@ -2106,6 +2308,42 @@ async function initLibrary() {
   }
 
   $('libRefresh')?.addEventListener('click', () => { void refresh() })
+
+  // 手机资料库：直接把文件传进去（用户 2026-10-29：资料库去掉「我的素材 / 本机目录」，
+  // 但要能从网页上传文件到手机资料库）。上传落 media/上传/，传完立刻刷新可见。
+  const upBtn = $('libUploadBtn')
+  const upInput = $('libUploadInput')
+  if (upBtn && upInput) {
+    upBtn.addEventListener('click', () => upInput.click())
+    upInput.addEventListener('change', async () => {
+      const files = Array.from(upInput.files || [])
+      if (!files.length) return
+      upBtn.disabled = true
+      const oldText = upBtn.textContent
+      upBtn.textContent = `上传中…（${files.length} 个）`
+      let okCount = 0
+      const failed = []
+      for (const f of files) {
+        try {
+          await uploadFileToLibrary(f)
+          okCount++
+        } catch (e) {
+          failed.push(f.name + '：' + (e instanceof Error ? e.message : String(e)))
+        }
+      }
+      upInput.value = ''
+      upBtn.disabled = false
+      upBtn.textContent = oldText
+      const tip = $('libHint')
+      if (tip) {
+        tip.className = failed.length ? 'hint error' : 'hint ok'
+        tip.textContent = failed.length
+          ? `成功 ${okCount} 个；失败 ${failed.length} 个：${failed.slice(0, 3).join('；')}`
+          : `✓ 已上传 ${okCount} 个文件，已经出现在资料库里`
+      }
+      await refresh()
+    })
+  }
   $('libKind')?.addEventListener('change', () => { void refresh() })
   $('libSearch')?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') void refresh() })
   $('libCloseView')?.addEventListener('click', () => { viewCard.hidden = true })
@@ -3089,6 +3327,25 @@ async function initToolbox() {
   const listBox = $('tbList')
   const ttsHint = $('tbTtsHint')
 
+  // 用户 2026-10-29：下载支持哪些站点、语音用什么模型，写清楚。
+  // 判据是**实测本机工具**（/api/tools），不写"理论上支持"。
+  try {
+    const r = await fetch('/agnes-studio/api/tools', { cache: 'no-store' })
+    const t = r.ok ? await r.json() : {}
+    if (hint) {
+      hint.className = 'hint'
+      hint.innerHTML = t.ytdlp
+        ? '下载：本机有 yt-dlp，支持 <b>B 站 / YouTube / 抖音 / 微博 / 小红书</b> 等 yt-dlp 能解析的站点（上千个），以及任意 http 直链。'
+        : '下载：本机<b>没有 yt-dlp</b>，目前只能下 <b>http 直链</b>（.mp4/.webm/.m4a 等）；B 站、YouTube 这类需要解析的站点会失败。'
+    }
+    if (ttsHint) {
+      ttsHint.className = 'hint'
+      ttsHint.innerHTML = t.espeak
+        ? '配音：「本地离线配音」= 手机本机 <b>espeak-ng</b>（免费、不联网、机器音）；其它音色 = <b>MiniMax 语音合成</b>（需要手机设置里填 MiniMax Key）。'
+        : '配音：「本地离线配音」在本机<b>不可用</b>（没装 espeak-ng）；其它音色 = <b>MiniMax 语音合成</b>（需要手机设置里填 MiniMax Key）。'
+    }
+  } catch { /* 探测失败就保留默认文案 */ }
+
   const say = (t, k) => {
     hint.className = 'hint' + (k ? ' ' + k : '')
     hint.textContent = t
@@ -3203,6 +3460,16 @@ async function initToolbox() {
 // ═══════════════════════════════════════════════════════════════════════
 
 async function initVideoparse() {
+  // 用户 2026-10-29：看懂视频用的是哪一类模型，要写清楚。
+  const vpNote = $('vpModelNote')
+  if (vpNote) {
+    const list = (PHONE_MODELS.text || []).concat(PHONE_MODELS.image || [])
+    const uniq = [...new Set(list)]
+    vpNote.innerHTML = '调用的是<b>多模态视觉模型</b>（要能读图，不是纯文本模型）：'
+      + '抽帧用本机 ffmpeg，读图用下面选的厂商/模型。'
+      + (uniq.length ? `手机里现在有：${uniq.slice(0, 6).map((m) => `<b>${m}</b>`).join('、')}${uniq.length > 6 ? ' 等' : ''}。` : '手机里现在没有可选模型。')
+  }
+
   const btn = $('vpBtn')
   if (!btn) return
 
@@ -3614,11 +3881,45 @@ async function initNovelTools() {
 // 创作台（直接读写用户自己电脑上的目录；服务器全程不参与文件操作）
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * 手机模式下「写作台」的落盘层。
+ *
+ * 用户 2026-10-29：「写作台（原创作台）不用选择文件夹，直接开始」——
+ * 手机上根本没有 File System Access API，所以这一层把「读/写/列目录」换成
+ * 手机资料库：写 = 上传进 media/上传/，读/列 = 空。AI 创作那条链只用到
+ * read/list（都包在 try/catch 里），写用 write，因此替换后功能完整。
+ */
+function phoneLocalFS() {
+  return {
+    mode: 'rw',
+    rootName: '手机资料库',
+    capability: () => 'rw',
+    whyNoReadWrite: () => '',
+    supportsReadWrite: () => true,
+    pick: async () => '手机资料库',
+    pickReadOnly: async () => '手机资料库',
+    forget: async () => {},
+    grants: null,
+    grant: async () => true,
+    restore: async () => ({ status: 'none' }),
+    detectProjects: async () => [],
+    createProject: async () => ({ ok: true }),
+    read: async () => ({ content: '' }),
+    list: async () => [],
+    write: async (rel, text) => {
+      const parts = String(rel || '未命名.md').split('/').filter(Boolean)
+      const name = parts[parts.length - 1] || '未命名.md'
+      await uploadFileToLibrary(new File([text], name, { type: 'text/markdown' }))
+      return new Blob([text]).size
+    },
+  }
+}
+
 async function initOhstory() {
   const pickBtn = $('ohPick')
   if (!pickBtn) return
 
-  const FS = window.LocalFS
+  const FS = PHONE_MODE ? phoneLocalFS() : window.LocalFS
   const envNote = $('ohEnvNote')
   const reconnectBtn = $('ohReconnect')
   const forgetBtn = $('ohForget')
@@ -3639,6 +3940,21 @@ async function initOhstory() {
     envNote.textContent = '❌ 本机目录模块没加载成功（public/localfs.js）'
     pickBtn.disabled = true
     return
+  }
+
+  if (PHONE_MODE) {
+    // 手机上不需要、也不可能"选一个电脑上的文件夹"：整张工作区卡收起来，
+    // 直接在下面的「AI 创作」里生成，结果保存时落进手机资料库。
+    const wsCard = pickBtn.closest('.card')
+    if (wsCard) wsCard.hidden = true
+    const editCardEl = $('ohEditCard')
+    if (editCardEl) editCardEl.hidden = true
+    const filesCardEl = $('ohFilesCard')
+    if (filesCardEl) filesCardEl.hidden = true
+    const projectsCardEl = $('ohProjectsCard')
+    if (projectsCardEl) projectsCardEl.hidden = true
+    const aiCardEl = $('aiCard')
+    if (aiCardEl) aiCardEl.hidden = false
   }
 
   const aiCard = $('aiCard')
@@ -3973,7 +4289,9 @@ async function initOhstory() {
     try {
       const bytes = await FS.write(aiTarget, $('aiResult').value)
       wh.className = 'hint ok'
-      wh.textContent = '✓ 已写入你电脑：' + aiTarget + '（' + bytes + ' 字节）'
+      wh.textContent = PHONE_MODE
+        ? ('✓ 已保存进手机资料库：' + aiTarget + '（' + bytes + ' 字节）')
+        : ('✓ 已写入你电脑：' + aiTarget + '（' + bytes + ' 字节）')
       await loadDir('')
     } catch (error) {
       wh.className = 'hint error'
@@ -3993,8 +4311,15 @@ async function initOhstory() {
   renderAiChips()
   if (AI.TASKS.length) selectAiTask(AI.TASKS[0].key)
 
+  if (PHONE_MODE) {
+    // 手机模式：没有文件夹可连，直接把状态当成「已连接」——
+    // 不这么做的话 AI 创作卡一直是 hidden，写作台就是一页空白（用户会当成假功能）。
+    envNote.innerHTML = '手机模式：稿子直接存进<b>手机资料库</b>，不用选文件夹。'
+    showConnected(true)
+  }
+
   // 恢复上次的文件夹：IndexedDB 可能慢，所以排在 UI 就绪之后，不拖累渲染
-  if (FS.supportsReadWrite()) {
+  if (!PHONE_MODE && FS.supportsReadWrite()) {
     try {
       const r = await FS.restore()
       if (r.status === 'ok') {
@@ -4016,6 +4341,45 @@ async function initOhstory() {
 // 手机模式要先把手机模型拉回来，各模块的下拉才不会先填一堆内置模型再被替换
 // （那样用户会先看到"内置的一线大模型"，正是被反复投诉的现象）。
 // ═══════════════════════════════════════════════════════════════════════
+/**
+ * 「厂家 + 模型」两级下拉的统一接线（用户 2026-10-29 要求）。
+ *
+ * 为什么放在 boot 末尾统一做、而不是塞进各 init：
+ * 这些下拉散在 8 个面板里，各自 init 的时机/顺序不同；统一在 DOM 与
+ * PHONE_MODE / PHONE_MODELS 都就绪之后一次接完，少一处漏一处。
+ */
+function wireVendorSelectors() {
+  if (!PHONE_MODE) {
+    // 电脑自己填 Key 的模式：厂家这一栏没有意义，全部隐藏，保持原样。
+    for (const id of ['imgVendor', 'vidVendor', 'nsVendor', 'deVendor', 'cvVendor',
+      'drVendor', 'mvVendor', 'bgVendor', 'pxVendor']) {
+      const el = $(id)
+      const wrap = el && el.closest('.field')
+      if (wrap) wrap.hidden = true
+    }
+    return
+  }
+  bindVendorModel($('imgVendor'), $('imgModel'), 'image')
+  bindVendorModel($('vidVendor'), $('vidModel'), 'video')
+  bindVendorModel($('nsVendor'), $('nsModel'), 'text')
+  bindVendorModel($('deVendor'), $('deModel'), 'text')
+  bindVendorModel($('pxVendor'), $('pxModel'), 'text')
+  bindVendorModel($('cvVendor'), $('cvModel'), 'image')
+  bindVendorGroup($('drVendor'), [
+    { sel: $('drTextModel'), kind: 'text' },
+    { sel: $('drImageModel'), kind: 'image' },
+    { sel: $('drVideoModel'), kind: 'video' },
+  ])
+  bindVendorGroup($('mvVendor'), [
+    { sel: $('mvTextModel'), kind: 'text' },
+    { sel: $('mvImageModel'), kind: 'image' },
+  ])
+  bindVendorGroup($('bgVendor'), [
+    { sel: $('bgTextModel'), kind: 'text' },
+    { sel: $('bgImageModel'), kind: 'image' },
+  ])
+}
+
 async function boot() {
   await detectPhoneMode()
   if (PHONE_MODE) {
@@ -4049,12 +4413,12 @@ async function boot() {
   initAssets()
   initLibrary()
   initLibTabs()
-  initOnboard()
   initSlice()
   initSimpleUI()
   initLibraryPickers()
   syncPhoneModelInputs()
   initBackToBot()
+  wireVendorSelectors()
 
   // 手机模式：界面搭完再把「模型来自手机」写进设置页（各模块这时已经拿到模型）
   if (PHONE_MODE) {
