@@ -261,6 +261,28 @@ class MainActivity : FlutterActivity() {
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).also { c ->
             c.setMethodCallHandler { call, result ->
                 when (call.method) {
+                    // ---- 「电脑访问」保活前台服务 ----
+                    //
+                    // 这两个 node 进程（DSH + 设计站）原本没有任何服务托管，
+                    // App 被回收后电脑端就 502 且无提示。Dart 侧开关时调这里。
+                    // 详见 WebBridgeService.kt 顶部注释。
+                    "webBridgeStart" -> {
+                        try {
+                            val detail = call.argument<String>("detail") ?: ""
+                            WebBridgeService.start(this@MainActivity, detail)
+                            result.success(true)
+                        } catch (e: Throwable) {
+                            result.error("webBridgeStart", e.message, null)
+                        }
+                    }
+                    "webBridgeStop" -> {
+                        try {
+                            WebBridgeService.stop(this@MainActivity)
+                            result.success(true)
+                        } catch (e: Throwable) {
+                            result.error("webBridgeStop", e.message, null)
+                        }
+                    }
                     // ---- 手机界面操作（Agent 看屏幕/点屏幕）----
                     //
                     // 启停那个 127.0.0.1 的小 HTTP 桥；端口与令牌由 Flutter 侧生成并传进来

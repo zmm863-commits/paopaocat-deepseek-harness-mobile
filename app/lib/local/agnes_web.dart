@@ -31,10 +31,13 @@ import 'dsh_runtime.dart';
 ///
 /// 服务只绑 `127.0.0.1`，对外由 [PortForwarder] 开的那条转发暴露。
 class AgnesWeb {
-  AgnesWeb._(this.process, this.port);
+  AgnesWeb._(this.process, this.port, this.token);
 
   final Process process;
   final int port;
+
+  /// 起这个进程时用的口令（与 [accessToken] 不一致就要重启）。
+  final String token;
 
   static AgnesWeb? _current;
   static AgnesWeb? get current => _current;
@@ -125,9 +128,26 @@ class AgnesWeb {
   }
 
   /// 起服务（已起着就复用）。返回带端口的实例。
+  /// 访问口令（`ACCESS_TOKEN`）。空串 = 不加鉴权（仅调试用）。
+  ///
+  /// ⚠️ 不设它的时候，这条端口对**同一 Wi-Fi 下所有人**开放：可调用模型
+  /// （花机主的钱）、列/读资料库文件。真机实测过，必须设。
+  static String accessToken = '';
+
+  /// 更新口令；变了就重启，让新口令立即生效（旧链接同时失效）。
+  static Future<AgnesWeb> restartWithToken(DshRuntime rt, String token) async {
+    final changed = token != accessToken;
+    accessToken = token;
+    if (changed && _current != null) await stop();
+    return ensureStarted(rt);
+  }
+
   static Future<AgnesWeb> ensureStarted(DshRuntime rt) async {
     final running = _current;
-    if (running != null && running.process.pid != 0) return running;
+    if (running != null && running.process.pid != 0 && running.token == accessToken) {
+      return running;
+    }
+    if (running != null) await stop();
 
     await prepare(rt);
     final port = await _pickFreePort();
@@ -151,6 +171,8 @@ class AgnesWeb {
       'AGNES_DATA_DIR': '${rt.filesDir}/workspace',
       // 手机模型配置（Key 兜底的唯一来源）。
       'DSH_MOBILE_MODELS_FILE': _modelsFile(rt),
+      // 设计站端口的访问口令（URL 带 ?token= 换 cookie）。空串 = 不鉴权。
+      if (accessToken.isNotEmpty) 'ACCESS_TOKEN': accessToken,
       if (!rt.environment.containsKey('NODE_OPTIONS'))
         'NODE_OPTIONS': '--max-old-space-size=1024',
     };
@@ -214,7 +236,7 @@ class AgnesWeb {
       throw StateError('设计站后端 45 秒内没有就绪：${logs.take(6).join(' / ')}');
     }
 
-    final w = AgnesWeb._(process, port);
+    final w = AgnesWeb._(process, port, accessToken);
     _current = w;
     _watch(rt, port);
     DiagnosticsLog.add('agnes', '设计站后端已就绪：127.0.0.1:$port（数据根 workspace/.agnes）');

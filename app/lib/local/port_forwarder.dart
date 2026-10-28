@@ -56,7 +56,19 @@ class PortForwarder {
   /// 挑选方式：bind 到 0 拿到系统分配的端口后立刻释放。Release 到 re-bind
   /// 之间有个极小窗口（几十微秒），被别的进程抢走的概率可以忽略；真被抢了
   /// [start] 会抛出来，界面上看得到，不会静默错。
-  Future<int> reservePort() async {
+  Future<int> reservePort({int preferred = 0}) async {
+    // 优先复用上次的端口（[BridgePrefs] 记住的那个）：端口稳定，用户才能把
+    // 链接收藏起来、不用每次都回手机复制。被占用才换一个。
+    if (preferred > 0) {
+      try {
+        final probe = await ServerSocket.bind(InternetAddress.anyIPv4, preferred);
+        await probe.close();
+        _reserved = preferred;
+        return preferred;
+      } catch (_) {
+        DiagnosticsLog.add('lan', '预定端口 $preferred 被占用，改让系统挑');
+      }
+    }
     final probe = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
     final p = probe.port;
     await probe.close();

@@ -209,6 +209,14 @@
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
+        <!-- 「电脑访问」的保活服务：让 DSH 与设计站两个 node 进程不被系统回收。
+             stopWithTask=false：用户从最近任务划掉 App 时服务仍尝试存活
+             （配合 START_STICKY），否则电脑端会突然 502 且无提示。 -->
+        <service
+            android:name=".WebBridgeService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
         <!-- 拍照：把照片写到 App 私有目录 attachments/，再把这个 URI 授权给相机应用。
              authority 必须与 MainActivity 里 FileProvider.getUriForFile 用的完全一致。 -->
         <provider

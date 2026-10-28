@@ -6,9 +6,11 @@ import '../../i18n/dsh_i18n.dart';
 import '../../local/bot_server.dart';
 import '../../local/dsh_runtime.dart';
 import '../../local/agnes_web.dart';
+import '../../local/bridge_prefs.dart';
 import '../../local/design_site.dart';
 import '../../local/lan_endpoints.dart';
 import '../../local/port_forwarder.dart';
+import '../../local/web_bridge.dart';
 import '../theme/dsh_tokens.dart';
 
 /// 「电脑访问」面板：把手机上的 DSH 网页服务绑到某张网卡，让电脑用浏览器直接打开。
@@ -51,6 +53,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
   final PortForwarder _designForward = PortForwarder.create();
   String? _designUrl;
   String? _designError;
+  BridgePrefs? _prefs;
 
   @override
   void initState() {
@@ -67,6 +70,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
   }
 
   Future<void> _load() async {
+    _prefs = await BridgePrefs.load(widget.runtime.filesDir);
     final eps = await LanEndpoints.list();
     if (!mounted) return;
     setState(() {
@@ -88,6 +92,19 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         }
       }
     });
+  }
+
+  /// 换一把新口令：旧链接（电脑上收藏的、发给别人的）立即失效。
+  Future<void> _rotateToken() async {
+    final prefs = _prefs ?? await BridgePrefs.load(widget.runtime.filesDir);
+    await prefs.rotateToken();
+    _prefs = prefs;
+    if (!mounted) return;
+    if (_on) {
+      await _apply(on: true); // 正在跑 → 重启后端，新口令立刻生效
+    } else {
+      setState(() => _note = context.tr('口令已重置，下次开启时生效'));
+    }
   }
 
   Future<void> _apply({required bool on}) async {
@@ -117,12 +134,34 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         //    表现为「工作区选不出来 + 模型列表加载失败 + 暂无会话」）。
         //    要让它放行，就得在**启动参数**里带上 `--trusted-host <地址:端口>`，
         //    而那是启动参数、改不了热 —— 所以顺序只能是：挑端口 → 带信任启动 → 开转发。
-        final fwdPort = await PortForwarder.instance.reservePort();
+        // 固定端口 + 访问口令（都记在 [BridgePrefs]，重启 App 也不变）。
+        final prefs = await BridgePrefs.load(widget.runtime.filesDir);
+        final fwdPort =
+            await PortForwarder.instance.reservePort(preferred: prefs.dshPort);
+        prefs.dshPort = fwdPort;
+        await prefs.save();
+        AgnesWeb.accessToken = prefs.token;
         final authority = '$host:$fwdPort';
-        final server = await BotServer.ensureStarted(
+
+        // ── 并行启动两个后端（2026-10-28 优化）──────────────────────────
+        // 以前是「先起 DSH（20~25 秒）→ 再起设计站（5~10 秒）」串行，
+        // 用户要等 70~80 秒。两者互不依赖，可以同时起，等待时间取最长的那个。
+        AgnesWeb.setKeepAlive(true);
+        final dshFuture = BotServer.ensureStarted(
           runtime: widget.runtime,
           trustedAuthorities: <String>[authority],
         );
+        // 设计站先失败也不能让异常「无人认领」（Dart 会把它当未捕获错误刷出来），
+        // 所以这里就地接住，稍后再按正常流程报给界面。
+        Object? agnesErr;
+        final agnesFuture = AgnesWeb.ensureStarted(widget.runtime)
+            .then<AgnesWeb?>((v) => v)
+            .catchError((Object e) {
+          agnesErr = e;
+          return null;
+        });
+
+        final server = await dshFuture;
         if (!mounted) return;
         await PortForwarder.instance.start(
           targetPort: server.port,
@@ -138,12 +177,14 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         String? designUrl;
         String? designErr;
         try {
-          AgnesWeb.setKeepAlive(true);
-          final agnes = await AgnesWeb.ensureStarted(widget.runtime);
-          final dPort = await _designForward.start(
-              targetPort: agnes.port,
-              listenPort: await _designForward.reservePort());
-          designUrl = 'http://$host:$dPort/';
+          final agnes = await agnesFuture;
+          if (agnes == null) throw StateError('${agnesErr ?? '设计站后端启动失败'}');
+          final dPort = await _designForward.reservePort(preferred: prefs.agnesPort);
+          prefs.agnesPort = dPort;
+          await prefs.save();
+          await _designForward.start(targetPort: agnes.port, listenPort: dPort);
+          // URL 带口令：设计站端口不再裸奔（详见 AgnesWeb.accessToken 注释）。
+          designUrl = 'http://$host:$dPort/?token=${prefs.token}';
           AgnesWeb.publicUrl = designUrl;
           AgnesWeb.lastError = null;
           await DesignSite.injectEntry(widget.runtime, designUrl);
@@ -151,7 +192,11 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
           designErr = '$e';
           AgnesWeb.lastError = designErr;
           await DesignSite.removeEntry(widget.runtime);
+        await WebBridge.stop();
         }
+        // 保活：把进程提级，否则切后台/被回收后电脑端会突然 502。
+        await WebBridge.start(
+            designUrl != null ? 'DSH：$url\n设计站：$designUrl' : url);
         if (!mounted) return;
         setState(() {
           _url = url;
@@ -273,6 +318,13 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
                 },
                 icon: const Icon(Icons.copy_all_outlined, size: 16),
                 label: Text(context.tr('复制网址'),
+                    style: const TextStyle(fontSize: 12)),
+              ),
+            if (_on)
+              TextButton.icon(
+                onPressed: _busy ? null : _rotateToken,
+                icon: const Icon(Icons.password_outlined, size: 16),
+                label: Text(context.tr('重置口令'),
                     style: const TextStyle(fontSize: 12)),
               ),
           ],

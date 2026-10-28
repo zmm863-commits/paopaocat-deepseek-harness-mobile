@@ -298,6 +298,27 @@ function gate(req, res, url) {
   const cookie = parseCookies(req.headers.cookie).psw_session
   if (cookie && safeEqual(cookie, ACCESS_TOKEN)) return false
 
+  // ── `?token=` 通道（手机版用）────────────────────────────────────────
+  //
+  // 手机上没有"输入口令"这一步：App 把口令拼进 URL（`?token=…`）给用户复制。
+  // 这里校验通过就下发 cookie 并 **303 跳到去掉 token 的同一路径** ——
+  // 否则口令会留在地址栏、浏览器历史、以及用户随手转发的链接里。
+  //
+  // Cookie 用 HttpOnly：页面里的脚本读不到它，XSS 也偷不走。
+  const tokenQuery = url.searchParams.get('token')
+  if (tokenQuery && safeEqual(tokenQuery, ACCESS_TOKEN)) {
+    const keep = new URLSearchParams(url.searchParams)
+    keep.delete('token')
+    const rest = keep.toString()
+    res.writeHead(303, {
+      'cache-control': 'no-store',
+      'set-cookie': `psw_session=${ACCESS_TOKEN}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+      location: url.pathname + (rest ? `?${rest}` : ''),
+    })
+    res.end()
+    return true
+  }
+
   // 登录页与登录提交都必须放行 —— 否则「提交口令」这一步会先被自己的门拦住
   if (url.pathname === '/api/login') {
     if (req.method === 'GET') {
