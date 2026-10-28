@@ -59,7 +59,10 @@ export async function vendorFetch(url, opts) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const resp = await fetch(url, { method, headers, body, signal: controller.signal })
+      const finalHeaders = /opencode\.ai/i.test(String(url)) && !headers['x-opencode-session']
+        ? { ...headers, 'x-opencode-session': opencodeSession() }
+        : headers
+      const resp = await fetch(url, { method, headers: finalHeaders, body, signal: controller.signal })
       const text = await resp.text()
 
       if (!resp.ok) {
@@ -140,6 +143,15 @@ export function resolveUpstream(parsed, headerKey) {
  * @param {string|undefined} headerKey - 请求头 x-vendor-key。
  * @returns {Promise<unknown>} 上游响应的 JSON。
  */
+let _opencodeSession = ''
+/** 一次进程内稳定的会话 id（OpenCode Go 用它做路由，值本身无状态）。 */
+function opencodeSession() {
+  if (!_opencodeSession) {
+    _opencodeSession = 'studio-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)
+  }
+  return _opencodeSession
+}
+
 export async function proxyToVendor(parsed, headerKey) {
   if (!parsed?.endpoint) {
     const err = new Error('缺少 endpoint')
@@ -153,6 +165,10 @@ export async function proxyToVendor(parsed, headerKey) {
 
   const headers = { 'Content-Type': 'application/json' }
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+  // OpenCode Go 缺这个头会直接 400 MissingSessionID（2026-10-29 真机）。
+  if (parsed.vendor === 'opencode-go' || /opencode\.ai/i.test(baseUrl)) {
+    headers['x-opencode-session'] = opencodeSession()
+  }
 
   return vendorFetch(url, {
     method,

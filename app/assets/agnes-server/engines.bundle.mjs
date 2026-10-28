@@ -146,7 +146,9 @@ let cachedFfprobe = null;
 async function resolveFfprobe() {
 	if (cachedFfprobe !== null) return cachedFfprobe;
 	if (cachedProbeMissing) return "";
-	const fromEnv = process.env.AGNES_FFPROBE;
+	// 手机上的 ffprobe 是随包 `libffprobe.so`，App 通过 DSH_ANDROID_FFPROBE 指过去；
+	// 只认 AGNES_FFPROBE 会判成"没有 ffprobe"→ 剪视频/口播全部读不出时长。
+	const fromEnv = process.env.AGNES_FFPROBE || process.env.DSH_ANDROID_FFPROBE;
 	const candidates = [];
 	if (fromEnv) candidates.push(fromEnv);
 	candidates.push("ffprobe");
@@ -795,6 +797,11 @@ const VENDOR_MODEL_PREFIXES = {
 */
 function getVendorFromModel(model) {
 	if (!model) return "agnes";
+	// 设备表优先：手机里 `deepseek-v4.1-flash` 这类模型虽然以 deepseek 开头，
+	// 但它走的是手机自己配的那家（如 opencode-go），不是 api.deepseek.com ——
+	// 先按前缀猜会把手机 Key 发给官方端点 → 401（2026-10-29 真机）。
+	const devFirst = deviceVendorOfModel(model);
+	if (devFirst) return devFirst;
 	const m = model.toLowerCase();
 	if (m.startsWith("ollama:")) return "ollama";
 	for (const [vendor, prefixes] of Object.entries(VENDOR_MODEL_PREFIXES)) if (prefixes.some((p) => m.startsWith(p))) return vendor;
@@ -894,17 +901,15 @@ function storyboardPrompt(dur) {
 }
 const ASSETS_PROMPT = "从剧本和分镜提取角色/场景/道具的视觉特征。输出JSON：{\"characters\":[{\"name\":\"\",\"desc\":\"中文描述\",\"prompt_en\":\"English for three-view\"}],\"scenes\":[{\"name\":\"\",\"desc\":\"\",\"prompt_en\":\"\"}],\"props\":[{\"name\":\"\",\"desc\":\"\",\"prompt_en\":\"\"}]}";
 async function callTextModel(sysPrompt, userPrompt, apiKey, model, maxTokens = 4096) {
-	const baseUrl = VENDOR_BASE_URLS[getVendorFromModel(model)] || VENDOR_BASE_URLS.agnes;
+	const vendor = getVendorFromModel(model);
+	const baseUrl = VENDOR_BASE_URLS[vendor] || VENDOR_BASE_URLS.agnes;
 	const ac = new AbortController();
 	const t = setTimeout(() => ac.abort(), 3e5);
 	try {
 		const r = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",
 			signal: ac.signal,
-			headers: {
-				"Authorization": `Bearer ${apiKey}`,
-				"Content-Type": "application/json"
-			},
+			headers: vendorHeaders(vendor, apiKey, baseUrl),
 			body: JSON.stringify({
 				model,
 				messages: [{
@@ -924,6 +929,20 @@ async function callTextModel(sysPrompt, userPrompt, apiKey, model, maxTokens = 4
 		clearTimeout(t);
 	}
 }
+let _opencodeSession = "";
+/** OpenCode Go 的每个请求都必须带 x-opencode-session，否则回 400 MissingSessionID。 */
+function opencodeSessionId() {
+	if (!_opencodeSession) _opencodeSession = "studio-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+	return _opencodeSession;
+}
+/** 按厂商拼请求头（顺手补上各家必须的自定义头）。 */
+function vendorHeaders(vendor, apiKey, baseUrl = "") {
+	const h = { "Content-Type": "application/json" };
+	if (apiKey) h.Authorization = `Bearer ${apiKey}`;
+	if (vendor === "opencode-go" || /opencode\.ai/i.test(String(baseUrl))) h["x-opencode-session"] = opencodeSessionId();
+	return h;
+}
+
 function parseJson(text) {
 	let c = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 	if (c.startsWith("```")) {
@@ -5965,17 +5984,15 @@ async function handlePromptExpertRoute(method, urlPath, body, resolveApiKey, get
 	return null;
 }
 async function callTextModelLocal(sysPrompt, userPrompt, apiKey, model, maxTokens = 2048) {
-	const baseUrl = VENDOR_BASE_URLS[getVendorFromModel(model)] || VENDOR_BASE_URLS.agnes;
+	const vendor = getVendorFromModel(model);
+	const baseUrl = VENDOR_BASE_URLS[vendor] || VENDOR_BASE_URLS.agnes;
 	const ac = new AbortController();
 	const t = setTimeout(() => ac.abort(), 12e4);
 	try {
 		const r = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",
 			signal: ac.signal,
-			headers: {
-				"Authorization": `Bearer ${apiKey}`,
-				"Content-Type": "application/json"
-			},
+			headers: vendorHeaders(vendor, apiKey, baseUrl),
 			body: JSON.stringify({
 				model,
 				messages: [{
@@ -6588,7 +6605,13 @@ async function materialize(src, outFile) {
 		writeFileSync(outFile, buf);
 		return outFile;
 	}
-	if (!existsSync(s)) throw new Error(`视频文件不存在：${s}`);
+	if (!existsSync(s)) {
+		// 手机资料库里的文件是相对路径（media/上传/x.mp4），而进程 cwd 不是资料根 ——
+		// 先按资料根再解析一次，否则「从资料库挑的视频」在剪视频里永远报"不存在"。
+		const alt = join(dataRoot(), s);
+		if (existsSync(alt)) return alt;
+		throw new Error(`视频文件不存在：${s}`);
+	}
 	return s;
 }
 function safeName(s) {
@@ -7674,8 +7697,14 @@ async function vendorFetch(url, opts = {}) {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), timeoutMs);
 		try {
+			//  choke point：OpenCode Go 的**每个**请求都要 x-opencode-session，
+			//  在统一出口补最省事（文本/图片/视频/proxy 全走这里）。
+			const ocHeaders = /opencode\.ai/i.test(String(url))
+				? { ...(fetchOpts.headers || {}), "x-opencode-session": (fetchOpts.headers || {})["x-opencode-session"] || opencodeSessionId() }
+				: fetchOpts.headers;
 			const resp = await fetch(url, {
 				...fetchOpts,
+				headers: ocHeaders,
 				signal: controller.signal
 			});
 			if (resp.ok) return await resp.json();
@@ -8115,10 +8144,7 @@ function apply(ctx) {
 					const retries = /\/videos\/?$/.test(endpoint) && upstreamMethod === "POST" ? 0 : isImageGen ? 3 : upstreamMethod === "GET" ? 2 : 0;
 					jsonResponse(res, 200, await vendorFetch(url, {
 						method: upstreamMethod,
-						headers: {
-							Authorization: `Bearer ${apiKey}`,
-							"Content-Type": "application/json"
-						},
+						headers: vendorHeaders(vendor, apiKey, url),
 						body: upstreamMethod === "GET" ? void 0 : JSON.stringify(params || {}),
 						timeoutMs: timeoutMs || 12e4,
 						retries

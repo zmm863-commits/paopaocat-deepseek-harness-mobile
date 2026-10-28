@@ -142,6 +142,11 @@ const MODEL_PREFIX_VENDOR = [
 
 function vendorOf(model) {
   const m = String(model || '').toLowerCase()
+  // 手机里的模型要先查设备映射：`deepseek-v4.1-flash` 虽然以 deepseek 开头，
+  // 但它属于手机配的那家（opencode-go），按前缀猜会把请求发去 api.deepseek.com
+  // → 401（2026-10-29 真机踩到，写作台因此"完全不能用"）。
+  const devVendor = PHONE_MODE ? PHONE_MODEL_VENDOR[String(model || '')] : ''
+  if (devVendor) return devVendor
   if (m.startsWith('ollama:')) return 'ollama'
   for (const [prefixes, vendor] of MODEL_PREFIX_VENDOR) {
     if (prefixes.some((p) => m.startsWith(p))) return vendor
@@ -314,9 +319,12 @@ function fillModelSelect(sel, models, kind) {
   }
   sel.replaceChildren(frag)
   const has = (v) => Array.from(sel.options).some((o) => o.value === v)
+  // 手机里可能混着上游已下线的模型（实测 longcat-2.5-preview-free 会回
+  // 「Model is unavailable」）——默认优先挑一个深度求索系，选不到再退回第一个。
+  const safe = list.find((m) => /^deepseek/i.test(m)) || list[0]
   if (has(keep)) sel.value = keep
   else if (pick && has(pick)) sel.value = pick
-  else sel.value = list[0]
+  else sel.value = safe
   paintModelHint(sel, kind)
 }
 
@@ -941,7 +949,9 @@ async function callProxy(endpoint, params, method = 'POST', opts = {}) {
 
   if (!resp.ok) {
     const msg = String(data.error || `请求失败（HTTP ${resp.status}）`)
-    if (!key && /未配置|no api key|401/i.test(msg)) {
+    // ⚠️ 手机模式没有 Key 这一说（凭据在手机后端），**不能**把后端的真实报错
+    //    吞成「去设置里填 Key」——那正是用户看到的"完全不能用却不知道为什么"。
+    if (!PHONE_MODE && !key && /未配置|no api key|401/i.test(msg)) {
       throw new Error('还没有配置 API Key —— 到「设置」里填一把你自己的。')
     }
     throw new Error(msg.slice(0, 300))
@@ -4312,6 +4322,24 @@ async function initOhstory() {
   if (AI.TASKS.length) selectAiTask(AI.TASKS[0].key)
 
   if (PHONE_MODE) {
+    // 写作台里的模型输入框：默认值原来是 agnes-2.5-flash（手机里根本没有），
+    // 用户一点「生成」就报错。改成手机里的第一个文本模型，并给出候选。
+    const aiModelInput = $('aiModel')
+    if (aiModelInput) {
+      const list = PHONE_MODELS.text || []
+      const safeDefault = list.find((m) => /^deepseek/i.test(m)) || list[0] || ''
+      if (list.length && !list.includes(aiModelInput.value)) aiModelInput.value = safeDefault
+      const dlId = 'aiModelListPhone'
+      let dl = document.getElementById(dlId)
+      if (!dl) {
+        dl = document.createElement('datalist')
+        dl.id = dlId
+        aiModelInput.parentElement.appendChild(dl)
+      }
+      aiModelInput.setAttribute('list', dlId)
+      dl.replaceChildren()
+      for (const m of list) dl.appendChild(new Option(m, m))
+    }
     // 手机模式：没有文件夹可连，直接把状态当成「已连接」——
     // 不这么做的话 AI 创作卡一直是 hidden，写作台就是一页空白（用户会当成假功能）。
     envNote.innerHTML = '手机模式：稿子直接存进<b>手机资料库</b>，不用选文件夹。'
