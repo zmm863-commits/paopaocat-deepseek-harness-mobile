@@ -3047,18 +3047,18 @@ function initSimpleUI() {
   safe(() => moveFieldsIntoAdvanced(['anMode'], '高级设置 · 生成方式'))
   safe(() => addHowto('anchor', '把文稿粘进来 → 点 <b>开始生成口播</b>。它会自动分段、配音、配上画面。<br>⚠️ 配音需要 <b>MiMo</b> 的 Key（Agnes 没有语音模型），去「设置」的可选区填 MiMo 即可。'))
 
-  // 创作台：第一次要选文件夹，这句最要紧
-  safe(() => addHowto('ohstory',
-    '第一次用：点 <b>选择本机文件夹</b>，挑一个你电脑上的文件夹（比如「我的小说」）。' +
-    '之后稿子都存在你自己的电脑里，服务器全程不碰。'))
+  // 写作台：手机模式不用选文件夹（稿子直接进手机资料库）；电脑模式才需要选
+  safe(() => addHowto('ohstory', PHONE_MODE
+    ? '不用选文件夹：直接挑一个任务、填几项，点 <b>生成</b> 就行，稿子会存进<b>手机资料库</b>。'
+    : ('第一次用：点 <b>选择本机文件夹</b>，挑一个你电脑上的文件夹（比如「我的小说」）。' +
+       '之后稿子都存在你自己的电脑里，服务器全程不碰。')) )
 
   // 剪视频
   safe(() => addHowto('slice', '填视频链接 → 点 <b>先读一下时长</b> → 选「截取一段」填起止秒数，或选「平均切成几段」 → 点 <b>开始剪切</b>。默认不重新编码，几秒就完成。'))
 
   // 素材库
   safe(() => addHowto('assets',
-    '「我的生成」汇总所有模块做出来的图片、视频、音频；「我的素材」读你本机目录里的素材；「本机目录」把网页连到你电脑上的文件夹。' +
-    '要在「APP界面设计站」里用某张图，点开后按 <b>复制图片地址</b>，再到那边的图片部件里粘贴。'))
+    '这里就是<b>手机资料库</b>：所有模块做出来的图片、视频、音频、文本都在这里，也能点「上传文件到资料库」把电脑上的文件传进来。'))
 
   // 设置：小白进入这里时，最需要知道「填哪个、去哪拿」
   safe(() => initSettingsGuide())
@@ -4406,6 +4406,27 @@ function wireVendorSelectors() {
     { sel: $('bgTextModel'), kind: 'text' },
     { sel: $('bgImageModel'), kind: 'image' },
   ])
+
+  // 手机里没有图像/视频模型时，别留一个点了就报错的按钮 ——
+  // 直接禁用并写明"去哪儿加模型"（用户 2026-10-29：不许出现假功能）。
+  if (!(PHONE_MODELS.image || []).length) {
+    const b = $('imgGenBtn')
+    if (b) { b.disabled = true; b.textContent = '手机里还没有图像模型' }
+    const h = $('imgHint')
+    if (h) {
+      h.className = 'hint error'
+      h.textContent = '手机 App 的「设置 → 模型」里还没有图像模型。加一个之后重新开关一次「电脑访问」，这里就能用了。'
+    }
+  }
+  if (!(PHONE_MODELS.video || []).length) {
+    const b = $('vidGenBtn')
+    if (b) { b.disabled = true; b.textContent = '手机里还没有视频模型' }
+    const h = $('vidHint')
+    if (h) {
+      h.className = 'hint error'
+      h.textContent = '手机 App 的「设置 → 模型」里还没有视频模型。加一个之后重新开关一次「电脑访问」，这里就能用了。'
+    }
+  }
 }
 
 async function boot() {
