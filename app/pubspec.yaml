@@ -72,19 +72,19 @@ flutter:
     # 重新生成：见该测试的说明（从 paopaocat-studio-web/public 同步）。
     - assets/studio-site/
     - assets/studio-site/design/
-    - assets/studio-site/img/
     - assets/studio-site/design/404/
-    - assets/studio-site/design/_not-found/
-    - assets/studio-site/design/fonts/
-    - assets/studio-site/design/icons/
-    - assets/studio-site/design/logos/
-    - assets/studio-site/design/fonts/material-symbols/
-    - assets/studio-site/design/fonts/roboto-flex/
-    - assets/studio-site/design/fonts/roboto-serif/
-    - assets/studio-site/design/fonts/roboto/
     - assets/studio-site/design/_next/static/99-ByTwOlN0_VX127xjXT/
     - assets/studio-site/design/_next/static/chunks/
     - assets/studio-site/design/_next/static/media/
+    - assets/studio-site/design/_not-found/
+    - assets/studio-site/design/fonts/
+    - assets/studio-site/design/fonts/material-symbols/
+    - assets/studio-site/design/fonts/roboto/
+    - assets/studio-site/design/fonts/roboto-flex/
+    - assets/studio-site/design/fonts/roboto-serif/
+    - assets/studio-site/design/icons/
+    - assets/studio-site/design/logos/
+    - assets/studio-site/img/
     # 设计站的 Node 后端（index.mjs + engines.bundle.mjs + 三个小模块）：
     # 15 个引擎都在 bundle 里，只依赖 Node 内置模块，手机上那个 Node 直接能跑。
     - assets/agnes-server/

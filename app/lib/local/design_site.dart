@@ -58,13 +58,22 @@ $scriptMarker
   var h = location.hostname;
   if (h === '127.0.0.1' || h === 'localhost' || h === '::1' || h === '[::1]') return;
   var TARGET = '$url';
+  // ⚠️ **同一个标签页打开**（2026-10-28 用户：「进入设计站，没有返回按钮，
+  //    要能返回到 bot 界面」）。
+  //
+  // 原来用 target=_blank：电脑上会在新标签页打开，手机 WebView 里则直接顶掉
+  // 当前页 —— 两种情况下都**没有**"回到 bot"的路（浏览器后退回不到另一个
+  // 标签页，WebView 没有后退按钮）。
+  //
+  // 现在同页打开，并把"回哪去"作为参数带过去；设计站那边据此渲染一个
+  // 悬浮「← 返回」按钮（见 app.js 的 initBackToBot）。
+  var SEP = TARGET.indexOf('?') >= 0 ? '&' : '?';
+  var BACK = TARGET + SEP + 'from=ds&back=' + encodeURIComponent(location.href);
   function mount() {
     if (document.getElementById('dshm-design-entry')) return;
     var a = document.createElement('a');
     a.id = 'dshm-design-entry';
-    a.href = TARGET;
-    a.target = '_blank';
-    a.rel = 'noopener';
+    a.href = BACK;
     a.title = '泡泡猫设计站';
     a.textContent = '🎨 设计站';
     a.style.cssText = [

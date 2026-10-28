@@ -1370,3 +1370,16 @@ body::after {
   font-weight: 600;
 }
 .kt-bal { white-space: nowrap; font-size: 0.72rem; }
+
+/* ── 从资料库选文件（2026-10-28）────────────────────────────────────────
+   「从电脑上传」与「从资料库提取」是同一个入口的两条路：上传进资料库，
+   之后在任何模块都能从资料库选到。这里只做一层轻量弹层，不引第三方。 */
+.lib-pick-mask{position:fixed;inset:0;background:rgba(8,14,26,.55);backdrop-filter:blur(3px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
+.lib-pick{background:#12182a;color:#e6edf8;border:1px solid rgba(120,160,220,.22);border-radius:14px;width:min(720px,100%);max-height:78vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 60px rgba(0,0,0,.45)}
+.lib-pick-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid rgba(120,160,220,.16)}
+.lib-pick-list{overflow:auto;padding:6px 8px;flex:1;min-height:120px}
+.lib-pick-row{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;background:none;border:0;border-radius:9px;color:inherit;text-align:left;cursor:pointer;font:inherit}
+.lib-pick-row:hover{background:rgba(110,160,240,.14)}
+.lib-pick-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.lib-pick-meta{color:#8fa6c6;font-size:12px;white-space:nowrap}
+.lib-pick-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-top:1px solid rgba(120,160,220,.16);flex-wrap:wrap}

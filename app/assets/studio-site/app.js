@@ -287,7 +287,20 @@ function paintModelHint(sel, kind) {
 function fillModelSelect(sel, models, kind) {
   if (!sel) return
   const list = (models || []).filter(m => modelKind(m) === kind)
-  if (!list.length) return
+  if (!list.length) {
+    // 手机模式下**不许**留着一堆内置模型：那一类手机里没有，就如实说没有。
+    if (PHONE_MODE) {
+      sel.replaceChildren(new Option(`（手机里还没有${KIND_LABEL[kind] || ''}模型）`, ''))
+      sel.disabled = true
+      const hint = ensureModelHint(sel)
+      if (hint) {
+        hint.textContent = `手机 DSH 的模型设置里没有${KIND_LABEL[kind] || ''}模型。` +
+          '去手机 App「设置 → 模型」加一个，再重新开关一次「电脑访问」。'
+      }
+    }
+    return
+  }
+  sel.disabled = false
   const keep = sel.value
   const pick = MODEL_PICK[kind]
   const frag = document.createDocumentFragment()
@@ -308,8 +321,16 @@ function fillModelSelect(sel, models, kind) {
 }
 
 async function refreshModelSelect(sel, vendor, preferred, kind) {
-  if (!sel || !hasAnyKey()) return
+  if (!sel) return
   const k = kind || 'text'
+  // 手机模式：模型只有手机上那一份，不按厂商拉、也不带 Key。
+  if (PHONE_MODE) {
+    fillModelSelect(sel, PHONE_MODELS[k] || [], k)
+    if (preferred && Array.from(sel.options).some((o) => o.value === preferred)) sel.value = preferred
+    paintModelHint(sel, k)
+    return
+  }
+  if (!hasAnyKey()) return
   try {
     const r = await fetch(`/agnes-studio/api/models?vendor=${encodeURIComponent(vendor)}`, {
       headers: { 'x-vendor-keys': JSON.stringify(keys) },
@@ -330,7 +351,23 @@ async function refreshModelSelect(sel, vendor, preferred, kind) {
 
 /** 给自由输入的模型名加 datalist 建议（这些位置允许填任意模型）。 */
 async function attachModelSuggest(input, vendor, kind) {
-  if (!input || !hasAnyKey()) return
+  if (!input) return
+  if (PHONE_MODE) {
+    const list = PHONE_MODELS[kind || 'text'] || []
+    if (!list.length) return
+    const dlId = input.id + '-dl'
+    let dl = document.getElementById(dlId)
+    if (!dl) {
+      dl = document.createElement('datalist')
+      dl.id = dlId
+      input.setAttribute('list', dlId)
+      input.parentElement.appendChild(dl)
+    }
+    dl.replaceChildren()
+    for (const m of list) dl.appendChild(new Option(m, m))
+    return
+  }
+  if (!hasAnyKey()) return
   try {
     const r = await fetch(`/agnes-studio/api/models?vendor=${encodeURIComponent(vendor)}`, {
       headers: { 'x-vendor-keys': JSON.stringify(keys) },
@@ -368,6 +405,129 @@ function fillSelect(el, entries, selected) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// 选文件：从电脑上传 / 从手机资料库提取
+//
+// 用户 2026-10-28 问「从电脑添加文件是不是要上传」——**是**，而且要把这件事
+// 讲清楚、做成两步都好走：
+//
+//   · 从电脑添加 → 先上传进**资料库**（不是临时目录），之后在任何模块都能
+//     再从资料库里选到它。上传是一次性的，不是每次生成都传。
+//   · 从资料库提取 → 直接引用手机上已有的文件（包括其他会话生成的 md/html）。
+//
+// 生成物本身也落资料库（saveToLibrary），所以「素材」和「产物」在同一个地方。
+// ═══════════════════════════════════════════════════════════════════════
+
+/** 把 File 读成 base64（不带 data: 前缀）。 */
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onerror = () => reject(new Error('读文件失败'))
+    fr.onload = () => {
+      const s = String(fr.result || '')
+      resolve(s.slice(s.indexOf(',') + 1))
+    }
+    fr.readAsDataURL(file)
+  })
+}
+
+/** 按扩展名猜一个 kind，决定上传后落哪个子目录。 */
+function kindOfName(name) {
+  const m = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/)
+  const ext = m ? m[1] : ''
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'avif'].includes(ext)) return 'image'
+  if (['mp4', 'mov', 'webm', 'mkv', 'avi'].includes(ext)) return 'video'
+  if (['wav', 'mp3', 'm4a', 'flac', 'ogg', 'aac'].includes(ext)) return 'audio'
+  return 'file'
+}
+
+/** 上传一个 File 进手机资料库，返回 {rel, size}。 */
+async function uploadFileToLibrary(file) {
+  const b64 = await readFileAsBase64(file)
+  const d = await api('/agnes-studio/api/library/upload', 'POST', {
+    name: file.name,
+    content: b64,
+    kind: kindOfName(file.name),
+  })
+  if (!d || !d.rel) throw new Error('上传失败：服务端没有返回路径')
+  return d
+}
+
+/**
+ * 让用户挑一个资料库里的文件，返回 rel。
+ *
+ * @param opts.kind 限定类型（image/video/audio/text/file），空表示全部。
+ * @param opts.title 弹窗标题。
+ */
+function pickFromLibrary(opts = {}) {
+  return new Promise((resolve) => {
+    const mask = document.createElement('div')
+    mask.className = 'lib-pick-mask'
+    mask.innerHTML = `
+      <div class="lib-pick" role="dialog" aria-modal="true">
+        <div class="lib-pick-head">
+          <b>${opts.title || '从资料库选择'}</b>
+          <button class="btn ghost" type="button" data-x>关闭</button>
+        </div>
+        <div class="lib-pick-list"></div>
+        <div class="hidden"><input type="file" data-upload hidden></div>
+        <div class="lib-pick-foot">
+          <span class="hint">没有想要的？可以从电脑上传（上传后会进资料库，以后都能选到）。</span>
+          <button class="btn" type="button" data-u>从电脑上传…</button>
+        </div>
+      </div>`
+    const list = mask.querySelector('.lib-pick-list')
+    const file = mask.querySelector('input[type=file]')
+    const close = (v) => { mask.remove(); resolve(v) }
+
+    const fill = async () => {
+      list.innerHTML = '<p class="hint">读取中…</p>'
+      try {
+        const q = new URLSearchParams({ limit: '300' })
+        if (opts.kind) q.set('kind', opts.kind)
+        const d = await api('/agnes-studio/api/library/list?' + q.toString())
+        const items = d.items || []
+        if (!items.length) {
+          list.innerHTML = '<p class="hint">资料库里还没有这类文件。可以从电脑上传一个。</p>'
+          return
+        }
+        list.replaceChildren()
+        for (const it of items) {
+          const row = document.createElement('button')
+          row.type = 'button'
+          row.className = 'lib-pick-row'
+          const ic = it.kind === 'image' ? '🖼' : it.kind === 'video' ? '🎬'
+            : it.kind === 'audio' ? '🎵' : it.kind === 'text' ? '📄' : '📦'
+          row.innerHTML = `<span>${ic}</span><span class="lib-pick-name">${it.rel}</span>` +
+            `<span class="lib-pick-meta">${humanBytes(it.size)}</span>`
+          row.addEventListener('click', () => close(it.rel))
+          list.appendChild(row)
+        }
+      } catch (e) {
+        list.innerHTML = `<p class="hint error">读取失败：${e instanceof Error ? e.message : e}</p>`
+      }
+    }
+
+    mask.querySelector('[data-x]').addEventListener('click', () => close(null))
+    mask.addEventListener('click', (e) => { if (e.target === mask) close(null) })
+    mask.querySelector('[data-u]').addEventListener('click', () => file.click())
+    file.addEventListener('change', async () => {
+      const f = file.files && file.files[0]
+      if (!f) return
+      try {
+        list.innerHTML = '<p class="hint">上传中…</p>'
+        const r = await uploadFileToLibrary(f)
+        close(r.rel)
+      } catch (e) {
+        list.innerHTML = `<p class="hint error">上传失败：${e instanceof Error ? e.message : e}</p>`
+      }
+    })
+
+    document.body.appendChild(mask)
+    void fill()
+  })
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // 密钥（只在本机浏览器里）
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -385,7 +545,54 @@ function persistKeys() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(keys)) } catch { /* 隐私模式可能不可写 */ }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// 手机模式
+//
+// 本站有两种跑法：
+//   · 独立部署在电脑/服务器上 —— 用户在网页里填自己的厂商 Key；
+//   · **跑在手机 App 里** —— 模型与凭据都在手机上，网页只是外壳。
+//
+// 第二种情况下再让用户注册厂商、粘贴 Key 完全是错的（用户 2026-10-27/28
+// 连续三次指出）。所以这里探测一次，之后：
+//   1. 设置页不再出现任何 Key / 模型设置；
+//   2. 模型下拉只列**手机里配好的模型**；
+//   3. 请求不带 x-vendor-keys（凭据由手机后端自己取，Key 不进浏览器）。
+// ═══════════════════════════════════════════════════════════════════════
+let PHONE_MODE = false
+
+/** 手机里的模型，按用途分好（来自后端 /agnes-studio/api/models）。 */
+let PHONE_MODELS = { text: [], image: [], video: [], audio: [] }
+
+async function detectPhoneMode() {
+  try {
+    const r = await fetch('/api/vendors', { cache: 'no-store' })
+    if (!r.ok) return
+    const d = await r.json()
+    PHONE_MODE = d.phoneMode === true ||
+      (Array.isArray(d.vendors) && d.vendors.some((v) => v.fromDevice === true))
+  } catch { PHONE_MODE = false }
+}
+
+/** 拉手机模型清单（手机模式才有意义）。 */
+async function loadPhoneModels() {
+  if (!PHONE_MODE) return
+  try {
+    const r = await fetch('/agnes-studio/api/models', { cache: 'no-store' })
+    if (!r.ok) return
+    const d = await r.json()
+    const pick = (o) => Object.keys(o || {})
+    PHONE_MODELS = {
+      text: pick(d.textModels),
+      image: pick(d.imageModels),
+      video: pick(d.videoModels),
+      audio: pick(d.audioModels),
+    }
+  } catch { /* 拉不到就保持空，下拉会显示"手机里没有这一类模型" */ }
+}
+
 function hasAnyKey() {
+  // 手机模式：凭据在手机后端，网页这边「有没有 Key」这个问题不成立。
+  if (PHONE_MODE) return true
   return Object.values(keys).some((v) => v && String(v).trim())
 }
 
@@ -398,6 +605,34 @@ function renderKeyFields() {
   const box = $('keyFields')
   if (!box) return
   box.replaceChildren()
+
+  // 手机模式：**整套 Key 设置取消**。只如实说明"模型在哪改"。
+  if (PHONE_MODE) {
+    const n = PHONE_MODELS.text.length + PHONE_MODELS.image.length + PHONE_MODELS.video.length
+    const note = document.createElement('div')
+    note.className = 'hint'
+    note.style.lineHeight = '1.8'
+    note.innerHTML =
+      '<b>模型来自手机</b><br>' +
+      `当前可用：文本 ${PHONE_MODELS.text.length} 个 · 图像 ${PHONE_MODELS.image.length} 个 · ` +
+      `视频 ${PHONE_MODELS.video.length} 个（共 ${n} 个）。<br><br>` +
+      '网页版不提供模型设置，也不需要填 API Key —— 凭据保存在手机上，' +
+      '浏览器全程拿不到。要换模型或加模型，请在手机 App 的「设置 → 模型」里改，' +
+      '改完重新开关一次「电脑访问」。'
+    box.appendChild(note)
+
+    // 顺手把这一页原有的「清空 / 测试 / 保存」按钮和说明藏掉 —— 它们只对
+    // 独立部署有意义，放在手机版里纯属误导。
+    const panel = box.closest('.panel')
+    if (panel) {
+      panel.querySelectorAll('.row-actions, .note, #keyHint, #keyTestResult').forEach((el) => {
+        el.setAttribute('hidden', '')
+      })
+      const t = panel.querySelector('.card-title')
+      if (t) t.textContent = '模型（来自手机）'
+    }
+    return
+  }
 
   // 先渲染「填一个就够」的核心厂商，再把可选的收进折叠 ——
   // 六个输入框一字排开会让小白以为必须全填。
@@ -516,16 +751,32 @@ async function callProxy(endpoint, params, method = 'POST', opts = {}) {
   // 小白最容易卡在这一步：没填 Key 时服务端会回
   // 「请在本机 .env 写入 AGNES_API_KEY=... 或在 DSH 凭据(credentials)中新增 …」，
   // 对使用者这等于天书，而且他根本不知道要去哪填。所以在发请求前就拦下来。
-  if (!opts.skipKeyCheck && !hasAnyKey()) {
+  if (!PHONE_MODE && !opts.skipKeyCheck && !hasAnyKey()) {
     const e = new Error('还没有填 API Key —— 点顶部「设置」填一个就能开始用了（去 agnes 平台免费注册即可，其他地方不用配）')
     e.needKey = true
     throw e
   }
-  const vendor = opts.vendor || vendorOf(opts.model || (params && params.model) || '')
+  const usedModel = String(opts.model || (params && params.model) || '').trim()
+
+  // 手机模式：**不许悄悄用内置模型**。
+  //
+  // 各模块的下拉已经换成手机模型了，但有些位置（封面、提示词、画布……）是
+  // 直接把模型名写进请求的。这里做最后一道闸：手机上没有这个名字就明说，
+  // 而不是发出去再收到一个看不懂的上游报错（用户投诉过的那种体验）。
+  if (PHONE_MODE && usedModel) {
+    const all = [...PHONE_MODELS.text, ...PHONE_MODELS.image, ...PHONE_MODELS.video]
+    if (all.length && !all.includes(usedModel)) {
+      throw new Error(
+        `手机上没有「${usedModel}」这个模型 —— 到手机 App 的「设置 → 模型」里加上它，` +
+        '或者在这个模块的下拉里换一个。')
+    }
+  }
+
+  const vendor = opts.vendor || vendorOf(usedModel)
   const key = (keys[vendor] || '').trim()
 
   // 填了别的厂商的 Key，但这次要用的厂商没填 —— 同样说清楚缺哪个
-  if (!opts.skipKeyCheck && !key && vendor !== 'ollama') {
+  if (!PHONE_MODE && !opts.skipKeyCheck && !key && vendor !== 'ollama') {
     const e = new Error(`这次要用的「${vendor}」还没填 Key —— 去顶部「设置」补上它，或在上面的「高级设置」里换成你已经填过的厂商`)
     e.needKey = true
     throw e
@@ -535,7 +786,8 @@ async function callProxy(endpoint, params, method = 'POST', opts = {}) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(hasAnyKey() ? { 'x-vendor-keys': JSON.stringify(keys) } : {}),
+      // 手机模式不带头：凭据由手机后端从本机模型配置取，Key 不进浏览器。
+      ...(!PHONE_MODE && hasAnyKey() ? { 'x-vendor-keys': JSON.stringify(keys) } : {}),
     },
     body: JSON.stringify({ endpoint, params, method, vendor, model: opts.model }),
   })
@@ -1829,7 +2081,8 @@ async function initLibrary() {
       const c = d.counts || {}
       hint.className = 'hint'
       hint.textContent = items.length
-        ? `共 ${items.length} 个 · 图片 ${c.image || 0} · 视频 ${c.video || 0} · 音频 ${c.audio || 0} · 文本 ${c.text || 0}`
+        ? `共 ${items.length} 个 · 图片 ${c.image || 0} · 视频 ${c.video || 0} · 音频 ${c.audio || 0} · 文本 ${c.text || 0}` +
+          (c.file ? ` · 其它 ${c.file}` : '')
         : '还没有生成过东西'
     } catch (e) {
       hint.className = 'hint error'
@@ -2334,6 +2587,157 @@ function initSettingsGuide() {
     </ol>
     <p class="hint">Key 只保存在你这一台设备的浏览器里，服务器不保存、不写日志。换电脑要重新填。</p>`
   panel.insertBefore(box, panel.firstChild)
+}
+
+/**
+ * 给几个「要文件」的位置加一个「从资料库选」入口。
+ *
+ * 用户 2026-10-28 的要求：添加文件既能从电脑上传，也能从资料库提取。
+ * 这里不新造控件，只在这些原有控件旁边补一个按钮：
+ *   · 小说工具 —— 选一个 md/txt，直接把正文填进去
+ *   · 公众号封面 —— 从资料库挑一张图当封面
+ *   · MTV 音乐 —— 从资料库挑一首歌（填它的资料库路径）
+ */
+/**
+ * 手机模式：把「自由输入模型名」的框也对齐到手机模型。
+ *
+ * 这些框（背景视频 / MTV 的图片模型）默认写着一个内置模型名，手机里没有的话
+ * 一提交就报错。下拉框由 refreshModelSelect 处理，输入框在这里兜。
+ */
+function syncPhoneModelInputs() {
+  if (!PHONE_MODE) return
+  const els = document.querySelectorAll('input[id$="Model"]')
+  for (const el of els) {
+    const id = el.id || ''
+    const kind = /Image/i.test(id) ? 'image' : /Video/i.test(id) ? 'video' : 'text'
+    const list = PHONE_MODELS[kind] || []
+    const cur = String(el.value || '').trim()
+    if (!list.length) {
+      if (cur) el.placeholder = `手机里没有${kind === 'image' ? '图像' : kind === 'video' ? '视频' : '文本'}模型，先在手机「设置 → 模型」里加一个`
+      continue
+    }
+    if (!list.includes(cur)) el.value = list[0]
+  }
+}
+
+/**
+ * 「← 返回」按钮：从 DSH 的 bot 界面点进来时，让人能回去。
+ *
+ * 用户 2026-10-28：「进入设计站，没有返回按钮，要能返回到 bot 界面。」
+ *
+ * 带过来的是 `?from=ds&back=<encodeURIComponent(原地址)>`（见 App 侧
+ * lib/local/design_site.dart）。这里只在**带着这个参数时**才显示按钮 ——
+ * 直接打开设计站（电脑收藏、App 内部入口）不该凭空多一个返回键。
+ */
+function initBackToBot() {
+  try {
+    const q = new URLSearchParams(location.search)
+    if (q.get('from') !== 'ds') return
+    const back = q.get('back')
+    if (!back) return
+    if (document.getElementById('backToBot')) return
+
+    const b = document.createElement('a')
+    b.id = 'backToBot'
+    b.href = back
+    b.textContent = '← 返回'
+    b.title = '回到 Bot 界面'
+    b.style.cssText = [
+      'position:fixed', 'top:10px', 'left:12px', 'z-index:2147483000',
+      'padding:6px 12px', 'border-radius:999px',
+      'background:rgba(24,28,36,.86)', 'color:#e8f0ff',
+      'font:500 12px/1.6 system-ui,-apple-system,"PingFang SC",sans-serif',
+      'text-decoration:none', 'border:1px solid rgba(120,170,255,.45)',
+      'box-shadow:0 2px 10px rgba(0,0,0,.28)', 'backdrop-filter:blur(6px)',
+      'cursor:pointer', 'user-select:none',
+    ].join(';')
+    b.addEventListener('mouseenter', () => { b.style.background = 'rgba(40,70,120,.95)' })
+    b.addEventListener('mouseleave', () => { b.style.background = 'rgba(24,28,36,.86)' })
+    document.body.appendChild(b)
+  } catch { /* 拿不到参数就不显示，静默 */ }
+}
+
+function initLibraryPickers() {
+  // ── 小说工具：从资料库选文本 ──
+  try {
+    const pickBtn = $('nsPickFile')
+    if (pickBtn && !$('nsLibPick')) {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = 'btn ghost'
+      b.id = 'nsLibPick'
+      b.textContent = '从资料库选'
+      b.addEventListener('click', async () => {
+        const rel = await pickFromLibrary({ kind: 'text', title: '选一篇稿子' })
+        if (!rel) return
+        const fh = $('nsFileHint')
+        try {
+          const r = await fetch('/agnes-studio/api/library/file?path=' + encodeURIComponent(rel))
+          if (!r.ok) throw new Error('HTTP ' + r.status)
+          const text = await r.text()
+          $('nsText').value = text
+          if (!$('nsTitle').value) {
+            $('nsTitle').value = rel.split('/').pop().replace(/\.[^.]+$/, '')
+          }
+          if (fh) {
+            fh.className = 'hint ok'
+            fh.textContent = `已从资料库读入 ${rel}（${text.length} 字）`
+          }
+        } catch (e) {
+          if (fh) {
+            fh.className = 'hint error'
+            fh.textContent = '读取失败：' + (e instanceof Error ? e.message : e)
+          }
+        }
+      })
+      pickBtn.after(b)
+    }
+  } catch { /* 该模块结构变了就跳过 */ }
+
+  // ── 公众号封面：从资料库挑图 ──
+  try {
+    const cover = $('wxCover')
+    if (cover && !$('wxLibPick')) {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = 'btn ghost'
+      b.id = 'wxLibPick'
+      b.textContent = '从资料库选'
+      b.addEventListener('click', async () => {
+        const rel = await pickFromLibrary({ kind: 'image', title: '选一张封面图' })
+        if (!rel) return
+        try {
+          const r = await fetch('/agnes-studio/api/library/file?path=' + encodeURIComponent(rel))
+          if (!r.ok) throw new Error('HTTP ' + r.status)
+          const blob = await r.blob()
+          const name = rel.split('/').pop() || 'cover.png'
+          const f = new File([blob], name, { type: blob.type || 'image/png' })
+          const dt = new DataTransfer()
+          dt.items.add(f)
+          cover.files = dt.files
+          cover.dispatchEvent(new Event('change', { bubbles: true }))
+        } catch { /* 读不到就让用户走上传那条 */ }
+      })
+      cover.after(b)
+    }
+  } catch { /* 跳过 */ }
+
+  // ── MTV 音乐：从资料库挑音频，填路径 ──
+  try {
+    const audio = $('mvAudio')
+    if (audio && !$('mvLibPick')) {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = 'btn ghost'
+      b.id = 'mvLibPick'
+      b.textContent = '从资料库选'
+      b.addEventListener('click', async () => {
+        const rel = await pickFromLibrary({ kind: 'audio', title: '选一首音乐' })
+        if (rel) audio.value = rel
+      })
+      audio.after(b)
+    }
+  } catch { /* 跳过 */ }
 }
 
 function initSimpleUI() {
@@ -3577,26 +3981,55 @@ async function initOhstory() {
   }
 }
 
-init()
-initCover()
-initExpert()
-initAnchor()
-initDrama()
-initOhstory()
-initNovelTools()
-initVideoparse()
-initToolbox()
-initCanvas()
-initMv()
-initBgVideo()
-initHome()
-initKeyGuide()
-initAssets()
-initLibrary()
-initLibTabs()
-initOnboard()
-initSlice()
-initSimpleUI()
+// ═══════════════════════════════════════════════════════════════════════
+// 启动
+//
+// ⚠️ 顺序有讲究：**先认环境、再建界面**。
+// 手机模式要先把手机模型拉回来，各模块的下拉才不会先填一堆内置模型再被替换
+// （那样用户会先看到"内置的一线大模型"，正是被反复投诉的现象）。
+// ═══════════════════════════════════════════════════════════════════════
+async function boot() {
+  await detectPhoneMode()
+  if (PHONE_MODE) {
+    await loadPhoneModels()
+    // 手机模式：顶部的「有没有 Key」指示灯没有意义，藏掉
+    const dot = $('keyDot')
+    if (dot) dot.hidden = true
+  }
+
+  init()
+  initCover()
+  initExpert()
+  initAnchor()
+  initDrama()
+  initOhstory()
+  initNovelTools()
+  initVideoparse()
+  initToolbox()
+  initCanvas()
+  initMv()
+  initBgVideo()
+  initHome()
+  initKeyGuide()
+  initAssets()
+  initLibrary()
+  initLibTabs()
+  initOnboard()
+  initSlice()
+  initSimpleUI()
+  initLibraryPickers()
+  syncPhoneModelInputs()
+  initBackToBot()
+
+  // 手机模式：界面搭完再把「模型来自手机」写进设置页（各模块这时已经拿到模型）
+  if (PHONE_MODE) {
+    renderKeyFields()
+    const guide = document.querySelector('.panel[data-panel="settings"] .start-steps')
+    if (guide) guide.remove()
+  }
+}
+
+void boot()
 
 /* ══════════════════════════════════════════════════════════════════════
    鼠标拖尾（纯装饰）：一串光点依次追随光标，形成青→靛→紫→粉的尾巴。

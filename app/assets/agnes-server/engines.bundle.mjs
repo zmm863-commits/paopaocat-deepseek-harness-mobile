@@ -6973,7 +6973,9 @@ const PHONE_SKIP = /* @__PURE__ */ new Set([
 	"logs",
 	"cache",
 	"dist",
-	"build"
+	"build",
+	"library-thumbs",
+	"asset-thumbs"
 ]);
 function readdirSyncOrEmpty(d) {
 	try {
@@ -6988,19 +6990,61 @@ const KIND_BY_EXT = {
 	".jpeg": "image",
 	".webp": "image",
 	".gif": "image",
+	".bmp": "image",
+	".svg": "image",
+	".avif": "image",
+	".heic": "image",
 	".mp4": "video",
 	".mov": "video",
 	".webm": "video",
 	".mkv": "video",
+	".avi": "video",
 	".wav": "audio",
 	".mp3": "audio",
 	".m4a": "audio",
 	".flac": "audio",
+	".ogg": "audio",
+	".aac": "audio",
 	".md": "text",
+	".markdown": "text",
 	".txt": "text",
 	".json": "text",
+	".jsonl": "text",
 	".srt": "text",
-	".ass": "text"
+	".ass": "text",
+	".vtt": "text",
+	".html": "text",
+	".htm": "text",
+	".css": "text",
+	".scss": "text",
+	".js": "text",
+	".mjs": "text",
+	".cjs": "text",
+	".jsx": "text",
+	".ts": "text",
+	".tsx": "text",
+	".dart": "text",
+	".py": "text",
+	".sh": "text",
+	".yaml": "text",
+	".yml": "text",
+	".toml": "text",
+	".ini": "text",
+	".conf": "text",
+	".csv": "text",
+	".tsv": "text",
+	".xml": "text",
+	".log": "text",
+	".sql": "text",
+	".pdf": "file",
+	".docx": "file",
+	".xlsx": "file",
+	".pptx": "file",
+	".zip": "file",
+	".tar": "file",
+	".gz": "file",
+	".7z": "file",
+	".apk": "file"
 };
 function kindOf(name) {
 	return KIND_BY_EXT[extname(name).toLowerCase()] || "other";
@@ -7011,10 +7055,52 @@ function libraryPath(rel) {
 	if (!segs.length) throw new Error("缺少路径");
 	const top = segs[0];
 	if (!phoneMode() && !SOURCES[top] && top !== "toolbox") throw new Error("不允许访问这个目录：" + top);
+	if (phoneMode()) for (const er of extraRoots()) {
+		if (er.label !== top) continue;
+		const abs = resolve(er.abs, ...segs.slice(1));
+		if (abs !== er.abs && !abs.startsWith(er.abs + sep)) throw new Error("路径超出资料库");
+		return abs;
+	}
 	const root = resolve(dataRoot());
 	const abs = resolve(root, ...segs);
 	if (abs !== root && !abs.startsWith(root + sep)) throw new Error("路径超出资料库");
 	return abs;
+}
+/**
+* 除「当前工作区」之外，还要一并列出的目录。
+*
+* 用户 2026-10-28：「资料库看到的不是全部的，应该可以看到其他会话生成的资料，
+* 比如 md、html 这些其他会话的文件。」
+*
+* 会话是**按工作区分开**的：别的会话在别的工作区里写的东西，只看当前那一棵
+* 树永远看不到（换一次工作区就像文件丢了）。所以这里把兄弟工作区与 Bot 工作区
+* 都列进来，rel 前面加一段标签区分，例如 `小说组/章节/第1章.md`、`Bot/xxx.md`。
+*/
+function extraRoots() {
+	if (!phoneMode()) return [];
+	const out = [];
+	const data = resolve(dataRoot());
+	const files = dirname(data);
+	const wss = join(files, "workspaces");
+	try {
+		for (const name of readdirSync(wss)) {
+			const abs = join(wss, name);
+			try {
+				if (statSync(abs).isDirectory()) out.push({
+					label: name,
+					abs
+				});
+			} catch {}
+		}
+	} catch {}
+	const bot = join(files, "dshhome/bot/workspace");
+	try {
+		if (statSync(bot).isDirectory()) out.push({
+			label: "Bot",
+			abs: bot
+		});
+	} catch {}
+	return out;
 }
 /**
 * 列出全部产物。
@@ -7027,37 +7113,33 @@ function listLibrary(opts = {}) {
 	const wantKind = String(opts.kind || "").trim();
 	const q = String(opts.q || "").trim().toLowerCase();
 	const limit = Math.max(1, Math.min(500, opts.limit || 200));
-	const tops = phoneMode() ? readdirSyncOrEmpty(root).filter((n) => !SKIP_NAMES.has(n) && !n.startsWith(".") && !PHONE_SKIP.has(n)) : Object.keys(SOURCES);
-	for (const top of tops) {
-		const dir = join(root, top);
-		if (!existsSync(dir)) continue;
-		const walk = (d, depth) => {
-			if (depth > 4 || out.length > 4e3) return;
-			let items = [];
-			try {
-				items = readdirSync(d);
-			} catch {
-				return;
-			}
-			for (const name of items) {
-				if (SKIP_NAMES.has(name)) continue;
-				const p = join(d, name);
-				let st;
-				try {
-					st = statSync(p);
-				} catch {
-					continue;
+	const roots = phoneMode() ? [{
+		base: root,
+		prefix: ""
+	}, ...extraRoots().map((e) => ({
+		base: e.abs,
+		prefix: e.label + "/"
+	}))] : [{
+		base: root,
+		prefix: ""
+	}];
+	for (const { base, prefix } of roots) {
+		const tops = phoneMode() ? readdirSyncOrEmpty(base).filter((n) => !SKIP_NAMES.has(n) && !n.startsWith(".") && !PHONE_SKIP.has(n)) : Object.keys(SOURCES);
+		for (const top of tops) {
+			const dir = join(base, top);
+			if (!existsSync(dir)) continue;
+			/** 一个文件要不要收：类型/关键字过滤后 push 进去。 */
+			const consider = (absPath, st) => {
+				const name = basename(absPath);
+				if (SKIP_NAMES.has(name)) return;
+				let kind = kindOf(name);
+				if (kind === "other") {
+					if (!phoneMode()) return;
+					kind = "file";
 				}
-				if (st.isDirectory()) {
-					if (phoneMode() && PHONE_SKIP.has(name)) continue;
-					walk(p, depth + 1);
-					continue;
-				}
-				const kind = kindOf(name);
-				if (kind === "other") continue;
-				if (wantKind && kind !== wantKind) continue;
-				if (q && !name.toLowerCase().includes(q)) continue;
-				const rel = p.slice(root.length + 1).split(sep).join("/");
+				if (wantKind && kind !== wantKind) return;
+				if (q && !name.toLowerCase().includes(q)) return;
+				const rel = prefix + absPath.slice(base.length + 1).split(sep).join("/");
 				out.push({
 					rel,
 					name,
@@ -7066,9 +7148,44 @@ function listLibrary(opts = {}) {
 					size: st.size,
 					mtime: st.mtimeMs
 				});
+			};
+			let topStat;
+			try {
+				topStat = statSync(dir);
+			} catch {
+				continue;
 			}
-		};
-		walk(dir, 0);
+			if (!topStat.isDirectory()) {
+				consider(dir, topStat);
+				continue;
+			}
+			const walk = (d, depth) => {
+				if (depth > 4 || out.length > 4e3) return;
+				let items = [];
+				try {
+					items = readdirSync(d);
+				} catch {
+					return;
+				}
+				for (const name of items) {
+					if (SKIP_NAMES.has(name)) continue;
+					const p = join(d, name);
+					let st;
+					try {
+						st = statSync(p);
+					} catch {
+						continue;
+					}
+					if (st.isDirectory()) {
+						if (phoneMode() && PHONE_SKIP.has(name)) continue;
+						walk(p, depth + 1);
+						continue;
+					}
+					consider(p, st);
+				}
+			};
+			walk(dir, 0);
+		}
 	}
 	out.sort((a, b) => b.mtime - a.mtime);
 	return out.slice(0, limit);
@@ -7171,6 +7288,48 @@ async function saveToLibrary(src, kind, name) {
 	return {
 		rel: `${sub}/${basename(out)}`,
 		size: st.size
+	};
+}
+/**
+* 从电脑上传一个文件到**资料库**。
+*
+* ## 为什么新开一个接口（用户 2026-10-28 问「是不是要上传」）
+*
+* 现成的 `/api/localfiles/upload` 有两个问题，不适合「往资料库加文件」：
+*   ① 只收 **utf8 文本**（二进制会坏），传图片/视频直接烂掉；
+*   ② 落在 dataRoot()/localfiles/，而 localfiles 在 SKIP_NAMES 里
+*      —— **上传完资料库里根本看不到**。
+*
+* 这里按「文件」收：content 走 base64，落点与生成物同一条约定，
+* 传完就能在资料库看到、也能被任何模块当素材引用。
+*/
+async function uploadToLibrary(name, b64, kind = "file") {
+	const safeName = String(name || "").replace(/[\s/\\:*?"<>|]+/g, "_").slice(0, 80);
+	if (!safeName) throw new Error("缺少文件名");
+	if (!b64) throw new Error("文件内容为空");
+	const payload = String(b64).startsWith("data:") ? String(b64).slice(String(b64).indexOf(",") + 1) : String(b64);
+	const buf = Buffer.from(payload, "base64");
+	if (!buf.length) throw new Error("文件内容为空");
+	const sub = phoneMode() ? "media/上传" : "toolbox/上传";
+	const dir = join(dataRoot(), sub);
+	mkdirSync(dir, { recursive: true });
+	let out = join(dir, safeName);
+	if (existsSync(out)) {
+		const dot = safeName.lastIndexOf(".");
+		const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
+		const ext = dot > 0 ? safeName.slice(dot) : "";
+		for (let i = 2; i < 1e3; i++) {
+			const cand = join(dir, `${stem}-${i}${ext}`);
+			if (!existsSync(cand)) {
+				out = cand;
+				break;
+			}
+		}
+	}
+	writeFileSync(out, buf);
+	return {
+		rel: out.slice(resolve(dataRoot()).length + 1).split(sep).join("/"),
+		size: buf.length
 	};
 }
 /** 删掉一个产物。 */
@@ -8237,6 +8396,20 @@ function apply(ctx) {
 						});
 					} catch (e) {
 						jsonResponse(res, 500, { error: e instanceof Error ? e.message : String(e) });
+					}
+					return;
+				}
+				if (method === "POST" && path.endsWith("/upload")) {
+					const b = body;
+					try {
+						const r = await uploadToLibrary(String(b.name || b.filename || ""), String(b.content || b.data || ""), String(b.kind || "file"));
+						jsonResponse(res, 200, {
+							success: true,
+							rel: r.rel,
+							size: r.size
+						});
+					} catch (e) {
+						jsonResponse(res, 400, { error: e instanceof Error ? e.message : String(e) });
 					}
 					return;
 				}
