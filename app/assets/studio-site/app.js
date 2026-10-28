@@ -563,6 +563,9 @@ let PHONE_MODE = false
 /** 手机里的模型，按用途分好（来自后端 /agnes-studio/api/models）。 */
 let PHONE_MODELS = { text: [], image: [], video: [], audio: [] }
 
+/** 手机里真正配了凭据的厂商 id 列表（来自 /api/vendors 的 fromDevice）。 */
+let PHONE_VENDORS = []
+
 async function detectPhoneMode() {
   try {
     const r = await fetch('/api/vendors', { cache: 'no-store' })
@@ -577,6 +580,18 @@ async function detectPhoneMode() {
 async function loadPhoneModels() {
   if (!PHONE_MODE) return
   try {
+    // 顺手把「手机里配了哪几家」也记下来 —— 有些模块（视频解析）是选**厂商**
+    // 而不是选模型，原来那个下拉写死了 agnes/qwen/doubao…，手机里没有的也在列。
+    try {
+      const rv = await fetch('/api/vendors', { cache: 'no-store' })
+      if (rv.ok) {
+        const dv = await rv.json()
+        PHONE_VENDORS = (dv.vendors || [])
+          .filter((v) => v.fromDevice === true)
+          .map((v) => v.id)
+      }
+    } catch { /* 拿不到就退回空表，模块会提示"手机里没有可选厂商" */ }
+
     const r = await fetch('/agnes-studio/api/models', { cache: 'no-store' })
     if (!r.ok) return
     const d = await r.json()
@@ -3204,11 +3219,24 @@ async function initVideoparse() {
 
   const vsel = $('vpVendor')
   if (vsel) {
-    for (const v of ['agnes', 'qwen', 'doubao', 'minimax', 'deepseek', 'ollama']) {
+    // 手机模式：只列**手机上真配了凭据**的厂商（2026-10-28 逐模块检查发现
+    // 这里是最后一个还写着内置厂商清单的地方）。
+    const vendors = PHONE_MODE
+      ? (PHONE_VENDORS.length ? PHONE_VENDORS : [])
+      : ['agnes', 'qwen', 'doubao', 'minimax', 'deepseek', 'ollama']
+    vsel.replaceChildren()
+    for (const v of vendors) {
       const o = document.createElement('option')
       o.value = v
       o.textContent = v
       vsel.appendChild(o)
+    }
+    if (!vendors.length) {
+      const o = document.createElement('option')
+      o.value = ''
+      o.textContent = '（手机里没有可用厂商）'
+      vsel.appendChild(o)
+      vsel.disabled = true
     }
   }
 
@@ -3995,6 +4023,13 @@ async function boot() {
     // 手机模式：顶部的「有没有 Key」指示灯没有意义，藏掉
     const dot = $('keyDot')
     if (dot) dot.hidden = true
+    // 顶部那个齿轮按钮的 tooltip 还写着「API 密钥」—— 手机模式下它只是设置入口，
+    // 别让人以为进去要填 Key。
+    const gear = $('settingsBtn')
+    if (gear) {
+      gear.title = '设置'
+      gear.setAttribute('aria-label', '设置')
+    }
   }
 
   init()
