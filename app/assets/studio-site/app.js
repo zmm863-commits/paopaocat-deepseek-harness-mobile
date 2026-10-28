@@ -434,10 +434,12 @@ function bindVendorModel(vendorSel, modelSel, kind, preferred) {
   const wrap = vendorSel.closest('.field')
   const groups = modelsByVendor(kind)
   if (!PHONE_MODE || groups.size === 0) {
-    if (wrap) wrap.hidden = true
+    // ⚠️ 用 style.display 而不是 hidden 属性：本站 .field 是 display:flex，
+    //    没有 [hidden]{display:none} 这条兜底，hidden 隐藏不掉（真机见空下拉）。
+    if (wrap) wrap.style.display = 'none'
     return
   }
-  if (wrap) wrap.hidden = false
+  if (wrap) wrap.style.display = ''
   const keep = vendorSel.value
   const frag = document.createDocumentFragment()
   for (const [v, list] of groups) {
@@ -471,7 +473,7 @@ function bindVendorGroup(vendorSel, specs) {
   const wrap = vendorSel.closest('.field')
   const usable = specs.filter((sp) => sp.sel)
   if (!PHONE_MODE || usable.length === 0) {
-    if (wrap) wrap.hidden = true
+    if (wrap) wrap.style.display = 'none'
     return
   }
   const vendorSet = new Map()
@@ -482,10 +484,10 @@ function bindVendorGroup(vendorSel, specs) {
     }
   }
   if (!vendorSet.size) {
-    if (wrap) wrap.hidden = true
+    if (wrap) wrap.style.display = 'none'
     return
   }
-  if (wrap) wrap.hidden = false
+  if (wrap) wrap.style.display = ''
   const keep = vendorSel.value
   const frag = document.createDocumentFragment()
   for (const [v, set] of vendorSet) {
@@ -4383,7 +4385,7 @@ function wireVendorSelectors() {
       'drVendor', 'mvVendor', 'bgVendor', 'pxVendor']) {
       const el = $(id)
       const wrap = el && el.closest('.field')
-      if (wrap) wrap.hidden = true
+      if (wrap) wrap.style.display = 'none'
     }
     return
   }
