@@ -340,6 +340,10 @@ class BotServer {
       '        (0, import_react33.createElement)(ScheduleSummary, { key: "routines", bot, actions })\n',
       '',
     ],
+    <String>[
+      '  "Could not reach DSH. Check that it is still running.": "连不上 DSH，请确认它还在运行。",',
+      '  "Could not reach DSH. Check that it is still running.": "连不上泡泡猫 DSH，请确认它还在运行。",',
+    ],
   ];
 
   /// 网页版 Bot 页的**产品化裁剪** —— 给 ds-bot 的 client 包打补丁（用户 2026-10-28 要求）：
@@ -359,26 +363,53 @@ class BotServer {
           'node_modules/ds-bot/client.js');
       if (!f.existsSync()) return;
       var src = await f.readAsString();
-      const marker = '/* dshm-web-trim */';
-      if (src.contains(marker)) return;
-      var missed = 0;
-      for (final edit in _botWebTrims) {
-        if (!src.contains(edit[0])) {
-          missed++;
-          continue;
+      const markPrefix = '/* dshm-web-trim:';
+      const legacyMark =
+          '/* dshm-web-trim: ds-bot 网页版裁剪（连接插件/定时任务/经典 Agent 模式） */';
+      final applied = <int>{};
+      String? strip;
+      if (src.startsWith(legacyMark)) {
+        // 第一版（1~8 条）的标记，迁移成带 id 的新标记。
+        applied.addAll(<int>[1, 2, 3, 4, 5, 6, 7, 8]);
+        strip = legacyMark;
+      } else {
+        final at = src.indexOf(markPrefix);
+        final end = at < 0 ? -1 : src.indexOf('*/', at);
+        if (at >= 0 && end > at) {
+          strip = src.substring(at, end + 2);
+          for (final part in strip.substring(markPrefix.length, strip.length - 2).split(',')) {
+            final id = int.tryParse(part.trim());
+            if (id != null && id > 0) applied.add(id);
+          }
         }
-        src = src.replaceAll(edit[0], edit[1]);
       }
-      if (missed > 0) {
-        // 版本变了 → 不半改（半改最坏：菜单去了一半，用户以为没生效）。
+      // 只补没应用过的条目 —— 加了新条目之后老文件也能增量补齐。
+      final pending = <int>[
+        for (var i = 0; i < _botWebTrims.length; i++)
+          if (!applied.contains(i + 1)) i
+      ];
+      if (pending.isEmpty) return;
+      final missed = <String>[];
+      for (final i in pending) {
+        if (!src.contains(_botWebTrims[i][0])) missed.add(_botWebTrims[i][0]);
+      }
+      if (missed.isNotEmpty) {
+        // 版本变了 → 一条都不改（半改最坏：菜单去了一半，用户以为"没生效"）。
         DiagnosticsLog.add('dsh-bot',
-            'Bot 网页裁剪有 $missed 处锚点没命中（ds-bot 版本可能变了），本次不改');
+            'Bot 网页裁剪有 ${missed.length} 处锚点没命中（ds-bot 版本可能变了），本次不改');
         return;
       }
+      if (strip != null) {
+        src = src.substring(strip.length).replaceFirst(RegExp(r'^\r?\n'), '');
+      }
+      for (final i in pending) {
+        src = src.replaceAll(_botWebTrims[i][0], _botWebTrims[i][1]);
+      }
+      final ids = <int>{...applied, ...pending.map((i) => i + 1)}.toList()..sort();
       final tmp = File('${f.path}.dshm-tmp');
-      await tmp.writeAsString('$marker\n$src', flush: true);
+      await tmp.writeAsString('$markPrefix${ids.join(',')} */\n$src', flush: true);
       await tmp.rename(f.path);
-      DiagnosticsLog.add('dsh-bot', '已给 ds-bot 打网页版裁剪补丁（连接插件/定时任务/经典 Agent 模式）');
+      DiagnosticsLog.add('dsh-bot', '已给 ds-bot 打网页版裁剪补丁（补了 ${pending.length} 条，共 ${ids.length} 条）');
     } catch (e) {
       DiagnosticsLog.add('dsh-bot', 'Bot 网页裁剪补丁失败（这几项还会显示）：$e');
     }

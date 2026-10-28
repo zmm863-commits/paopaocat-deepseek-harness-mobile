@@ -8,9 +8,14 @@
  *     ② 左下角小金鱼（鲸鱼头像）菜单里，取消「定时任务」和「切换经典 Agent 模式」；
  *     ③ 对话框「+」菜单里，取消「定时任务」；
  *     ④ 设置里把「切换经典 Agent 模式」和「定时任务」也取消。
+ *   外加一条文案：断开时说「连不上泡泡猫 DSH，请确认它还在运行。」
+ *
  *   ds-bot 是第三方插件（npm ds-bot 0.1.7，Apache-2.0），没有开关能关掉这几项，
  *   只能改它编译好的 client.js —— 所以补丁必须**幂等、可重放、可校验**，
  *   因为① 升级 ds-bot 会覆盖；② 同一个文件同时存在三份（宿主 profile / 运行时种子 / 构建产物）。
+ *
+ * 幂等做法：文件头写 `/* dshm-web-trim:1,2,…,9 *\/`（已应用的条目 id）。
+ *   重跑时只补没应用过的条目 → 加了第 9 条之后，老文件也能增量补齐。
  *
  * 三份副本：
  *   · 本机网页版      /dsh/profiles/web/node_modules/ds-bot/client.js
@@ -18,7 +23,7 @@
  *   · 手机已装 profile （由 App 侧 _patchBotWeb 幂等补，见 app/lib/local/bot_server.dart）
  *
  * 用法：
- *   node install/patch-dsbot-web.mjs <ds-bot 目录> [...]      # 打补丁（幂等）
+ *   node install/patch-dsbot-web.mjs <ds-bot 目录> [...]      # 打补丁（幂等、可增量）
  *   node install/patch-dsbot-web.mjs --check <dir> [...]      # 只校验
  *
  * 退出码：0 全部命中/已是目标状态；1 有锚点没命中（ds-bot 版本变了）或校验失败。
@@ -26,9 +31,12 @@
 import { readFileSync, writeFileSync, copyFileSync, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-const MARK = '/* dshm-web-trim: ds-bot 网页版裁剪（连接插件/定时任务/经典 Agent 模式） */'
+const MARK_PREFIX = '/* dshm-web-trim:'
+/** 第一版（1~8）用的旧标记，遇到就迁移成带 id 的新标记。 */
+const LEGACY_MARK = '/* dshm-web-trim: ds-bot 网页版裁剪（连接插件/定时任务/经典 Agent 模式） */'
+const LEGACY_IDS = [1, 2, 3, 4, 5, 6, 7, 8]
 
-/** 每一条都是 [说明, 原文, 替换]；原文必须在文件里出现且只出现一次。 */
+/** 每一条都是 [说明, 原文, 替换]；原文必须在文件里出现且只出现一次。id = 下标 + 1。 */
 const EDITS = [
   [
     '① 侧栏底部「连接插件」入口',
@@ -79,7 +87,30 @@ const EDITS = [
     '        (0, import_react33.createElement)(ScheduleSummary, { key: "routines", bot, actions })\n',
     '',
   ],
+  [
+    '⑨ 断开时的文案：加上「泡泡猫」品牌',
+    '  "Could not reach DSH. Check that it is still running.": "连不上 DSH，请确认它还在运行。",',
+    '  "Could not reach DSH. Check that it is still running.": "连不上泡泡猫 DSH，请确认它还在运行。",',
+  ],
 ]
+
+const ALL_IDS = EDITS.map((_, i) => i + 1)
+
+/** 读文件里已经应用过哪些条目。 */
+function readApplied(src) {
+  if (src.startsWith(LEGACY_MARK)) return { ids: new Set(LEGACY_IDS), strip: LEGACY_MARK }
+  const at = src.indexOf(MARK_PREFIX)
+  if (at < 0) return { ids: new Set(), strip: null }
+  const end = src.indexOf('*/', at)
+  if (end < 0) return { ids: new Set(), strip: null }
+  const mark = src.slice(at, end + 2)
+  const ids = mark
+    .slice(MARK_PREFIX.length, -2)
+    .split(',')
+    .map((x) => Number(x.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0)
+  return { ids: new Set(ids), strip: mark }
+}
 
 const args = process.argv.slice(2)
 const checkOnly = args[0] === '--check'
@@ -98,48 +129,50 @@ for (const dir of dirs) {
     continue
   }
   let src = readFileSync(file, 'utf8')
-  const applied = src.includes(MARK)
+  const { ids, strip } = readApplied(src)
+  const pending = ALL_IDS.filter((id) => !ids.has(id))
+
   if (checkOnly) {
-    const left = EDITS.filter(([, old]) => src.includes(old))
-    const ok = applied && left.length === 0
-    console.log(`${ok ? '✓' : '✗'} ${file}${ok ? '（已裁剪）' : `（未裁剪：${left.map(([n]) => n).join('、') || '缺标记'}）`}`)
+    const left = pending.filter((id) => src.includes(EDITS[id - 1][1]))
+    const ok = left.length === 0
+    console.log(`${ok ? '✓' : '✗'} ${file}${ok ? `（已裁剪 ${ALL_IDS.length}/${ALL_IDS.length}）` : `（缺：${left.map((id) => EDITS[id - 1][0]).join('、')}）`}`)
     if (!ok) failed++
     continue
   }
-  if (applied) {
-    // 已经打过：只验证锚点是否都不在了
-    const left = EDITS.filter(([, old]) => src.includes(old))
-    if (left.length === 0) {
-      console.log(`= ${file} 已裁剪（跳过）`)
-      continue
-    }
-    console.error(`✗ ${file} 有标记但仍有锚点残留：${left.map(([n]) => n).join('、')}`)
-    failed++
+
+  if (pending.length === 0) {
+    console.log(`= ${file} 已是最新（${ALL_IDS.length} 条全在）`)
     continue
   }
 
   const missing = []
-  const dupes = []
-  for (const [name, old] of EDITS) {
+  for (const id of pending) {
+    const old = EDITS[id - 1][1]
     const hits = src.split(old).length - 1
-    if (hits === 0) missing.push(name)
-    else if (hits > 1) dupes.push(`${name}×${hits}`)
+    if (hits === 0) missing.push(EDITS[id - 1][0])
+    else if (hits > 1) missing.push(`${EDITS[id - 1][0]}（重复命中 ${hits} 次）`)
   }
-  if (missing.length || dupes.length) {
-    console.error(`✗ ${file} 锚点不匹配（ds-bot 版本可能变了）：`)
-    if (missing.length) console.error(`   未命中：${missing.join('、')}`)
-    if (dupes.length) console.error(`   重复命中：${dupes.join('、')}`)
+  if (missing.length) {
+    console.error(`✗ ${file} 锚点不匹配（ds-bot 版本可能变了），本次一条都不改：`)
+    console.error(`   ${missing.join('、')}`)
     failed++
     continue
   }
 
   const backup = `${file}.orig-${Date.now()}`
   copyFileSync(file, backup)
-  for (const [, old, next] of EDITS) src = src.replace(old, next)
-  src = `${MARK}\n${src}`
-  writeFileSync(file, src)
+  // 去掉旧标记行，避免叠加
+  if (strip) src = src.slice(strip.length).replace(/^\r?\n/, '')
+  for (const id of pending) {
+    const old = EDITS[id - 1][1]
+    const next = EDITS[id - 1][2]
+    src = src.replace(old, next)
+  }
+  const nowIds = [...new Set([...ids, ...pending])].sort((a, b) => a - b)
+  const mark = `${MARK_PREFIX}${nowIds.join(',')} */`
+  writeFileSync(file, `${mark}\n${src}`)
   const size = statSync(file).size
-  console.log(`✓ ${file}（备份 ${backup.split('/').pop()}，${size} 字节）`)
+  console.log(`✓ ${file}（补了 ${pending.length} 条：${pending.join(',')}，标记 ${nowIds.join(',')}，${size} 字节）`)
 }
 
 if (failed) {
