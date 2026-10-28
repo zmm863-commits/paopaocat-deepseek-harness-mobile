@@ -302,6 +302,88 @@ class BotServer {
     }
   }
 
+  /// 与 `install/patch-dsbot-web.mjs` **一一对应**的 8 处裁剪（`[锚点, 替换]`）。
+  ///
+  /// 两个地方必须同步改：这里（已装机器自愈）与那个脚本（运行时种子）。
+  /// 锚点任何一个没命中，[BotServer._patchBotWeb] 就整体放弃、只记日志 ——
+  /// 半改最坏：菜单去了一半，用户看不出是"没生效"还是"改错了"。
+  static const List<List<String>> _botWebTrims = <List<String>>[
+    <String>[
+      '    () => shadow("sidebar.footer.action", { id: "bot-connect", order: -100, inject: face }, ConnectPlugins),\n',
+      '',
+    ],
+    <String>[
+      '      [t("Automation tasks"), ClockIcon, () => actions.selectPanel("schedules")],\n',
+      '',
+    ],
+    <String>[
+      '    ],\n    [\n      [t("Switch to classic Agent mode"), SwitchIcon, () => actions.setSurface("agent")]\n    ]\n  ];',
+      '    ]\n  ];',
+    ],
+    <String>[
+      '      (0, import_react11.createElement)("button", { type: "button", role: "menuitem", onClick: schedule }, (0, import_react11.createElement)(ClockIcon), (0, import_react11.createElement)("span", { className: "bt-menu-label" }, t("Scheduled task")))\n',
+      '',
+    ],
+    <String>[
+      '["schedules", "Scheduled tasks"], ',
+      '',
+    ],
+    <String>[
+      '    (0, import_react30.createElement)(\n      SetSection,\n      { key: "mode", title: t("Mode") },\n      (0, import_react30.createElement)(\n        SetRow,\n        { label: t("Classic Agent mode") },\n        (0, import_react30.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => actions.setSurface("agent") }, t("Switch"))\n      )\n    )\n',
+      '',
+    ],
+    <String>[
+      '    (0, import_react19.createElement)(BotSchedules, { bot, roster, actions }),\n',
+      '',
+    ],
+    <String>[
+      '        (0, import_react33.createElement)(ScheduleSummary, { key: "routines", bot, actions })\n',
+      '',
+    ],
+  ];
+
+  /// 网页版 Bot 页的**产品化裁剪** —— 给 ds-bot 的 client 包打补丁（用户 2026-10-28 要求）：
+  /// ① 去掉侧栏底部「连接插件」入口；② 左下角小金鱼菜单里去掉「定时任务」和
+  /// 「切换经典 Agent 模式」；③ 对话框「+」菜单去掉「定时任务」；④ 设置里也去掉这两项。
+  ///
+  /// 为什么必须放在 **App 侧**（而不是只改运行时包里的种子）：[ensureProfile] 只在
+  /// `profiles/bottest` **不存在**时才从种子复制 —— 覆盖安装的机器上那个目录早就在了，
+  /// 种子里改得多干净都进不去。所以照 [_patchAttachmentDurability] 的老套路：
+  /// 幂等 marker 判重、写临时文件再 rename、锚点找不到只记日志不硬改。
+  ///
+  /// 与 `install/patch-dsbot-web.mjs` **同一套锚点** —— 两个地方必须一起改，
+  /// ds-bot 升版后锚点会失效，那时两边都要重新核对。
+  static Future<void> _patchBotWeb(DshRuntime runtime) async {
+    try {
+      final f = File('${runtime.nodeHome}/profiles/$profileName/'
+          'node_modules/ds-bot/client.js');
+      if (!f.existsSync()) return;
+      var src = await f.readAsString();
+      const marker = '/* dshm-web-trim */';
+      if (src.contains(marker)) return;
+      var missed = 0;
+      for (final edit in _botWebTrims) {
+        if (!src.contains(edit[0])) {
+          missed++;
+          continue;
+        }
+        src = src.replaceAll(edit[0], edit[1]);
+      }
+      if (missed > 0) {
+        // 版本变了 → 不半改（半改最坏：菜单去了一半，用户以为没生效）。
+        DiagnosticsLog.add('dsh-bot',
+            'Bot 网页裁剪有 $missed 处锚点没命中（ds-bot 版本可能变了），本次不改');
+        return;
+      }
+      final tmp = File('${f.path}.dshm-tmp');
+      await tmp.writeAsString('$marker\n$src', flush: true);
+      await tmp.rename(f.path);
+      DiagnosticsLog.add('dsh-bot', '已给 ds-bot 打网页版裁剪补丁（连接插件/定时任务/经典 Agent 模式）');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', 'Bot 网页裁剪补丁失败（这几项还会显示）：$e');
+    }
+  }
+
   /// 起服务（已起着就直接复用）。
   ///
   /// [onLog] 收启动过程的原始行，供调用方显示"卡在哪一步"。
@@ -351,6 +433,9 @@ class BotServer {
     await _pickPort();
 
     await ensureProfile(runtime);
+
+    // profile 落好之后再裁剪网页版（已装机器上 profile 早就存在 → 必须在 ensureProfile 之后）。
+    await _patchBotWeb(runtime);
 
     // ⚠️⚠️ **必须在拼 args 之前**把 overlay 准备好（2026-10-19 修顺序 bug）。
     //

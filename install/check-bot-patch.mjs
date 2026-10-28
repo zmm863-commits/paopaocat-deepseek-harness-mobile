@@ -38,9 +38,12 @@ const tokens =
   '    --bt-main: #101418;\n' +
   '    }';
 
+const mobileLayout = JSON.stringify('.bt-x{display:none}\n.bt-y{color:rgba(0,0,0,.5)}');
+
 const js = tpl
   .replaceAll('__DSH_APP_DARK__', 'true')
-  .replaceAll('__DSH_TOKENS_CSS__', tokens);
+  .replaceAll('__DSH_TOKENS_CSS__', tokens)
+  .replaceAll('__DSH_MOBILE_LAYOUT__', mobileLayout);
 
 let fail = 0;
 const bad = (msg) => { console.error('✗ ' + msg); fail++; };
