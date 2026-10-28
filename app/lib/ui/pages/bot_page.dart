@@ -687,6 +687,22 @@ body { overscroll-behavior-y: contain; }
   /// 当前 WebView 里加载的地址（用于和服务最新地址比对）。
   String? _loadedUrl;
 
+  /// 431 自动重试只做一次（避免服务真没起时无限重载）。
+  bool _retriedAfter431 = false;
+
+  /// 清掉 WebView 的 cookie（见调用处的 431 说明）。
+  ///
+  /// 只影响本 App 这一个 WebView —— 里面除了 Bot 页没有别的东西。
+  /// 失败也不拦启动：大不了继续撞 431，日志里留痕。
+  Future<void> _clearWebCookies(String why) async {
+    try {
+      await WebViewCookieManager().clearCookies();
+      DiagnosticsLog.add('dsh-bot', '已清 WebView cookie（$why）');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '清 WebView cookie 失败（$why）：$e');
+    }
+  }
+
   /// 服务地址变了（通常是重启换了端口）→ 用新地址重新加载。
   void _onServerChanged() {
     final s = BotServer.live.value;
@@ -696,7 +712,9 @@ body { overscroll-behavior-y: contain; }
     // 只记"变了"，不记地址（地址里带 token）。
     DiagnosticsLog.add('dsh-bot', 'Bot 服务地址变化（服务重启/换端口）→ WebView 重新加载');
     _loadedUrl = s.url;
-    _web?.loadRequest(Uri.parse(s.url));
+    unawaited(_clearWebCookies('服务地址变化').then((_) {
+      _web?.loadRequest(Uri.parse(s.url));
+    }));
   }
   WebViewController? _web;
   String? _error;
@@ -985,6 +1003,22 @@ body { overscroll-behavior-y: contain; }
             debugPrint('[dsh-bot] 主文档加载失败：${e.errorCode} ${e.description}');
             DiagnosticsLog.add('dsh-bot',
                 '主文档加载失败：错误码 ${e.errorCode} ${e.description}');
+            // 431（请求头太大，历史 cookie 攒爆了）→ 清 cookie 再重试一次。
+            // 只自动重试一次：真连不上（服务没起）时不能让用户看它无限转圈。
+            final headersTooLarge =
+                e.description.contains('ERR_HTTP_RESPONSE_CODE_FAILURE');
+            if (headersTooLarge && !_retriedAfter431) {
+              _retriedAfter431 = true;
+              DiagnosticsLog.add('dsh-bot',
+                  '主文档加载失败疑似 431（历史 cookie 太多）→ 清 cookie 后自动重试一次');
+              unawaited(() async {
+                await _clearWebCookies('431 重试');
+                final live = BotServer.live.value?.url ?? _loadedUrl;
+                if (!mounted || live == null) return;
+                await _web?.loadRequest(Uri.parse(live));
+              }());
+              return;
+            }
             if (!mounted) return;
             setState(() {
               _phase = _Phase.failed;
@@ -993,6 +1027,13 @@ body { overscroll-behavior-y: contain; }
           },
         ),
       );
+      // ⚠️ **先清掉 WebView 里的旧 cookie**（2026-10-28 真机 431 的根因）：
+      //     服务每次重启端口都会变，而 cookie 名是按 authority（host:port）派生的 →
+      //     反复安装/重启会攒下一堆 `dsh-auth-*`。真机实测 **69 个、Cookie 头 15.7 KB**，
+      //     超过 Node 默认的 16 KB 请求头上限 → 服务直接回 **431**，
+      //     WebView 就显示 `net::ERR_HTTP_RESPONSE_CODE_FAILURE`（看着像认证坏了，其实是头太大）。
+      //     这个 WebView 只服务 Bot 页，清空是安全的；带 token 打开会当场再发一个新 cookie。
+      await _clearWebCookies('首次加载');
       await controller.loadRequest(Uri.parse(server.url));
       _loadedUrl = server.url;
       if (!mounted) return;
