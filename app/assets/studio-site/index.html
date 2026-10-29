@@ -778,7 +778,7 @@
         <div class="grid-3">
           <label class="field"><span>抽几帧</span><input type="number" id="vpFrames" value="6" min="2" max="12"></label>
           <label class="field"><span>厂商</span><select id="vpVendor"></select></label>
-          <label class="field"><span>模型</span><input type="text" id="vpModel" value="agnes-2.5-flash"></label>
+          <label class="field"><span>模型</span><select id="vpModel"></select></label>
         </div>
         <p class="hint" id="vpModelNote"></p>
       </div>
@@ -904,6 +904,20 @@
             <input type="number" id="anMinSeg" value="4" min="3" max="20">
           </label>
         </div>
+        <label class="field">
+          <span>视频素材（选「素材片段 · 用已有视频」时必填）</span>
+          <div class="row-actions" style="margin:0">
+            <input type="text" id="anClip" placeholder="从资料库选一段视频" readonly>
+            <button class="btn ghost" id="anPickClip" type="button">从资料库选</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>配图（选「静态图 · 一图铺满」时必填）</span>
+          <div class="row-actions" style="margin:0">
+            <input type="text" id="anImage" placeholder="从资料库选一张图，或用「素材片段」/「AI 生成画面」" readonly>
+            <button class="btn ghost" id="anPickImage" type="button">从资料库选</button>
+          </div>
+        </label>
         <label class="check-row">
           <input type="checkbox" id="anSubs" checked>
           <span>烧录字幕</span>

@@ -498,7 +498,15 @@ function bindVendorGroup(vendorSel, specs) {
   }
   vendorSel.replaceChildren(frag)
   const has = (v) => Array.from(vendorSel.options).some((o) => o.value === v)
-  if (keep && has(keep)) vendorSel.value = keep
+  // 默认厂家必须**能满足这一组全部槽位**，否则一进页面就是「（这家没有图像模型）」
+  // 「（这家没有视频模型）」，点了必然失败 —— 那就是假功能（用户 2026-10-29）。
+  // 例：短剧要 文本+图像+视频，OpenCode Go 只有文本，默认应落到 Agnes。
+  const complete = (v) => usable.every((sp) =>
+    (PHONE_MODELS[sp.kind] || []).some((m) => vendorOfModel(m) === v))
+  const bestVendor = Array.from(vendorSet.keys()).find((v) => complete(v))
+  if (keep && has(keep) && complete(keep)) vendorSel.value = keep
+  else if (bestVendor && has(bestVendor)) vendorSel.value = bestVendor
+  else if (keep && has(keep)) vendorSel.value = keep
   else vendorSel.value = vendorSel.options[0].value
 
   const apply = () => {
@@ -1064,7 +1072,7 @@ async function onGenerateImages() {
   }
 
   let ok = 0
-  await Promise.all(cards.map(async (card) => {
+  await Promise.all(cards.map(async (card, i) => {
     try {
       const url = await generateOneImage(model, prompt, size)
       fillResultCard(card, 'image', url, prompt.slice(0, 40))
@@ -1191,9 +1199,14 @@ async function onGenerateVideo() {
     hint.className = 'hint ok'
     hint.textContent = '视频生成完成'
   } catch (error) {
-    fillErrorCard(card, error instanceof Error ? error.message : String(error))
+    const msg = error instanceof Error ? error.message : String(error)
+    fillErrorCard(card, msg)
     hint.className = 'hint error'
-    hint.textContent = '生成失败'
+    // 免费档排队是上游的实时状态，不是我们的故障 —— 说清楚"稍后再点一次"，
+    // 别让人以为是坏了（用户 2026-10-29 实测遇到 video_queue_full）。
+    hint.textContent = /video_queue_full|队列已满/i.test(msg)
+      ? '上游免费档的视频队列现在满了，过一两分钟再点一次「生成视频」就行（不是这边坏了）'
+      : '生成失败'
   } finally {
     btn.disabled = false
     btn.removeAttribute('aria-busy')
@@ -1763,6 +1776,30 @@ async function initAnchor() {
       + '；选「素材片段」则直接用你给的视频，不生成画面。'
   }
 
+  // 配图入口：以前这个面板**没有选图的地方**，选「静态图 · 一图铺满」必然
+  // 报「静态形象图模式需要提供图片」——典型假功能（用户 2026-10-29）。
+  $('anPickImage')?.addEventListener('click', async () => {
+    const rel = await pickFromLibrary({ kind: 'image', title: '选一张口播配图' })
+    if (rel) $('anImage').value = rel
+  })
+  $('anPickClip')?.addEventListener('click', async () => {
+    const rel = await pickFromLibrary({ kind: 'video', title: '选一段口播视频素材' })
+    if (rel) $('anClip').value = rel
+  })
+
+  // 配音只有两条路：本机 espeak-ng（手机上没装）或 MiMo/MiniMax 的 Key。
+  // 两样都没有就别留一个点了必报错的按钮（用户 2026-10-29：不许假功能）。
+  const hasTtsVendor = PHONE_VENDORS.some((v) => /minimax|mimo/i.test(String(v.id || '')))
+  if (PHONE_MODE && !hasTtsVendor) {
+    const b = $('anBtn')
+    if (b) { b.disabled = true; b.textContent = '还缺配音引擎（先去手机设置填 MiMo/MiniMax Key）' }
+    if (anchorNote) {
+      anchorNote.innerHTML = '⚠️ 配音现在跑不了：手机上没装 espeak-ng（本地离线配音不可用），也没有 MiMo / MiniMax 的 Key。'
+        + '<br>去手机 App「设置 → 模型」里给 <b>MiniMax</b>（或 MiMo）填一把 Key，回来重开一次「电脑访问」就能用。'
+        + '<br>配图用手机里的图像模型' + ((PHONE_MODELS.image || [])[0] ? `（当前：<b>${PHONE_MODELS.image[0]}</b>）` : '（还没配图像模型）') + '。'
+    }
+  }
+
   const btn = $('anBtn')
   const hint = $('anHint')
   const results = $('anResults')
@@ -1777,6 +1814,18 @@ async function initAnchor() {
     if (!text) {
       hint.className = 'hint error'
       hint.textContent = '先填口播文稿'
+      return
+    }
+    // 「静态图·一图铺满」必须要一张图；没有就别让他等一轮再收到一句干巴巴的
+    // 「静态形象图模式需要提供图片」（用户 2026-10-29 实测）。
+    if ($('anMode')?.value === 'clip' && !($('anClip')?.value || '').trim()) {
+      hint.className = 'hint error'
+      hint.textContent = '「素材片段 · 用已有视频」要先选一段视频（上面的「视频素材」里点「从资料库选」）。'
+      return
+    }
+    if ($('anMode')?.value === 'static' && !($('anImage')?.value || '').trim()) {
+      hint.className = 'hint error'
+      hint.textContent = '「静态图 · 一图铺满」要先选一张图（或把下面的「生成方式」改成「AI 生成画面」，让模型自己画）。'
       return
     }
 
@@ -1795,6 +1844,9 @@ async function initAnchor() {
         body: JSON.stringify({
           text,
           mode: $('anMode').value,
+          // 后端要的是 {value} 结构（素材解析层统一形态），不是裸字符串。
+          image: { value: ($('anImage')?.value || '').trim() },
+          clip: { value: ($('anClip')?.value || '').trim() },
           voice: $('anVoice').value,
           min_seg_sec: Number($('anMinSeg').value) || 4,
           subtitles: $('anSubs').checked,
@@ -1848,8 +1900,11 @@ async function initAnchor() {
         hint.textContent = (last && (last.error || last.message)) || '任务未完成（可能超时）'
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
       hint.className = 'hint error'
-      hint.textContent = error instanceof Error ? error.message : String(error)
+      hint.textContent = /需要提供图片/.test(msg)
+        ? '这个生成方式要先选一张图；不想选图就把「生成方式」改成「AI 生成画面」。'
+        : msg
     } finally {
       btn.disabled = false
       btn.removeAttribute('aria-busy')
@@ -3497,25 +3552,16 @@ async function initVideoparse() {
   const frameDesc = $('vpFrameDesc')
 
   const vsel = $('vpVendor')
-  if (vsel) {
-    // 手机模式：只列**手机上真配了凭据**的厂商（2026-10-28 逐模块检查发现
-    // 这里是最后一个还写着内置厂商清单的地方）。
-    const vendors = PHONE_MODE
-      ? (PHONE_VENDORS.length ? PHONE_VENDORS : [])
-      : ['agnes', 'qwen', 'doubao', 'minimax', 'deepseek', 'ollama']
+  if (vsel && !PHONE_MODE) {
+    // 电脑模式沿用内置厂商清单；手机模式交给 wireVendorSelectors() 的
+    // 「厂家 + 模型」两级下拉（2026-10-29：这里以前只列厂商、模型还是手输框）。
+    const vendors = ['agnes', 'qwen', 'doubao', 'minimax', 'deepseek', 'ollama']
     vsel.replaceChildren()
     for (const v of vendors) {
       const o = document.createElement('option')
       o.value = v
       o.textContent = v
       vsel.appendChild(o)
-    }
-    if (!vendors.length) {
-      const o = document.createElement('option')
-      o.value = ''
-      o.textContent = '（手机里没有可用厂商）'
-      vsel.appendChild(o)
-      vsel.disabled = true
     }
   }
 
@@ -3564,7 +3610,7 @@ async function initVideoparse() {
         video_file: url,
         frames: parseInt($('vpFrames').value, 10) || 6,
         vendor: $('vpVendor').value,
-        model: $('vpModel').value.trim() || 'agnes-2.5-flash',
+        model: $('vpModel').value.trim() || (PHONE_MODE ? (PHONE_MODELS.text.find((m) => /agnes|vision/i.test(m)) || PHONE_MODELS.text[0] || '') : 'agnes-2.5-flash'),
       })
       lastId = started.id
       const deadline = Date.now() + 30 * 60 * 1000
@@ -4394,6 +4440,7 @@ function wireVendorSelectors() {
   bindVendorModel($('nsVendor'), $('nsModel'), 'text')
   bindVendorModel($('deVendor'), $('deModel'), 'text')
   bindVendorModel($('pxVendor'), $('pxModel'), 'text')
+  bindVendorModel($('vpVendor'), $('vpModel'), 'text')
   bindVendorModel($('cvVendor'), $('cvModel'), 'image')
   bindVendorGroup($('drVendor'), [
     { sel: $('drTextModel'), kind: 'text' },

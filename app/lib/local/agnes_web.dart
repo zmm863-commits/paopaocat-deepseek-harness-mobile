@@ -10,6 +10,7 @@ import '../data/atomic_file.dart';
 import '../data/configured_models.dart';
 import '../state/provider_keys.dart';
 import 'diagnostics_log.dart';
+import '../data/media_models.dart';
 import 'dsh_runtime.dart';
 
 /// 「泡泡猫设计站」的**本机后端**：把 paopaocat-studio-web 的 Node 服务跑在手机里。
@@ -117,6 +118,37 @@ class AgnesWeb {
           if (hasKey) 'apiKey': key.trim(),
         };
       }
+      // ⚠️ 影视页的图像 / 视频模型住在另一份配置（media-models.json），
+      //    不在 models.json 里 —— 只导出上面那份，设计站就会说"手机里还没有图像模型"
+      //    （2026-10-29 真机：手机明明配着 agnes-image/video，网页版一个都看不到）。
+      //    这里把它们并进同一个 vendors 表：同一个厂家就追加模型，没有就新建一条。
+      final media = MediaModels.read(rt.filesDir);
+      for (final spec in <MediaModelSpec>[...MediaModels.builtins(), ...media.custom]) {
+        final key = await ProviderKeys.read(spec.provider);
+        final keyText = key?.trim() ?? '';
+        final usable = keyText.isNotEmpty || spec.builtin;
+        final existing = vendors[spec.provider];
+        final models = existing == null
+            ? <String>[]
+            : ((existing['models'] as List?) ?? const <Object?>[])
+                .map((e) => '$e')
+                .toList();
+        if (usable && !models.contains(spec.id)) models.add(spec.id);
+        if (existing == null) {
+          vendors[spec.provider] = <String, Object?>{
+            'baseUrl': spec.baseUrl,
+            'label': spec.provider == MediaModels.builtinProvider
+                ? 'Agnes（内置·免费）'
+                : spec.provider,
+            'models': models,
+            if (keyText.isNotEmpty) 'apiKey': keyText,
+          };
+        } else if (usable) {
+          existing['models'] = models;
+          if (keyText.isNotEmpty) existing['apiKey'] = keyText;
+        }
+      }
+
       final body = const JsonEncoder.withIndent('  ')
           .convert(<String, Object?>{'vendors': vendors});
       writeStringAtomicSync(File(_modelsFile(rt)), '$body\n');
