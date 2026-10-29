@@ -697,3 +697,37 @@ SDK 3.38 GB 已校验 SHA256 `130a438c…f338f`。
 - 总体 go/no-go：`docs/HARMONYOS-NEXT-GO-NO-GO.md`
 - 本文件：A 路线的精确迁移清单
 - 扫描器：`install/ohos-downgrade-scan.mjs`（每次改依赖都建议重跑）
+
+---
+
+## 附录 B：真机首战（2026-10-28）
+
+设备：ADY-AL00（HarmonyOS 7.0 / API 26），无线调试 192.168.3.42:33333，UDID `437AB…D0`。
+
+### 证书：开源 OpenHarmony 证书在商业鸿蒙上**不被信任**
+
+`hdc install` 报 `9568257 fail to verify pkcs7 file` —— 只能走 **华为 AGC**：
+我方出 CSR（`signing-agc/dsh-debug.csr`，EC P-256）→ AGC 申请调试证书（.cer）+
+调试 Profile（.p7b，绑 UDID）→ keystore 用 `openssl pkcs12` 自打 → `hap-sign-tool` 重签。
+材料与成品：`signing-agc/`（cer/p7b/p12/key），应用「泡泡猫DSH手机鸿蒙版」已建。
+⚠️ 签名命令必须在 ASCII 路径跑（中文路径触发 java `InvalidPathException`）。
+
+### 真机实测结果（v4 包）
+
+| 环节 | 结果 |
+|---|---|
+| 安装（AGC 调试签名） | ✅ install bundle successfully |
+| 冷启动 | ✅ 不闪退（v4 已去掉冷启动启 node） |
+| `dsh/native` 通道 | ✅ 收发正常，getPaths/isRuntimeReady 等 11 个方法已通 |
+| 随包 runtime | ✅ copyRuntimeAsset 落盘 32.9 MB，**不联网** |
+| 解压 | ✅ 9995 文件 2.4 秒（zlib.decompressFile + app/→dsh/ 映射 + shims 覆盖） |
+| Flutter 主界面 | ✅ 工作区/公告/版本检查/调度器日志全通 |
+| shared_preferences | ✅ 原生实现（`SharedPrefs.ets`，JSON 存储），MissingPluginException 归零 |
+| 调度器保活 | startSchedulerService notImplemented（鸿蒙无前台服务），stop 恒 true |
+
+### 仍未验证 / 未做
+
+- **node 进程内启动未触发**（v4 起冷启动不自动启 node；`NodeHost` 就绪有待 UI 显式调用）
+  下一步：dsh/native 增加 `startNode` 方法 + Dart 侧 AcpClient 的鸿蒙分支
+  （session 走本机 HTTP 桥，不能用 stdio —— node 在进程内）
+- 语音/TTS/微信扫码/APK 自更新 → notImplemented，Dart 侧已优雅降级
