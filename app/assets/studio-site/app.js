@@ -451,7 +451,11 @@ function bindVendorModel(vendorSel, modelSel, kind, preferred) {
   vendorSel.replaceChildren(frag)
   const current = modelSel.value
   const has = (el, v) => Array.from(el.options).some((o) => o.value === v)
+  // preferred 决定默认厂家：否则「看懂视频」会默认落在只有文本模型的厂商上，
+  // 而它必须用多模态模型（用户 2026-10-29 真机：默认 deepseek-v4.1-flash 读不了图）。
+  const prefVendor = preferred ? vendorOfModel(preferred) : ''
   if (keep && has(vendorSel, keep)) vendorSel.value = keep
+  else if (prefVendor && groups.has(prefVendor)) vendorSel.value = prefVendor
   else if (current && groups.has(vendorOfModel(current))) vendorSel.value = vendorOfModel(current)
   else vendorSel.value = vendorSel.options[0].value
 
@@ -4440,7 +4444,9 @@ function wireVendorSelectors() {
   bindVendorModel($('nsVendor'), $('nsModel'), 'text')
   bindVendorModel($('deVendor'), $('deModel'), 'text')
   bindVendorModel($('pxVendor'), $('pxModel'), 'text')
-  bindVendorModel($('vpVendor'), $('vpModel'), 'text')
+  // 看懂视频要**多模态**模型（必须能读图）。默认给 agnes-2.5-flash，
+  // 别让它默认落在纯文本模型上——那样每次点「开始解析」都会失败。
+  bindVendorModel($('vpVendor'), $('vpModel'), 'text', 'agnes-2.5-flash')
   bindVendorModel($('cvVendor'), $('cvModel'), 'image')
   bindVendorGroup($('drVendor'), [
     { sel: $('drTextModel'), kind: 'text' },
