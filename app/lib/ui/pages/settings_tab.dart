@@ -397,24 +397,27 @@ class _SettingsTabState extends State<SettingsTab> {
                     child: _card(
                         child: PhoneAgentSettingsSection(settings: widget.appSettings)),
                   ),
-                  const SizedBox(height: 10),
-                  // 「电脑访问」：把手机上的 DSH 网页服务绑到某张网卡，电脑用浏览器
-                  // 直接打开（2026-10-26 用户提出「手机当移动电脑」）。
-                  //
-                  // 为什么放这里而不是模型设置页：模型设置页在这个 App 里只有
-                  // "缺 Key 时的提示条"才能进到，正常路径根本找不到 —— 功能再好
-                  // 也是隐形的。放「设置 → 应用」里一眼就能看到。
-                  DshCollapsibleSection(
-                    title: context.tr('电脑访问'),
-                    child: _card(child: ComputerAccessPanel(runtime: widget.runtime)),
-                  ),
-                  const SizedBox(height: 10),
+
                   // 用户要求：原来的「关于」改名「文件地址」（它本来列的就是各种路径），
                   // 「关于」另起一块，放求关注文案 + 公众号二维码 + 公众号 ID。
                   DshCollapsibleSection(
                     title: context.tr('文件地址'),
                     child: _card(child: _locationsSection()),
                   ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // 「移动桌面平台」：把手机上的 DSH 网页服务绑到某张网卡，电脑用浏览器
+              // 直接打开（2026-10-26 用户提出「手机当移动电脑」）。
+              //
+              // 用户 2026-10-29：原来它叫「电脑访问」、塞在「应用」折叠组里面，
+              // 要求**改名「移动桌面平台」并移出来**，成为「应用」下面独立的一项
+              // —— 这样它跟「插件 / 手机权限 / 泡泡猫助手」不再混在一起，
+              // 位置也跟它的地位对得上（这是"手机当电脑用"的总入口）。
+              DshGroupSection(
+                title: context.tr('移动桌面平台'),
+                children: <Widget>[
+                  _card(child: ComputerAccessPanel(runtime: widget.runtime)),
                 ],
               ),
               const SizedBox(height: 10),

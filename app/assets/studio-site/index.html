@@ -45,7 +45,6 @@
 
     <span class="tab-group">动</span>
     <button class="tab" data-panel="video" role="tab" type="button">生视频</button>
-    <button class="tab" data-panel="anchor" role="tab" type="button">口播</button>
     <button class="tab" data-panel="storyboard" role="tab" type="button">短剧</button>
     <button class="tab" data-panel="mv" role="tab" type="button">MTV</button>
     <button class="tab" data-panel="bgvideo" role="tab" type="button">背景视频</button>
@@ -874,68 +873,7 @@
       </div>
     </section>
 
-    <section class="panel" data-panel="anchor" role="tabpanel">
-      <div class="card">
-        <div class="card-head"><span class="card-title">口播文稿</span></div>
-        <textarea id="anText" rows="8" placeholder="粘贴文稿，会按标点自动分段…"></textarea>
-      </div>
-
-      <div class="card">
-        <div class="card-head"><span class="card-title">参数</span></div>
-        <label class="field">
-          <span>画面模式</span>
-          <select id="anMode">
-            <option value="static">静态图 · 一图铺满</option>
-            <option value="clip">素材片段 · 用已有视频</option>
-            <option value="ai">AI 生成画面</option>
-          </select>
-        </label>
-        <div class="grid-2">
-          <label class="field">
-            <span>音色</span>
-            <select id="anVoice">
-              <option value="mimo_default">默认音色</option>
-              <option value="mimo_female_1">女声 · 温柔</option>
-              <option value="mimo_male_1">男声 · 沉稳</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>最短分段（秒）</span>
-            <input type="number" id="anMinSeg" value="4" min="3" max="20">
-          </label>
-        </div>
-        <label class="field">
-          <span>视频素材（选「素材片段 · 用已有视频」时必填）</span>
-          <div class="row-actions" style="margin:0">
-            <input type="text" id="anClip" placeholder="从资料库选一段视频" readonly>
-            <button class="btn ghost" id="anPickClip" type="button">从资料库选</button>
-          </div>
-        </label>
-        <label class="field">
-          <span>配图（选「静态图 · 一图铺满」时必填）</span>
-          <div class="row-actions" style="margin:0">
-            <input type="text" id="anImage" placeholder="从资料库选一张图，或用「素材片段」/「AI 生成画面」" readonly>
-            <button class="btn ghost" id="anPickImage" type="button">从资料库选</button>
-          </div>
-        </label>
-        <label class="check-row">
-          <input type="checkbox" id="anSubs" checked>
-          <span>烧录字幕</span>
-        </label>
-      </div>
-
-      <button class="cta" id="anBtn" type="button">开始生成口播</button>
-      <p class="hint" id="anModelNote"></p>
-      <p class="hint" id="anHint">按文稿分段 → 生成语音 → 合成画面，通常需要几分钟。</p>
-
-      <div class="progress-wrap" id="anProgress" hidden>
-        <div class="progress"><div class="progress-bar" id="anBar"></div></div>
-        <p class="progress-text" id="anPtext">准备中…</p>
-      </div>
-
-      <div class="results" id="anResults"></div>
-    </section>
-
+    
     <section class="panel" data-panel="cover" role="tabpanel">
       <div class="card">
         <div class="card-head"><span class="card-title">书籍信息</span></div>

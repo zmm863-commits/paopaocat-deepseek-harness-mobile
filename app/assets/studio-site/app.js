@@ -99,7 +99,7 @@ const VENDORS = [
     id: 'mimo', label: 'MiMo（小米，配音专用）', group: 'optional', forVoice: true,
     site: 'https://platform.xiaomimimo.com/',
     steps: ['注册并登录', '进控制台创建 API Key', '复制密钥'],
-    notes: ['tp- 开头的是套餐版密钥，会自动走对应节点', '只有「口播」这个功能用它'],
+    notes: ['tp- 开头的是套餐版密钥，会自动走对应节点'],
   },
   {
     id: 'ollama', label: 'Ollama（本地服务）', keyless: true, group: 'optional',
@@ -892,9 +892,7 @@ function renderKeyFields() {
     tip.style.margin = '10px 12px 0'
     tip.innerHTML =
       '不填这些也能用全部功能。<br>' +
-      '<b>唯一的例外是带语音的两个功能</b>，各要一家（Agnes 没有语音模型）：<br>' +
-      '· <b>文字转语音</b>（工具箱）→ 填 <b>MiniMax</b><br>' +
-      '· <b>口播配音</b> → 填 <b>MiMo</b><br>' +
+      '<b>唯一的例外是「文字转语音」（工具箱）</b>，要填 <b>MiniMax</b>（Agnes 没有语音模型）。<br>' +
       '不想花钱就只在本地跑 Ollama，或用已有的 Key。'
     details.appendChild(tip)
     for (const v of optional) details.appendChild(makeItem(v))
@@ -1766,159 +1764,6 @@ function renderPromptCard(container, text, caption) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 口播（文稿 → 分段 → 配音 → 成片）
-// ═══════════════════════════════════════════════════════════════════════
-
-async function initAnchor() {
-  // 用户 2026-10-29：口播到底调什么模型，要写清楚。
-  const anchorNote = $('anModelNote')
-  if (anchorNote) {
-    const img = (PHONE_MODELS.image || [])[0]
-    anchorNote.innerHTML = '配音：选「本地离线配音」= 手机本机 espeak-ng 合成（免费、不联网）；'
-      + '选其它音色 = MiniMax 语音合成（需要手机设置里填 MiniMax 的 Key）。<br>'
-      + '配图：用手机里的图像模型' + (img ? `（当前：<b>${img}</b>）` : '（手机里还没配图像模型）')
-      + '；选「素材片段」则直接用你给的视频，不生成画面。'
-  }
-
-  // 配图入口：以前这个面板**没有选图的地方**，选「静态图 · 一图铺满」必然
-  // 报「静态形象图模式需要提供图片」——典型假功能（用户 2026-10-29）。
-  $('anPickImage')?.addEventListener('click', async () => {
-    const rel = await pickFromLibrary({ kind: 'image', title: '选一张口播配图' })
-    if (rel) $('anImage').value = rel
-  })
-  $('anPickClip')?.addEventListener('click', async () => {
-    const rel = await pickFromLibrary({ kind: 'video', title: '选一段口播视频素材' })
-    if (rel) $('anClip').value = rel
-  })
-
-  // 配音只有两条路：本机 espeak-ng（手机上没装）或 MiMo/MiniMax 的 Key。
-  // 两样都没有就别留一个点了必报错的按钮（用户 2026-10-29：不许假功能）。
-  const hasTtsVendor = PHONE_VENDORS.some((v) => /minimax|mimo/i.test(String(v.id || '')))
-  if (PHONE_MODE && !hasTtsVendor) {
-    const b = $('anBtn')
-    if (b) { b.disabled = true; b.textContent = '还缺配音引擎（先去手机设置填 MiMo/MiniMax Key）' }
-    if (anchorNote) {
-      anchorNote.innerHTML = '⚠️ 配音现在跑不了：手机上没装 espeak-ng（本地离线配音不可用），也没有 MiMo / MiniMax 的 Key。'
-        + '<br>去手机 App「设置 → 模型」里给 <b>MiniMax</b>（或 MiMo）填一把 Key，回来重开一次「电脑访问」就能用。'
-        + '<br>配图用手机里的图像模型' + ((PHONE_MODELS.image || [])[0] ? `（当前：<b>${PHONE_MODELS.image[0]}</b>）` : '（还没配图像模型）') + '。'
-    }
-  }
-
-  const btn = $('anBtn')
-  const hint = $('anHint')
-  const results = $('anResults')
-  const wrap = $('anProgress')
-  const bar = $('anBar')
-  const ptext = $('anPtext')
-  if (!btn) return
-
-  btn.addEventListener('click', async () => {
-    const text = $('anText').value.trim()
-    hint.className = 'hint'
-    if (!text) {
-      hint.className = 'hint error'
-      hint.textContent = '先填口播文稿'
-      return
-    }
-    // 「静态图·一图铺满」必须要一张图；没有就别让他等一轮再收到一句干巴巴的
-    // 「静态形象图模式需要提供图片」（用户 2026-10-29 实测）。
-    if ($('anMode')?.value === 'clip' && !($('anClip')?.value || '').trim()) {
-      hint.className = 'hint error'
-      hint.textContent = '「素材片段 · 用已有视频」要先选一段视频（上面的「视频素材」里点「从资料库选」）。'
-      return
-    }
-    if ($('anMode')?.value === 'static' && !($('anImage')?.value || '').trim()) {
-      hint.className = 'hint error'
-      hint.textContent = '「静态图 · 一图铺满」要先选一张图（或把下面的「生成方式」改成「AI 生成画面」，让模型自己画）。'
-      return
-    }
-
-    btn.disabled = true
-    btn.setAttribute('aria-busy', 'true')
-    btn.textContent = '生成中…'
-    wrap.hidden = false
-    bar.style.width = '0%'
-    ptext.textContent = '正在提交…'
-    results.replaceChildren()
-
-    try {
-      const r = await fetch('/agnes-studio/api/anchor/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          mode: $('anMode').value,
-          // 后端要的是 {value} 结构（素材解析层统一形态），不是裸字符串。
-          image: { value: ($('anImage')?.value || '').trim() },
-          clip: { value: ($('anClip')?.value || '').trim() },
-          voice: $('anVoice').value,
-          min_seg_sec: Number($('anMinSeg').value) || 4,
-          subtitles: $('anSubs').checked,
-        }),
-      })
-      const d = await r.json()
-      if (!r.ok || d.error) throw new Error(d.error || `请求失败（HTTP ${r.status}）`)
-      const id = d.anchor_id
-      ptext.textContent = '任务已提交，正在处理…'
-
-      // 轮询到结束（最多 20 分钟）
-      const deadline = Date.now() + 20 * 60 * 1000
-      let last = null
-      while (Date.now() < deadline) {
-        await sleep(4000)
-        const sr = await fetch(`/agnes-studio/api/anchor/${id}/status`)
-        const s = await sr.json()
-        const done = Number(s.done) || 0
-        const total = Number(s.segments) || 0
-        const pct = total ? Math.round((done / total) * 100) : (s.status === 'completed' ? 100 : 8)
-        bar.style.width = `${pct}%`
-        ptext.textContent = `${s.message || s.status}（${done}/${total} 段）`
-        last = s
-        if (s.status === 'completed' || s.status === 'failed' || s.status === 'stopped') break
-      }
-
-      if (last && last.status === 'completed' && last.final) {
-        const card = document.createElement('div')
-        card.className = 'result'
-        const v = document.createElement('video')
-        v.src = last.final
-        v.controls = true
-        v.playsInline = true
-        v.preload = 'metadata'
-        const meta = document.createElement('div')
-        meta.className = 'meta'
-        const p = document.createElement('p')
-        p.textContent = `时长约 ${Math.round(Number(last.total_duration) || 0)} 秒`
-        const a = document.createElement('a')
-        a.href = last.final
-        a.target = '_blank'
-        a.rel = 'noopener'
-        a.textContent = '打开成片'
-        meta.append(p, a)
-        card.append(v, meta)
-        results.appendChild(card)
-        hint.className = 'hint ok'
-        hint.textContent = '口播生成完成'
-      } else {
-        hint.className = 'hint error'
-        hint.textContent = (last && (last.error || last.message)) || '任务未完成（可能超时）'
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
-      hint.className = 'hint error'
-      hint.textContent = /需要提供图片/.test(msg)
-        ? '这个生成方式要先选一张图；不想选图就把「生成方式」改成「AI 生成画面」。'
-        : msg
-    } finally {
-      btn.disabled = false
-      btn.removeAttribute('aria-busy')
-      btn.textContent = '开始生成口播'
-      setTimeout(() => { wrap.hidden = true }, 3000)
-    }
-  })
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 // 短剧（故事 → 剧本 → 分镜 → 素材确认 → 视频 → 合成）
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -2775,7 +2620,6 @@ const HOME_CARDS = [
   { icon: '🖼', name: '画图', desc: '写一句画面描述就出图', goto: 'image' },
   { icon: '🏷', name: '做封面', desc: '生成一张封面的完整绘图提示词', goto: 'cover' },
   { icon: '🎬', name: '做视频', desc: '写一句镜头描述就出片', goto: 'video' },
-  { icon: '🎙', name: '文稿转口播', desc: '粘一段文稿，自动配音加画面', goto: 'anchor' },
   { icon: '📺', name: '一句话短剧', desc: '自动走完剧本 → 分镜 → 画面 → 成片', goto: 'storyboard' },
   { icon: '✂️', name: '剪视频', desc: '长视频截一段，或平均切成几段', goto: 'slice' },
   { icon: '🎵', name: '歌词变 MV', desc: '粘歌词，自动配画面和配乐', goto: 'mv' },
@@ -2944,43 +2788,6 @@ function syncPhoneModelInputs() {
   }
 }
 
-/**
- * 「← 返回」按钮：从 DSH 的 bot 界面点进来时，让人能回去。
- *
- * 用户 2026-10-28：「进入设计站，没有返回按钮，要能返回到 bot 界面。」
- *
- * 带过来的是 `?from=ds&back=<encodeURIComponent(原地址)>`（见 App 侧
- * lib/local/design_site.dart）。这里只在**带着这个参数时**才显示按钮 ——
- * 直接打开设计站（电脑收藏、App 内部入口）不该凭空多一个返回键。
- */
-function initBackToBot() {
-  try {
-    const q = new URLSearchParams(location.search)
-    if (q.get('from') !== 'ds') return
-    const back = q.get('back')
-    if (!back) return
-    if (document.getElementById('backToBot')) return
-
-    const b = document.createElement('a')
-    b.id = 'backToBot'
-    b.href = back
-    b.textContent = '← 返回'
-    b.title = '回到 Bot 界面'
-    b.style.cssText = [
-      'position:fixed', 'top:10px', 'left:12px', 'z-index:2147483000',
-      'padding:6px 12px', 'border-radius:999px',
-      'background:rgba(24,28,36,.86)', 'color:#e8f0ff',
-      'font:500 12px/1.6 system-ui,-apple-system,"PingFang SC",sans-serif',
-      'text-decoration:none', 'border:1px solid rgba(120,170,255,.45)',
-      'box-shadow:0 2px 10px rgba(0,0,0,.28)', 'backdrop-filter:blur(6px)',
-      'cursor:pointer', 'user-select:none',
-    ].join(';')
-    b.addEventListener('mouseenter', () => { b.style.background = 'rgba(40,70,120,.95)' })
-    b.addEventListener('mouseleave', () => { b.style.background = 'rgba(24,28,36,.86)' })
-    document.body.appendChild(b)
-  } catch { /* 拿不到参数就不显示，静默 */ }
-}
-
 function initLibraryPickers() {
   // ── 小说工具：从资料库选文本 ──
   try {
@@ -3103,10 +2910,6 @@ function initSimpleUI() {
 
   // 创作台：模型进高级
   safe(() => moveFieldsIntoAdvanced(['aiModel'], '高级设置 · 换模型'))
-
-  // 口播：音色以外的参数进高级
-  safe(() => moveFieldsIntoAdvanced(['anMode'], '高级设置 · 生成方式'))
-  safe(() => addHowto('anchor', '把文稿粘进来 → 点 <b>开始生成口播</b>。它会自动分段、配音、配上画面。<br>⚠️ 配音需要 <b>MiMo</b> 的 Key（Agnes 没有语音模型），去「设置」的可选区填 MiMo 即可。'))
 
   // 写作台：手机模式不用选文件夹（稿子直接进手机资料库）；电脑模式才需要选
   safe(() => addHowto('ohstory', PHONE_MODE
@@ -4503,7 +4306,6 @@ async function boot() {
   init()
   initCover()
   initExpert()
-  initAnchor()
   initDrama()
   initOhstory()
   initNovelTools()
@@ -4521,7 +4323,6 @@ async function boot() {
   initSimpleUI()
   initLibraryPickers()
   syncPhoneModelInputs()
-  initBackToBot()
   wireVendorSelectors()
 
   // 手机模式：界面搭完再把「模型来自手机」写进设置页（各模块这时已经拿到模型）

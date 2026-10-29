@@ -102,6 +102,9 @@ class _StudioPageState extends State<StudioPage> {
     return Scaffold(
       backgroundColor: DshColors.bg,
       appBar: AppBar(
+        // 用户 2026-10-29：左上角的返回箭头取消 —— 这个页面从「影视」里点进来，
+        // 出去走底部导航就行，头顶再挂一个返回键既重复又占地方。
+        automaticallyImplyLeading: false,
         title: Text(context.tr('APP界面设计台')),
         actions: <Widget>[
           if (_web != null)
