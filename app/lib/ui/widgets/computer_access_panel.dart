@@ -13,6 +13,7 @@ import '../../local/lan_endpoints.dart';
 import '../../local/port_forwarder.dart';
 import '../../local/web_bridge.dart';
 import '../theme/dsh_tokens.dart';
+import 'computer_access_actions.dart';
 import 'computer_access_qr.dart';
 
 /// 「电脑访问」面板：把手机上的 DSH 网页服务绑到某张网卡，让电脑用浏览器直接打开。
@@ -423,41 +424,18 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
             ),
           ),
         const SizedBox(height: 6),
-        Row(
-          children: [
-            TextButton.icon(
-              onPressed: _busy ? null : _load,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: Text(context.tr('刷新网卡'),
-                  style: const TextStyle(fontSize: 12)),
-            ),
-            const Spacer(),
-            if (_on && _url != null)
-              TextButton.icon(
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: _url!));
-                  if (!mounted) return;
-                  setState(() => _note = context.tr('网址已复制'));
-                },
-                icon: const Icon(Icons.copy_all_outlined, size: 16),
-                label: Text(context.tr('复制网址'),
-                    style: const TextStyle(fontSize: 12)),
-              ),
-            if (_on && _url != null)
-              TextButton.icon(
-                onPressed: _showQr,
-                icon: const Icon(Icons.qr_code_2, size: 16),
-                label: Text(context.tr('扫码打开'),
-                    style: const TextStyle(fontSize: 12)),
-              ),
-            if (_on)
-              TextButton.icon(
-                onPressed: _busy ? null : _rotateToken,
-                icon: const Icon(Icons.password_outlined, size: 16),
-                label: Text(context.tr('重置口令'),
-                    style: const TextStyle(fontSize: 12)),
-              ),
-          ],
+        ComputerAccessActions(
+          busy: _busy,
+          hasUrl: _on && _url != null,
+          showRotate: _on,
+          onRefresh: _load,
+          onCopy: () async {
+            await Clipboard.setData(ClipboardData(text: _url!));
+            if (!mounted) return;
+            setState(() => _note = context.tr('网址已复制'));
+          },
+          onQr: _showQr,
+          onRotate: _rotateToken,
         ),
         if (_on && _url != null) ...[
           const SizedBox(height: 2),
