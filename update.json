@@ -2,11 +2,11 @@
   "version": "0.81",
   "versionCode": 249,
   "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.81-20261030-full-arm64-v8a.apk",
-  "size": 118493035,
-  "sha256": "f293a4e8864ca1481781f73c197bb37f2ca9990a0c518769ee11ad3650775fdb",
+  "size": 118493083,
+  "sha256": "0d7afe1038a431895db277e56cbe55c9b02b04a9d97234248fb4a01a1c8419d1",
   "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.81-20261030-full-arm64-v8a.apk",
-  "sizeFull": 118493035,
-  "sha256Full": "f293a4e8864ca1481781f73c197bb37f2ca9990a0c518769ee11ad3650775fdb",
+  "sizeFull": 118493083,
+  "sha256Full": "0d7afe1038a431895db277e56cbe55c9b02b04a9d97234248fb4a01a1c8419d1",
   "minVersionCode": 0,
   "publishedAt": "2026-10-30",
   "notes": [
@@ -21,8 +21,8 @@
     {
       "fromSha256": "a9efd2f98d6e3074c86bb886822f247201334083df4a96ca83f3dca00dbda533",
       "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.80-20261029-full-arm64-v8a__to__paopaocat-preview-0.81-20261030-full-arm64-v8a.patch",
-      "size": 8589521,
-      "sha256": "6bd339aa504fb1d4454070ff26760b3b0c988e3a403de468a1614c8d86f8a035"
+      "size": 8610901,
+      "sha256": "e13f5e42486b9781a91e2656e9fe2205ca98bb3636e6b0d48a969a9c9265ea7c"
     }
   ]
 }

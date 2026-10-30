@@ -61,6 +61,12 @@ i18n 扫描器只认这个形状；把文案塞进 String 字段再 `tr(_stage!)
 
 依赖：`qr_flutter ^4.1.0`（纯 Dart，无原生库，不影响 ABI）。
 
+**同一轮里测出来的真 bug（已修）**：两个地址（DSH 网页 + 设计站）同时给的时候，
+对话框内容比一屏高，在 800×600 的测试屏上直接报 `RenderFlex overflowed by 21 pixels`
+—— 真机小屏 / 横屏会看到黄黑条。content 包了 `SingleChildScrollView`。
+这条不是「测试写错了」，是界面真会坏；`test/computer_access_qr_test.dart` 的四个用例
+现在同时充当回归。
+
 ### 4. 修掉：设计站起不来会把保活服务一起停掉（0.80 引入）
 
 0.80 的 `_apply()` 里，`await WebBridge.stop();` 写在了「设计站启动失败」的
@@ -118,7 +124,7 @@ catch 块**里面**（缩进都是乱的）。后果：设计站起不来时，D
 | `dart analyze` | **No issues found!** |
 | 全量测试 | **1188 通过 / 1 跳过 / 11 失败** —— 11 条**全部**是截图类（`screenshot_test` / `screenshot_blocks_test`），根因是 `ondevice_shot_test` 的「本地大模型页」用例跑满 **10 分钟超时**，把同一进程里后面的截图用例全拖成 `Guarded function conflict`。这是台账里记了多轮的**本机环境已知问题**，不是本版引入：<br>· 单独跑 `screenshot_test.dart --plain-name "设置页 · 浅色皮肤"` → **通过**（出图 37KB，与 0.80 基线同尺寸）；<br>· 在 `ab9b436`（0.80 基线）worktree 里跑同一个用例 → **同样通过**，证明差异不在代码而在「有没有被超时污染」。 |
 | i18n 三表 | **2032 / 2032 · 漏翻 0 · 陈旧 0 · 占位符错 0 · 换行错 0** |
-| 新增测试 | `test/port_forwarder_test.dart`（4 条：502 页内容 / 不改写上游状态码 / 端口占位符被替换 / 停止后拒绝连接） |
+| 新增测试 | `test/port_forwarder_test.dart` **4 条**（502 页内容 / 不改写上游状态码 / 端口占位符被替换 / 停止后拒绝连接）<br>`test/computer_access_qr_test.dart` **4 条**（二维码出来且不落错误占位 / 主机端口大字 + 口令单独一行 / 文案不承诺「扫一下就行」/ 切换芯片与复制完整 URL / 无端口不崩） |
 | 版本三处一致 | `pubspec 0.0.81+249` · `kAppVersion '0.81'` · `changelog` 顶部 = 0.81/当前版本 |
 
 ## 七、包与发布
@@ -126,15 +132,15 @@ catch 块**里面**（缩进都是乱的）。后果：设计站起不来时，D
 | 项 | 值 |
 |---|---|
 | 文件 | `paopaocat-preview-0.81-20261030-full-arm64-v8a.apk`（**完整包**，`DSH_ANDROID_INCLUDE_RUNTIME=1`） |
-| 字节 | **118,493,035**（113.0 MiB） |
+| 字节 | **118,493,083**（113.0 MiB） |
 | versionCode / versionName | **249 / 0.0.81** |
-| sha256 | `f293a4e8864ca1481781f73c197bb37f2ca9990a0c518769ee11ad3650775fdb` |
+| sha256 | `0d7afe1038a431895db277e56cbe55c9b02b04a9d97234248fb4a01a1c8419d1` |
 | 签名 | `7aaf4448…d3cc17`（与 0.70 起同一把 → 老用户可直接覆盖安装） |
 | ABI | **只有 `lib/arm64-v8a/`** |
 | 包内运行时 | `assets/dsh-runtime.zip` 32.9 MB ✓ |
 | 二维码代码 | `libapp.so` 里 `qr_flutter` 命中 5 处、`QrImageView/QrPainter` 命中 5 处 ✓ |
 | `install/check-release.py` | **七项全 PASS**（版本同一 / 28 个脚本字符串在 libapp.so / 218 个资产逐名+ sha256 一致 / runtime.zip 在 / 无 llama / 10 个 ffmpeg 库齐 / AArch64 ELF） |
-| 增量补丁 | `0.80 → 0.81`：**8,589,521 字节（整包 7.2%）**，sha256 `6bd339aa…f8a035`；`update.json` 的 `patches[]` 已写入 |
+| 增量补丁 | `0.80 → 0.81`：**8,610,901 字节（整包 7.3%）**，sha256 `e13f5e42…65ea7c`；`update.json` 的 `patches[]` 已写入 |
 | `update.json` | 0.81 / 249 / 6 条 notes / 1 个补丁（本地这份**已从 0.78 同步到线上 0.80 再改**，修掉「基线落后两个版本」的隐患） |
 | `notice.json` | 4 条公告换成 0.81 |
 | `README.md` | 包名/体积/哈希/版本行改 0.81；**删掉两条错误的主题限制**；技能数 12 → 23；补 4 条真实限制 |

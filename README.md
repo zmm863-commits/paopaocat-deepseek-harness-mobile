@@ -26,7 +26,7 @@ DSH 是一套能在本机跑起来的 AI Agent 运行时，能读写文件、执
 ```sh
 # 校包体
 sha256sum paopaocat-preview-0.81-20261030-full-arm64-v8a.apk
-# 预期: f293a4e8864ca1481781f73c197bb37f2ca9990a0c518769ee11ad3650775fdb
+# 预期: 0d7afe1038a431895db277e56cbe55c9b02b04a9d97234248fb4a01a1c8419d1
 ```
 
 ## 快速开始

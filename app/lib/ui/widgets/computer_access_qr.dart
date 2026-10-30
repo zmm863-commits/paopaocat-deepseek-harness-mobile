@@ -48,91 +48,98 @@ class _ComputerAccessQrDialogState extends State<ComputerAccessQrDialog> {
           Icon(Icons.qr_code_2, size: 20, color: scheme.primary),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(context.tr('在电脑上打开'), style: const TextStyle(fontSize: 16)),
+            child: Text(context.tr('在电脑上打开'),
+                style: const TextStyle(fontSize: 16)),
           ),
         ],
       ),
+      // ⚠️ 必须可滚动：两个地址时内容比一屏高，小屏 / 横屏会撑出黄黑条
+      //    （2026-10-30 测试里直接抓到 RenderFlex overflowed by 21 pixels）。
       content: SizedBox(
         width: 320,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.entries.length > 1) ...[
-              Wrap(
-                spacing: 6,
-                children: [
-                  for (final k in widget.entries.keys)
-                    ChoiceChip(
-                      label: Text(k, style: const TextStyle(fontSize: 11.5)),
-                      selected: _key == k,
-                      onSelected: (_) => setState(() => _key = k),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-            ],
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.entries.length > 1) ...[
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    for (final k in widget.entries.keys)
+                      ChoiceChip(
+                        label: Text(k, style: const TextStyle(fontSize: 11.5)),
+                        selected: _key == k,
+                        onSelected: (_) => setState(() => _key = k),
+                      ),
+                  ],
                 ),
-                child: QrImageView(
-                  data: _url,
-                  version: QrVersions.auto,
-                  size: 200,
-                  backgroundColor: Colors.white,
-                  // 不画空隙：口令一长（60+ 字符）码点会变密，留白反而更难扫。
-                  gapless: false,
-                  errorStateBuilder: (_, __) => SizedBox(
-                    width: 200,
-                    height: 200,
-                    child: Center(
-                      child: Text(
-                        context.tr('二维码生成失败，直接照下面手打'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11, color: scheme.error),
+                const SizedBox(height: 10),
+              ],
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: QrImageView(
+                    data: _url,
+                    version: QrVersions.auto,
+                    size: 200,
+                    backgroundColor: Colors.white,
+                    // 不画空隙：口令一长（60+ 字符）码点会变密，留白反而更难扫。
+                    gapless: false,
+                    errorStateBuilder: (_, __) => SizedBox(
+                      width: 200,
+                      height: 200,
+                      child: Center(
+                        child: Text(
+                          context.tr('二维码生成失败，直接照下面手打'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 11, color: scheme.error),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              context.tr('电脑有扫码工具就扫这个码；没有的话照着下面手打：'),
-              style: TextStyle(fontSize: 11, color: scheme.outline, height: 1.5),
-            ),
-            const SizedBox(height: 6),
-            SelectableText(
-              host,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-                fontFamily: 'monospace',
+              const SizedBox(height: 12),
+              Text(
+                context.tr('电脑有扫码工具就扫这个码；没有的话照着下面手打：'),
+                style:
+                    TextStyle(fontSize: 11, color: scheme.outline, height: 1.5),
               ),
-            ),
-            if (token.isNotEmpty) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               SelectableText(
-                '/?token=$token',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  height: 1.4,
-                  color: scheme.outline,
+                host,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
                   fontFamily: 'monospace',
                 ),
               ),
+              if (token.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                SelectableText(
+                  '/?token=$token',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 1.4,
+                    color: scheme.outline,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Text(
+                context.tr('这个地址带身份凭证（token），别发给别人。'),
+                style: TextStyle(
+                    fontSize: 10.5, color: scheme.outline, height: 1.5),
+              ),
             ],
-            const SizedBox(height: 10),
-            Text(
-              context.tr('这个地址带身份凭证（token），别发给别人。'),
-              style: TextStyle(fontSize: 10.5, color: scheme.outline, height: 1.5),
-            ),
-          ],
+          ),
         ),
       ),
       actions: [
@@ -143,7 +150,8 @@ class _ComputerAccessQrDialogState extends State<ComputerAccessQrDialog> {
             Navigator.of(context).pop();
           },
           icon: const Icon(Icons.copy_all_outlined, size: 16),
-          label: Text(context.tr('复制这个地址'), style: const TextStyle(fontSize: 12)),
+          label:
+              Text(context.tr('复制这个地址'), style: const TextStyle(fontSize: 12)),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
