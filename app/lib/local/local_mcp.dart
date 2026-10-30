@@ -83,18 +83,25 @@ class LocalMcp {
     Process? proc;
     final sw = Stopwatch()..start();
     try {
-      // ⚠️ 必须跟 `acp_client` 那次 spawn **一模一样**（2026-10-20 真机第二次教训）：
-      //    ACP 用的是 `includeParentEnvironment: true` + 一个可写的 workingDirectory，
-      //    而第一版探活只给了白名单 env、也没设 cwd → 真机上「6s 内 tools/list 没应答」。
-      //    node 在 Android 上起来需要父进程里的一些东西（库路径、系统变量），
-      //    白名单只够"给 MCP 用"，不够"把 node 拉起来"。
-      // ⚠️ 这里**刻意不加** `includeParentEnvironment`：探活必须与运行时真正用的
-      //    环境（白名单）**完全一致**，否则"探活通过"就是自欺 —— 运行时那边照样挂。
-      //    缺的系统变量应该补进 [_envEntries] 的白名单里（见那里）。
+      // ⚠️ **必须 `includeParentEnvironment: true`** —— 与 `bot_server`（起 DSH 主进程）
+      //    和 `acp_client`（起 ACP 会话）**完全一致**。
+      //
+      // 2026-10-20 这里写过一段相反的说明：「探活必须与运行时用的环境完全一致，
+      // 所以不给父环境，否则探活通过就是自欺」。**方向是对的，结论是反的** ——
+      // 真正的运行时并不是"纯白名单"：`bot_server.dart` 与 `acp_client.dart` 两处
+      // spawn 都是「白名单 env + `includeParentEnvironment: true`」，只有探活是纯白名单。
+      // 于是 node 在 Android 上缺了系统变量（`ANDROID_ROOT` / `BOOTCLASSPATH` 一类），
+      // **静默退出**；探活永远失败 → `mcpServers()` 不挂 → Office 三工具永远不来。
+      // 真机症状就是那句 `探活失败：node 提前退出 exit=0`，且 stderr 一个字都没有。
+      //
+      // 为什么给父环境是安全的：探活进程跑的是**我们自己的** `mcp-office.mjs`，
+      // 它会立刻被关掉，不落盘、不联网；而"探活必须能反映真实挂载结果"这条要求，
+      // 只有让两边的启动方式一致才成立。
       proc = await Process.start(
         command,
         args,
         environment: env,
+        includeParentEnvironment: true,
         workingDirectory: runtime.filesDir,
       );
       final stderrBuf = StringBuffer();

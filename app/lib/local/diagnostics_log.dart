@@ -61,6 +61,16 @@ class DiagnosticsLog {
   static String? _filesDir;
   static String? _logFilePath;
   static IOSink? _sink;
+
+  /// 外部私有目录的**镜像 sink**（见 [_openMirror]）。
+  ///
+  /// 为什么要它（2026-10-31）：这台真机的 `logcat` 时有时无（测了 5 次，多数 0 行），
+  /// 而 App 私有目录 shell 读不到（release 包不能用 `run-as`）。结果是
+  /// **任何只在 App 内部发生的问题都只能等用户手动导出报告** —— 一句日志等一天。
+  /// 而 `/storage/emulated/0/Android/data/<包名>/files/` 是 **adb 能读**的，
+  /// 写自己的外部私有目录又**不需要任何权限**。所以日志主文件照旧写私有目录，
+  /// 同时镜像一份到外部 —— 排查时 `adb shell cat` 一条命令就能看。
+  static IOSink? _mirror;
   static int _fileBytes = 0;
   static final List<String> _pending = <String>[];
   static int _pendingBytes = 0;
@@ -305,6 +315,11 @@ class DiagnosticsLog {
     _pendingBytes = 0;
     try {
       sink.write(chunk);
+      try {
+        _mirror?.write(chunk);
+      } catch (_) {
+        // 外部目录写不进去就算了 —— 绝不能因为"方便排查"影响主日志
+      }
       _fileBytes += utf8.encode(chunk).length;
       await sink.flush();
       if (_fileBytes > maxFileBytes) await _rotateAndReopen();
@@ -329,9 +344,43 @@ class DiagnosticsLog {
       _fileBytes = f.existsSync() ? f.lengthSync() : 0;
       if (_fileBytes > maxFileBytes) _rotateOnce(f);
       _sink = f.openWrite(mode: FileMode.append);
+      _openMirror();
     } catch (e) {
       _sink = null;
       add('dsh-log', '日志落盘不可用（改为只在内存里保留）：$e');
+    }
+  }
+
+  /// 打开外部私有目录的镜像 sink（首次创建时把主日志补一份过去）。
+  ///
+  /// 路径 = `/storage/emulated/0/Android/data/<包名>/files/dsh-diagnostic.log`，
+  /// 包名从 [_filesDir] 反推（`/data/user/0/<包名>/files`），不硬编码 —— 改包名不用改这里。
+  static void _openMirror() {
+    try {
+      final dir = _filesDir;
+      if (dir == null) return;
+      final parts = dir.split(Platform.pathSeparator);
+      final pkg = parts.length >= 2 ? parts[parts.length - 2] : '';
+      if (pkg.isEmpty) return;
+      final dstDir = Directory('/storage/emulated/0/Android/data/$pkg/files');
+      if (!dstDir.existsSync()) dstDir.createSync(recursive: true);
+      final dst = File('${dstDir.path}/dsh-diagnostic.log');
+      if (dst.existsSync() && dst.lengthSync() > maxFileBytes) {
+        try { dst.deleteSync(); } catch (_) {}
+      }
+      // 首次创建（或外部那份还空着）：把主日志已有内容补一份，免得只有"从今天起"的日志
+      if (!dst.existsSync() || dst.lengthSync() == 0) {
+        final srcPath = _logFilePath;
+        if (srcPath != null) {
+          final src = File(srcPath);
+          if (src.existsSync() && src.lengthSync() > 0) {
+            try { src.copySync(dst.path); } catch (_) {}
+          }
+        }
+      }
+      _mirror = dst.openWrite(mode: FileMode.append);
+    } catch (_) {
+      _mirror = null; // 外部存储不可用（少数 ROM / 权限异常）→ 静默放弃
     }
   }
 
@@ -352,6 +401,14 @@ class DiagnosticsLog {
   }
 
   static Future<void> _closeSink() async {
+    final mirror = _mirror;
+    _mirror = null;
+    if (mirror != null) {
+      try {
+        await mirror.flush();
+        await mirror.close();
+      } catch (_) {}
+    }
     final sink = _sink;
     _sink = null;
     if (sink == null) return;

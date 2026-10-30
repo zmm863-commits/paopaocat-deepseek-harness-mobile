@@ -234,6 +234,23 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         // 手机操作桥需要 packageManager / startActivity —— 把 Activity context 给它。
         phoneAgent.attach(this)
+
+        // 让系统先把**外部私有目录**创建出来（2026-10-31）。
+        //
+        // 为什么必须在这里建：Dart 侧要把诊断日志镜像一份到
+        // `/storage/emulated/0/Android/data/<包名>/files/`，好让 `adb shell cat` 能直接读
+        // （这台真机 logcat 时有时无，App 私有目录 shell 又读不到，出一次问题要等用户
+        //  手动导报告）。
+        //
+        // 但**目录必须由本 App 通过系统 API 创建**：直接用 `Directory.create` 拼路径时，
+        // 目录不存在就建不出来（SELinux 上下文不对；更糟的是先用 `adb shell mkdir` 建出来
+        // 会变成 shell 属主，App 之后再也写不进去 —— 实测踩过）。
+        // 调一次 getExternalFilesDir() 就会由系统建好并给对属主。
+        try {
+            getExternalFilesDir(null)
+        } catch (_: Throwable) {
+            // 少数 ROM 上没有外部存储：只是拿不到镜像日志，不影响任何功能
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
