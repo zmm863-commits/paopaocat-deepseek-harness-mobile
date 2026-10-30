@@ -14,6 +14,7 @@ import '../../local/port_forwarder.dart';
 import '../../local/web_bridge.dart';
 import '../theme/dsh_tokens.dart';
 import 'computer_access_actions.dart';
+import 'computer_access_url.dart';
 import 'computer_access_qr.dart';
 
 /// 「电脑访问」面板：把手机上的 DSH 网页服务绑到某张网卡，让电脑用浏览器直接打开。
@@ -141,12 +142,16 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         _on = true;
         _designUrl = AgnesWeb.publicUrl;
         _designError = AgnesWeb.lastError;
-        final cur = BotServer.current;
         final fwd = PortForwarder.instance.port;
-        if (cur != null && fwd != null && _selected != null) {
-          final token = Uri.parse(cur.url).queryParameters['token'] ?? '';
-          _url = 'http://$_selected:$fwd/'
-              '${token.isEmpty ? '' : '?token=$token'}';
+        if (fwd != null && _selected != null) {
+          // ⚠️ 用 **App 的固定口令**，不是 `cur.url` 里那个 launchToken ——
+          //    2026-10-30 真机就是这个坑：`_apply()` 改了、`_load()` 没改，
+          //    用户重进面板复制到的是会过期的那种地址，电脑上打开 401。
+          _url = publicDshUrl(
+            host: _selected!,
+            port: fwd,
+            token: _prefs?.token ?? '',
+          );
         }
       }
     });
@@ -251,7 +256,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         // 给用户的地址用**App 的固定口令**，不是 DSH 那个每次重启都变的 launchToken。
         // 转发层会在第一个请求里把它换成当前真 token（见 ForwardRewrite）。
         final launchToken = Uri.parse(server.url).queryParameters['token'] ?? '';
-        final url = 'http://$host:$fwdPort/?token=${prefs.token}';
+        final url = publicDshUrl(host: host, port: fwdPort, token: prefs.token);
         if (launchToken.isEmpty) {
           DiagnosticsLog.add('lan', '⚠ 没从 DSH 拿到 launchToken，电脑端会 401');
         }

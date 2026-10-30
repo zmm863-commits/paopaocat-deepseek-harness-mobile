@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
+import 'package:flutter/foundation.dart'
+    show ValueNotifier, debugPrint, visibleForTesting;
 
 import '../data/atomic_file.dart';
 import '../data/configured_models.dart';
@@ -305,6 +306,33 @@ class BotServer {
     return shim.path;
   }
 
+  /// 清掉 Bot 团队的单实例锁（详见调用处的注释）。
+  ///
+  /// 只在**本机没有第二个 DSH** 时才安全 —— 手机端正是这种情况：BotServer 是单例，
+  /// 每次重启都先 `stop()` 旧进程。所以这里无条件删；删不掉只记日志，绝不抛。
+  @visibleForTesting
+  static Future<void> clearStaleBotLock(DshRuntime runtime) async {
+    try {
+      final f = File('${runtime.nodeHome}/bot/state.lock');
+      if (!f.existsSync()) return;
+      String? holder;
+      try {
+        final raw = jsonDecode(f.readAsStringSync());
+        if (raw is Map && raw['pid'] != null) {
+          holder = 'pid=${raw['pid']} host=${raw['host'] ?? '?'}';
+        }
+      } catch (_) {
+        // 解析不了（写一半）也照删：那种状态 ds-bot 自己会按 mtime 判，删了更干净。
+      }
+      f.deleteSync();
+      DiagnosticsLog.add('dsh-bot',
+          '已清掉 Bot 单实例锁${holder == null ? '' : '（原持有者 $holder）'}'
+          ' —— 手机端只可能有一个 DSH，留着它会让人以为"另一个窗口开着"');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '清 Bot 单实例锁失败（不影响其它功能）：$e');
+    }
+  }
+
   static Future<void> ensureProfile(DshRuntime runtime) async {
     final target = Directory('${runtime.nodeHome}/profiles/$profileName');
     final seed = Directory('${runtime.runtimeRoot}/profiles-seed/$profileName');
@@ -573,6 +601,19 @@ class BotServer {
     await _ensureOverlay(runtime);
     // 完全权限单独一份 patch、**永远传**（即使 overlay 因为任何原因仍不存在）。
     final fullAccessPatch = await _ensureFullAccessPatch(runtime);
+
+    // Bot 单实例锁：**pid 复用的坑**（2026-10-30 真机）。
+    //
+    // ds-bot 用 `dshhome/bot/state.lock`（JSON: pid/host/token）做单写者互斥：
+    // 同主机时它拿 `process.kill(pid, 0)` 判活，活着的就认为"另一个 dsh 正在用"，
+    // 于是 Bot 页变成**只读**，顶部写「Bot 团队已在另一个 dsh 中打开（pid NNN）」
+    // —— 用户真机报的就是这个（pid 6982 早已不是我们的进程，只是 Android 把
+    // pid 复用了）。
+    //
+    // 手机上**只可能有一个 DSH**（BotServer 是单例，重启前必先把旧进程停掉），
+    // 所以启动前把这个锁清掉是安全的；不清的话用户会遇到"只能看不能改"，
+    // 而他根本找不到那个"另一个 dsh"。
+    await clearStaleBotLock(runtime);
 
     // 鸿蒙：CLI 入口换成 wrapper（import.meta.main 坑），并准备好 --jitless 补丁。
     // 详见 [ensureOhosCliWrapper] / [ensureOhosJitlessShim] 的说明。

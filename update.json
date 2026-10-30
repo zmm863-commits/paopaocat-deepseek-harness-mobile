@@ -2,11 +2,11 @@
   "version": "0.81",
   "versionCode": 249,
   "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.81-20261030-full-arm64-v8a.apk",
-  "size": 118507215,
-  "sha256": "b8e4d5ed4ee5f53373716327d8b8e0a0d56cdeb430af41ac7cc210bbd90ae2b0",
+  "size": 118508819,
+  "sha256": "d4f0498310bab6b58363e85cf7ff035f921a1999930d35ff4a7d593fe018cda5",
   "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.81-20261030-full-arm64-v8a.apk",
-  "sizeFull": 118507215,
-  "sha256Full": "b8e4d5ed4ee5f53373716327d8b8e0a0d56cdeb430af41ac7cc210bbd90ae2b0",
+  "sizeFull": 118508819,
+  "sha256Full": "d4f0498310bab6b58363e85cf7ff035f921a1999930d35ff4a7d593fe018cda5",
   "minVersionCode": 0,
   "publishedAt": "2026-10-30",
   "notes": [
@@ -21,14 +21,15 @@
     "**修好：App 里的 0.80 更新说明只有 5 条** —— 和发布说明（10 条）对不上。这一版把 0.80 补齐到 10 条。",
     "**修好：会话里那三个 Office 工具（读/写 Excel 单元格、往 Word 追加段落）之前一直没挂上** —— 同一个 node 起的 ACP 是好的，差别只在启动旗标。这一版把两边对齐，并把失败的真原因写进诊断日志。",
     "**修好：启动时白等 8 秒** —— 检查更新两个源改成同时发、谁先回用谁（以前先等 raw 超时才轮到 jsDelivr，而 raw 在国内基本不通）。",
-    "**修好：这版新加的「扫码打开」把旁边的「重置口令」挤到屏幕外了** —— 那排按钮原来不换行，窄屏下最后一颗被静静裁掉（你连它叫什么都不知道）。现在满了自动折行。"
+    "**修好：这版新加的「扫码打开」把旁边的「重置口令」挤到屏幕外了** —— 那排按钮原来不换行，窄屏下最后一颗被静静裁掉（你连它叫什么都不知道）。现在满了自动折行。",
+    "**修好：Bot 页变成「只能查看」、说「Bot 团队已在另一个 dsh 中打开（pid xxxx）」** —— 那个「另一个 dsh」不存在：单实例锁记的是 pid，而 Android 会复用 pid，于是永久判只读。现在每次启动前清掉残留锁（团队数据不动）。"
   ],
   "patches": [
     {
       "fromSha256": "a9efd2f98d6e3074c86bb886822f247201334083df4a96ca83f3dca00dbda533",
       "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.80-20261029-full-arm64-v8a__to__paopaocat-preview-0.81-20261030-full-arm64-v8a.patch",
-      "size": 8624006,
-      "sha256": "6684c71b33d32159bef5b34b5686775bf1e78ded348e1798cd3d7c7b962d5d5d"
+      "size": 8626928,
+      "sha256": "9b6881a44e0419e7723bc86a33c3935acfd721b66911477f5047bfa1684ff558"
     }
   ]
 }
