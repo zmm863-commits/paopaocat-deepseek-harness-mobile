@@ -28,3 +28,24 @@ __pycache__/
 # /root/办公/__migr/03-build-deps/android-node/jnilibs（见 docs/BUILD-LINUX.md §5.2）。
 # 这条是防呆：**别把 27 MB 的 .so 提交进仓库**。
 app/android/app/src/main/jniLibs/
+
+# ⚠️ 鸿蒙（AGC）签名材料：p12 私钥 / key / csr 一律**绝不入库**。
+# `*.keystore` / `*.pfx` / `*.pem` 在上面已经排掉，但 .p12/.key/.csr 不在那三条里 ——
+# 2026-10-30 出 0.81 前预演 `git add -A` 时抓到的（会直接把调试私钥推上公开仓库）。
+# 需要重签时按 docs/HARMONYOS-ROUTE-A-DOWNGRADE.md 附录 B 重新出 CSR 申请。
+signing-agc/
+
+# 鸿蒙构建缓存与 IDE 产物（不是源码）
+ohos/.hvigor*/
+app/ohos/.hvigor*/
+ohos/.idea/
+app/ohos/.idea/
+
+# 本机 UI 复核截图（随手拍的工作区产物，发布截图走 screenshots/ 与 docs/shots/）
+ui-review/
+release-assets-backup/
+
+
+# 鸿蒙工程的本机 SDK 路径（等价于 Android 的 local.properties）
+ohos/local.properties
+app/ohos/local.properties

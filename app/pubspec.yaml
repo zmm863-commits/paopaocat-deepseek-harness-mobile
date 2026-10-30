@@ -1,7 +1,7 @@
 name: dsh_mobile
 description: "DSH Mobile —— 远程使用电脑上的 DSH Agent（会话、流式消息、工具卡片、命令审批）"
 publish_to: 'none'
-version: 0.0.80+248
+version: 0.0.81+249
 
 environment:
   sdk: ^3.0.0
@@ -32,6 +32,11 @@ dependencies:
   file_picker: ^8.0.0
   # WebView 的 Android 平台实现：文件选择器（setOnShowFileSelector）在这个包里。
   webview_flutter_android: ^4.0.0
+
+  # 鸿蒙 WebView 实现（webview_flutter 的 OpenHarmony 联邦实现，pub.dev 官方适配包）。
+  # 没有它 Bot 页会报 platform_webview_controller 未实现。
+  webview_flutter_ohos: ^3.15.0
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

@@ -12,6 +12,7 @@ import '../../local/lan_endpoints.dart';
 import '../../local/port_forwarder.dart';
 import '../../local/web_bridge.dart';
 import '../theme/dsh_tokens.dart';
+import 'computer_access_qr.dart';
 
 /// 「电脑访问」面板：把手机上的 DSH 网页服务绑到某张网卡，让电脑用浏览器直接打开。
 ///
@@ -49,6 +50,49 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
   bool _busy = false;
   bool _on = false;
 
+  /// 进行中的人话阶段（「准备运行环境…」「正在启动 DSH 与设计站…」）。
+  ///
+  /// 首启要等 40~80 秒（解包 8~20 秒 + DSH 20~25 秒 + 设计站 5~10 秒），
+  /// 原来界面上**只有一个转圈**，用户看不出是在干活还是卡死了。
+  ///
+  /// ⚠️ 用枚举而不是直接存字符串：i18n 扫描器只认 `context.tr('字面量')`，
+  /// 把文案塞进一个 String 字段再 `tr(_stage!)` 就**永远进不了翻译表**
+  /// （切到英/日/韩会露出一句中文，而且不报错）。这里在 [stageText] 里
+  /// 逐个写成字面量，扫描器才看得见。
+  _Stage? _stage;
+
+  /// 这次操作已经等了多少秒。每 500ms 刷一次，只在这一秒变了才 setState。
+  int _elapsed = 0;
+  Timer? _tickTimer;
+  DateTime? _stageStartedAt;
+
+  /// 当前阶段的文案（只在 [_stage] 非空时调用）。
+  String stageText(BuildContext context) => _stage!.text(context);
+
+  void _beginProgress(_Stage stage) {
+    _stageStartedAt ??= DateTime.now();
+    _tickTimer ??= Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted) return;
+      final t = _stageStartedAt;
+      if (t == null) return;
+      final s = DateTime.now().difference(t).inSeconds;
+      if (s != _elapsed) setState(() => _elapsed = s);
+    });
+    if (mounted) setState(() => _stage = stage);
+  }
+
+  void _endProgress() {
+    _tickTimer?.cancel();
+    _tickTimer = null;
+    _stageStartedAt = null;
+    if (mounted) {
+      setState(() {
+        _stage = null;
+        _elapsed = 0;
+      });
+    }
+  }
+
   /// 设计站那条独立转发（与 DSH 那条互不影响）。
   final PortForwarder _designForward = PortForwarder.create();
   String? _designUrl;
@@ -65,6 +109,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
   void dispose() {
     // 设计站那条转发是**本面板创建**的，面板走了必须收掉；
     // DSH 那条是全局单例（Bot 页也在用），不能在这里停。
+    _tickTimer?.cancel();
     unawaited(_designForward.stop());
     super.dispose();
   }
@@ -107,6 +152,19 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
     }
   }
 
+  /// 二维码 / 手打地址。两个地址都给（DSH 网页在前、设计站在后）。
+  Future<void> _showQr() async {
+    final entries = <String, String>{
+      if (_url != null) context.tr('DSH 网页'): _url!,
+      if (_designUrl != null) context.tr('设计站'): _designUrl!,
+    };
+    if (entries.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ComputerAccessQrDialog(entries: entries),
+    );
+  }
+
   Future<void> _apply({required bool on}) async {
     if (_busy) return;
     setState(() {
@@ -116,6 +174,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
     });
     try {
       if (on) {
+        _beginProgress(_Stage.preparing);
         final host = _selected;
         if (host == null) {
           throw StateError(context.tr(
@@ -146,6 +205,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         // ── 并行启动两个后端（2026-10-28 优化）──────────────────────────
         // 以前是「先起 DSH（20~25 秒）→ 再起设计站（5~10 秒）」串行，
         // 用户要等 70~80 秒。两者互不依赖，可以同时起，等待时间取最长的那个。
+        _beginProgress(_Stage.starting);
         AgnesWeb.setKeepAlive(true);
         final dshFuture = BotServer.ensureStarted(
           runtime: widget.runtime,
@@ -163,6 +223,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
 
         final server = await dshFuture;
         if (!mounted) return;
+        _beginProgress(_Stage.port);
         await PortForwarder.instance.start(
           targetPort: server.port,
           listenPort: fwdPort,
@@ -176,6 +237,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         // 提供（Key 不出手机）。失败不影响 DSH 网页本身。
         String? designUrl;
         String? designErr;
+        _beginProgress(_Stage.design);
         try {
           final agnes = await agnesFuture;
           if (agnes == null) throw StateError('${agnesErr ?? '设计站后端启动失败'}');
@@ -196,7 +258,10 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
           designErr = '$e';
           AgnesWeb.lastError = designErr;
           await DesignSite.removeEntry(widget.runtime);
-        await WebBridge.stop();
+          // ⚠️ 这里**绝对不能** stop 保活（0.80 曾经写错在这一行）：
+          //    设计站起不来时 DSH 网页本身还是好的，把前台服务停掉等于
+          //    让唯一还活着的那个服务失去保护 —— 电脑端随后就 502 了。
+          //    保活只在「关掉开关」时停（见下面的 else 分支）。
         }
         // 保活：把进程提级，否则切后台/被回收后电脑端会突然 502。
         await WebBridge.start(
@@ -209,6 +274,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
           _designError = designErr;
         });
       } else {
+        _beginProgress(_Stage.closing);
         await PortForwarder.instance.stop();
         await _designForward.stop();
         AgnesWeb.setKeepAlive(false);
@@ -216,6 +282,8 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         AgnesWeb.publicUrl = null;
         AgnesWeb.lastError = null;
         await DesignSite.removeEntry(widget.runtime);
+        // 关开关才停保活：通知栏那条「电脑正在访问」要跟着消失。
+        await WebBridge.stop();
         // 关掉时也要把信任白名单清掉，否则下次起服务还带着旧 authority
         // （端口会变，留着没用还多一次重启）。
         await BotServer.ensureStarted(
@@ -231,6 +299,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
+      _endProgress();
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -267,6 +336,25 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
               '资料、模型、工具执行都在手机上，电脑只需要一个浏览器。手机和电脑要在同一张网里（USB 网络共享或同一个 Wi-Fi）。'),
           style: TextStyle(fontSize: 11, color: scheme.outline, height: 1.55),
         ),
+        // 进度条 + 人话阶段（0.81）。原来只有一个转圈：首启要等 40~80 秒，
+        // 用户完全看不出「是在干活还是卡死了」，也不知道还要等多久。
+        if (_busy && _stage != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  stageText(context),
+                  style: TextStyle(fontSize: 11.5, color: scheme.primary),
+                ),
+              ),
+              Text(
+                context.tr('已等 {0} 秒', [_elapsed]),
+                style: TextStyle(fontSize: 11, color: scheme.outline),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 10),
         if (_lan.isEmpty)
           Text(
@@ -322,6 +410,13 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
                 },
                 icon: const Icon(Icons.copy_all_outlined, size: 16),
                 label: Text(context.tr('复制网址'),
+                    style: const TextStyle(fontSize: 12)),
+              ),
+            if (_on && _url != null)
+              TextButton.icon(
+                onPressed: _showQr,
+                icon: const Icon(Icons.qr_code_2, size: 16),
+                label: Text(context.tr('扫码打开'),
                     style: const TextStyle(fontSize: 12)),
               ),
             if (_on)
@@ -382,3 +477,19 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
     );
   }
 }
+
+/// 电脑访问开关的过程阶段（用在「已等 N 秒」旁边那行字上）。
+enum _Stage { preparing, starting, port, design, closing }
+
+extension _StageText on _Stage {
+  /// ⚠️ 每条都必须写成 `context.tr('字面量')`：
+  /// i18n 扫描器只认这个形状，拼字符串或传变量都会被漏掉（切外语露中文）。
+  String text(BuildContext context) => switch (this) {
+        _Stage.preparing => context.tr('准备运行环境…'),
+        _Stage.starting => context.tr('正在启动 DSH 与设计站…'),
+        _Stage.port => context.tr('正在打开对外端口…'),
+        _Stage.design => context.tr('正在接上设计站…'),
+        _Stage.closing => context.tr('正在关闭…'),
+      };
+}
+

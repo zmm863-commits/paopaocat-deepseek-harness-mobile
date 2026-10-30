@@ -1,37 +1,28 @@
 {
-  "version": "0.78",
-  "versionCode": 126,
-  "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.78/paopaocat-preview-0.78-20261021-full-arm64-v8a.apk",
-  "size": 103559659,
-  "sha256": "d3d8714d0fc696809ce7ef71873a1f19ac1f6cb0936f18736b3200ed1a5354e6",
-  "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.78/paopaocat-preview-0.78-20261021-full-arm64-v8a.apk",
-  "sizeFull": 103559659,
-  "sha256Full": "d3d8714d0fc696809ce7ef71873a1f19ac1f6cb0936f18736b3200ed1a5354e6",
+  "version": "0.81",
+  "versionCode": 249,
+  "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.81-20261030-full-arm64-v8a.apk",
+  "size": 118493035,
+  "sha256": "f293a4e8864ca1481781f73c197bb37f2ca9990a0c518769ee11ad3650775fdb",
+  "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.81-20261030-full-arm64-v8a.apk",
+  "sizeFull": 118493035,
+  "sha256Full": "f293a4e8864ca1481781f73c197bb37f2ca9990a0c518769ee11ad3650775fdb",
   "minVersionCode": 0,
-  "publishedAt": "2026-10-21",
+  "publishedAt": "2026-10-30",
   "notes": [
-    "**更新只要下几 MB 了**：以前每次都要下整个 ~99 MB 的包，现在只下差异（这一版 **5.2 MB**），手机上用已装的包拼出新包、校验通过再安装。拼装失败或版本对不上时自动回退整包，不会因此更新不了",
-    "**新增：外观里可以关掉「左右滑动切换页面」** —— 设置 → 外观。关掉后横向手势彻底不接管，只点底部标签切页；开着的话也调钝了：要**甩得快**或**拖过屏宽 28%** 才翻页，不再一碰就跳",
-    "**修好：思考过程又卡又跳字** —— 以前每个字都刷新界面、滚动每次都用动画追（互相打断），长思考一超过阈值就被瞬间截成几行。现在按帧合并上屏、滚动直接跟上；流式时全文铺开不折叠，结束后**收成一行「思考了 N 秒 · 展开」**（时长取真实时间戳，拿不到就只写「思考」）",
-    "**新增：定时任务可以同步到系统日历** —— 任务页有开关，授权后任务变成系统日历事件（带重复与提醒），**到点由系统自己响**，不依赖 App 还开着；任务本身仍由 App 内的调度器执行",
-    "**新增：本机 MCP 服务器（dsh-office）** —— 会话里多了三个工具：读单元格 / 写单元格 / 往 .docx 追加段落，本机跑、不联网。改已有 Office 文件时不用另存新文件",
-    "**修好：Bot 页面** —— 配色跟随 App（不再是另一套灰蓝）；「+」菜单那栏「定时任务」改名为「设置」并落到通用页；设置页在手机上摊开可用、正文能上下滑；切模型导致服务重启时不再换端口，页面不会莫名「重新连接」",
-    "**修好：文件都生成了，界面还一直显示「正在处理」** —— 「正在跑」这个状态原来改它不通知任何界面，切页回来就卡住。现在状态变化会通知页面与首页",
-    "**修好：做出来的 PPT 太朴素** —— 要点页从「一个文本框」改成软卡片 + 强调条；2~6 条并列短句自动排成卡片墙（实测同一份稿：18 个形状 → 48 个）",
-    "**新增：第一次打开有引导** —— 三条要点（能做什么 / 不用填 Key / Bot 在哪），只出现一次"
+    "**修好：电脑端断线不再是白屏** —— 手机那边服务停了（开关关了、App 被系统回收、换了网络），浏览器以前只会一片白。现在会显示一页说明：为什么断、去手机上哪儿重新打开；手机一恢复，这一页自己连回来，不用手动刷新。",
+    "**新增：打开「移动桌面平台」时看得见在做什么** —— 依次显示「准备运行环境 → 启动 DSH 与设计站 → 打开对外端口 → 接上设计站」，右边还有「已等 N 秒」。以前只有一个转圈，首启等 40~80 秒完全看不出是在干活还是卡死。",
+    "**新增：扫码打开** —— 面板上多了「扫码打开」：一屏给出二维码，外加能照着敲的大字地址（192.168.x.x:端口）；电脑有扫码工具就扫，没有就手打。",
+    "**修好：设计站起不来会把保活服务一起停掉** —— 0.80 里这一步写错了位置，设计站启动失败时顺手把「电脑正在访问」的前台服务也停了，于是 DSH 网页本身还活着却失去保护、随后被系统回收，电脑端就断了。现在保活只在你自己关开关时才停。",
+    "**修好：英/日/韩界面里「移动桌面平台」整块还是中文** —— 0.80 改名时漏了 23 条文案没进翻译表。这一版补齐 84 条译文，三张表 2032 条一条不差。",
+    "**修好：App 里的 0.80 更新说明只有 5 条** —— 和发布说明（10 条）对不上，装完根本看不到「移动桌面平台」这个主角。这一版把 0.80 补齐到 10 条。"
   ],
   "patches": [
     {
-      "fromSha256": "04e17b9035788c65ff3238e8bd3f892e6dbc49e38639cf10677796a8e3f4b0f3",
-      "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.78/paopaocat-preview-0.77-20261019-full-arm64-v8a__to__paopaocat-preview-0.78-20261021-full-arm64-v8a.patch",
-      "size": 5509367,
-      "sha256": "e88b15efedf7429a7650b3569e2f51ca11b4a3b5b90ebae126369e8df5d47fd2"
-    },
-    {
-      "fromSha256": "af1dda25967aace0b686c2ef29ce9e931b1ab5e3ab021ff589610bed7f170fb6",
-      "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.78/paopaocat-preview-0.78-20261020-full-arm64-v8a__to__paopaocat-preview-0.78-20261021-full-arm64-v8a.patch",
-      "size": 5421896,
-      "sha256": "01ba53ae13f496c2757964cb6e6a18c77a81ed5c46972de0fd5e005485898de5"
+      "fromSha256": "a9efd2f98d6e3074c86bb886822f247201334083df4a96ca83f3dca00dbda533",
+      "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.80-20261029-full-arm64-v8a__to__paopaocat-preview-0.81-20261030-full-arm64-v8a.patch",
+      "size": 8589521,
+      "sha256": "6bd339aa504fb1d4454070ff26760b3b0c988e3a403de468a1614c8d86f8a035"
     }
   ]
 }
