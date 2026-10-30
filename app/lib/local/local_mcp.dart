@@ -150,10 +150,20 @@ class LocalMcp {
       // 谁先来算谁：正常应答 / 进程提前退出 / 超时。
       final ok = await Future.any<bool>(<Future<bool>>[
         completer.future,
-        exited.future.then((code) {
+        exited.future.then((code) async {
+          // ⚠️ 进程退出**不等于**它的 stderr 已经收完（2026-10-30 真机教训）：
+          //    日志里只留下 `node 提前退出 exit=0`，stderr 一个字符都没有 ——
+          //    而 exit=0 本身很反常（找不到脚本该是 1、dlopen 失败该是别的），
+          //    于是"没线索"变成了"查不动"。这里多等 300ms 让管道里的尾巴吐完，
+          //    并把 spawn 现场（命令/脚本是否落盘）一并写进日志，下次一次问清楚。
+          await Future<void>.delayed(const Duration(milliseconds: 300));
           if (!completer.isCompleted) {
-            DiagnosticsLog.add('dsh-mcp', '探活失败：node 提前退出 exit=$code'
-                '${stderrBuf.isEmpty ? '' : ' | stderr=${stderrBuf.toString().trim()}'}');
+            DiagnosticsLog.add('dsh-mcp',
+                '探活失败：node 提前退出 exit=$code'
+                ' | 脚本=${_scriptFacts(scriptPath(runtime.filesDir))}'
+                ' | 命令=$command'
+                ' | cwd=${runtime.filesDir}'
+                '${stderrBuf.isEmpty ? ' | stderr=(空)' : ' | stderr=${stderrBuf.toString().trim()}'}');
             completer.complete(false);
           }
           return false;
@@ -231,13 +241,31 @@ class LocalMcp {
       try {
         proc.kill();
       } catch (_) {}
+      // 等进程退出的 stderr 尾巴，再下结论
+      await Future<void>.delayed(const Duration(milliseconds: 300));
       DiagnosticsLog.add('dsh-mcp',
           got
               ? '诊断：带父环境能起来 → 说明缺的是环境变量（白名单还要补）'
               : '诊断：带父环境也起不来 → 不是环境问题'
-                  '${err.isEmpty ? '' : ' | stderr=${err.toString().trim()}'}');
+                  ' | 脚本=${_scriptFacts(scriptPath(runtime.filesDir))}'
+                  '${err.isEmpty ? ' | stderr=(空)' : ' | stderr=${err.toString().trim()}'}');
     } catch (e) {
       DiagnosticsLog.add('dsh-mcp', '诊断探针本身失败：$e');
+    }
+  }
+
+  /// 探活失败时用的一句话现场：脚本到底在不在、多大。
+  ///
+  /// 为什么非要它：Android 上「脚本没落盘」和「脚本在但 node 起不来」的
+  /// 表现完全不同（一个该 exit=1，一个可能 exit=0 什么都不说），
+  /// 而这两种情况**只能靠现场判断**，猜不出来。
+  static String _scriptFacts(String path) {
+    try {
+      final f = File(path);
+      if (!f.existsSync()) return '不存在($path)';
+      return '${f.lengthSync()}B';
+    } catch (e) {
+      return '读不到($e)';
     }
   }
 
@@ -257,7 +285,22 @@ class LocalMcp {
         'name': serverName,
         // 绝对路径：<nativeLibraryDir>/libnode.so（Android 上唯一能执行的东西）
         'command': node,
-        'args': <String>[script],
+        // ⚠️⚠️ 必须带上与 ACP 完全相同的那组启动旗标（2026-10-30 补）。
+        //
+        // 这条是"为什么 ACP 能跑、MCP 不能"的最大嫌疑：同一个 libnode.so，
+        // ACP 是带 `--expose-internals --require <fs shim> --require <exec shim>`
+        // 起的（见 DshRuntime 类注释里那四条硬约束：Android 缺原生 addon，
+        // 必须靠 expose-internals 顶上；SELinux 禁 link()、没有 bash，靠两个 shim 补），
+        // 而 MCP 这边**只传了脚本路径**，等于裸跑 node。
+        //
+        // shim 只在文件真的落盘时才挂（桌面 / 还没解包时不硬塞，免得把探活弄崩）。
+        'args': <String>[
+          '--expose-internals',
+          if (File(runtime.fsShim).existsSync()) ...<String>['--require', runtime.fsShim],
+          if (File(runtime.execShimPath).existsSync())
+            ...<String>['--require', runtime.execShimPath],
+          script,
+        ],
         // 白名单环境：**不含任何 API Key**（理由见类注释）
         'env': _envEntries(runtime),
       },

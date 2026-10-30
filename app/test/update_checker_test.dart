@@ -223,8 +223,42 @@ void main() {
       expect(r.info, isNull);
       expect(r.errorZh, isNotNull);
       expect(r.tried, hasLength(3), reason: '三条都要留下失败原因');
-      expect(r.tried[0], contains('JSON'));
-      expect(r.tried[1], contains('404'));
+      // ⚠️ **不按下标断言**（0.81 起多源是并发发出的，谁先失败不定）：
+      //    只要求三种失败原因都留下痕迹，顺序交给调度。
+      final joined = r.tried.join(' | ');
+      expect(joined, contains('JSON'));
+      expect(joined, contains('404'));
+      expect(joined, anyOf(contains('连不上'), contains('拒绝')));
+    });
+
+    test('并发取源：慢的那条不能把快的拖住（0.81 真机白等 8 秒的回归）', () async {
+      // 一条永远不回（客户端超时 3s 才失败），一条立刻回。
+      // 串行版会先等满 3 秒；并发版应该**立刻**拿到快的那条。
+      final slow = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => slow.close(force: true));
+      slow.listen((req) {
+        // 故意不回，让客户端自己超时
+      });
+      final fast = await _fakeServer((req) => _json(req, '{"version":"9.9.9","url":"http://x/a.apk","size":1,"sha256":"aa"}'));
+
+      addTearDown(() async {
+        await fast.server.close(force: true);
+      });
+
+      final sw = Stopwatch()..start();
+      final r = await checkForUpdate(
+        sources: <String>[
+          'http://127.0.0.1:${slow.port}/update.json', // 慢的放前面（真机上 raw 就是这个位置）
+          'http://127.0.0.1:${fast.server.port}/update.json',
+        ],
+        timeout: const Duration(seconds: 3),
+      );
+      sw.stop();
+
+      expect(r.ok, isTrue);
+      expect(r.sourceUsed, contains('${fast.server.port}'));
+      expect(sw.elapsed, lessThan(const Duration(seconds: 2)),
+          reason: '慢源在排队等超时的话这里会接近 3 秒');
     });
 
     test('响应超大时中止（清单是 1 KB 量级，不该被 8 MB 撑死）', () async {

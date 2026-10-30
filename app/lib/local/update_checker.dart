@@ -39,7 +39,7 @@ const int kMaxManifestBytes = 256 * 1024;
 
 /// 单个源的默认超时。**刻意短**：检查更新是后台行为，宁可这次查不到，
 /// 也不要让用户点了按钮干等 20 秒。
-const Duration kUpdateCheckTimeout = Duration(seconds: 8);
+const Duration kUpdateCheckTimeout = Duration(seconds: 5);
 
 /// 清单解析失败。带上"哪个字段有问题"，方便定位是发版时手写错了。
 class UpdateManifestError implements Exception {
@@ -392,8 +392,24 @@ Future<UpdateCheckResult> checkForUpdate({
       ? <String>[custom]
       : (sources ?? defaultUpdateSources());
 
+  // ── 并发取，谁先回用谁（2026-10-30 改）────────────────────────────
+  //
+  // 原来是**串行 fallback**：先 raw，等它超时（8 秒）才轮到 jsDelivr。
+  // 真机日志（`dsh-report-20261030-105757.txt`）里每次启动都白等这一下：
+  //
+  //   10:50:29.521  source failed: https://raw.githubusercontent.com/… → 超时
+  //   10:50:30.473  ok source=https://cdn.jsdelivr.net/gh/…
+  //
+  // 也就是「国内 raw 必超时」这件事在真机上**每次**都发生，而兜底每次都成功。
+  // 既然两条源本来就是同一个文件的镜像，就没必要排队 —— 一起发，谁先回用谁：
+  //   * raw 通（实测 0.47s）→ 大概率它先回，**新鲜度优势保留**；
+  //   * raw 不通 → jsDelivr（实测 2.16s）直接兜住，用户不再白等 8 秒；
+  //   * 两条都挂 → 才报错（和以前一样不弹窗、不卡启动）。
+  //
+  // 只有一条源时（用户自填镜像）仍走原来的单发逻辑。
   final tried = <String>[];
-  for (final base in sourcesToTry) {
+
+  Future<UpdateCheckResult?> tryOne(String base) async {
     final url = bypassCache
         ? '$base${base.contains('?') ? '&' : '?'}t=${DateTime.now().millisecondsSinceEpoch}'
         : base;
@@ -418,16 +434,35 @@ Future<UpdateCheckResult> checkForUpdate({
       final why = _reasonOf(e);
       tried.add('$base → $why');
       debugPrint('[dsh-update] source failed: $base → $why');
+      return null;
     }
   }
 
-  return UpdateCheckResult(
-    ok: false,
-    errorZh: custom.isNotEmpty
-        ? tr('你填的这个更新源没有返回可用的版本信息。')
-        : tr('三个更新源都没连上（多半是网络问题，过一会儿再试）。'),
-    tried: tried,
-  );
+  UpdateCheckResult failed() => UpdateCheckResult(
+        ok: false,
+        errorZh: custom.isNotEmpty
+            ? tr('你填的这个更新源没有返回可用的版本信息。')
+            : tr('更新源都没连上（多半是网络问题，过一会儿再试）。'),
+        tried: tried,
+      );
+
+  if (sourcesToTry.length == 1) {
+    final one = await tryOne(sourcesToTry.first);
+    return one ?? failed();
+  }
+
+  final winner = Completer<UpdateCheckResult?>();
+  var remaining = sourcesToTry.length;
+  for (final base in sourcesToTry) {
+    unawaited(() async {
+      final r = await tryOne(base);
+      if (r != null && !winner.isCompleted) winner.complete(r);
+      remaining--;
+      if (remaining == 0 && !winner.isCompleted) winner.complete(null);
+    }());
+  }
+  final got = await winner.future;
+  return got ?? failed();
 }
 
 /// 把异常翻译成一句中文人话。**分类要具体** —— "网络错误"这种话对排查没帮助。

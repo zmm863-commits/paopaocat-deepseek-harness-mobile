@@ -2,11 +2,11 @@
   "version": "0.81",
   "versionCode": 249,
   "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.81-20261030-full-arm64-v8a.apk",
-  "size": 118499607,
-  "sha256": "5a9584d0b4bb136d08a842d93cd2f2f6f43387a755ba89fd3b83ae8ddef56fb1",
+  "size": 118502451,
+  "sha256": "8cf2055adfb9635ba2448a4b8fdef844c3655e856c32e2414c140e47d50b88a0",
   "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.81-20261030-full-arm64-v8a.apk",
-  "sizeFull": 118499607,
-  "sha256Full": "5a9584d0b4bb136d08a842d93cd2f2f6f43387a755ba89fd3b83ae8ddef56fb1",
+  "sizeFull": 118502451,
+  "sha256Full": "8cf2055adfb9635ba2448a4b8fdef844c3655e856c32e2414c140e47d50b88a0",
   "minVersionCode": 0,
   "publishedAt": "2026-10-30",
   "notes": [
@@ -18,14 +18,16 @@
     "**新增：扫码打开** —— 一屏给出二维码，外加能照着敲的大字地址（192.168.x.x:端口）；电脑有扫码工具就扫，没有就手打。",
     "**修好：设计站起不来会把保活服务一起停掉** —— 0.80 里这一步写错了位置，设计站启动失败时顺手把「电脑正在访问」的前台服务也停了。现在保活只在你自己关开关时才停。",
     "**修好：英/日/韩界面里「移动桌面平台」整块还是中文** —— 0.80 改名时漏了 23 条文案没进翻译表。这一版补齐 84 条译文，三张表 2032 条一条不差。",
-    "**修好：App 里的 0.80 更新说明只有 5 条** —— 和发布说明（10 条）对不上。这一版把 0.80 补齐到 10 条。"
+    "**修好：App 里的 0.80 更新说明只有 5 条** —— 和发布说明（10 条）对不上。这一版把 0.80 补齐到 10 条。",
+    "**修好：会话里那三个 Office 工具（读/写 Excel 单元格、往 Word 追加段落）之前一直没挂上** —— 同一个 node 起的 ACP 是好的，差别只在启动旗标。这一版把两边对齐，并把失败的真原因写进诊断日志。",
+    "**修好：启动时白等 8 秒** —— 检查更新两个源改成同时发、谁先回用谁（以前先等 raw 超时才轮到 jsDelivr，而 raw 在国内基本不通）。"
   ],
   "patches": [
     {
       "fromSha256": "a9efd2f98d6e3074c86bb886822f247201334083df4a96ca83f3dca00dbda533",
       "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.81/paopaocat-preview-0.80-20261029-full-arm64-v8a__to__paopaocat-preview-0.81-20261030-full-arm64-v8a.patch",
-      "size": 8617700,
-      "sha256": "72edaf2d28da280c7c38b5b0266112ff634443a91df8c93110e10efb35f3add0"
+      "size": 8619874,
+      "sha256": "33565cc4fe7c17580c8ed333d0b31704f0be9d9415a89a3a79d83d3d2191917a"
     }
   ]
 }

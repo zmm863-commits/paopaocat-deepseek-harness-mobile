@@ -231,5 +231,52 @@ void main() {
       expect(await com.future.timeout(const Duration(seconds: 5)), 'close');
       sock.destroy();
     });
+
+    test('整页几十个资源：每一次请求都要被改写（否则第 2 个起就 403）', () async {
+      // 真机风险点（0.81 自评里写的）：我们只改写「一个连接上的第一个请求头」，
+      // 靠 `Connection: close` 让每个请求各占一条连接。这一条就是拿 40 个请求
+      // 把「整页资源」的场景压一遍 —— 只要有一个没被改写，上游看到的 Host
+      // 就还是外部地址，DSH 的 browser-trust fence 会 403。
+      const n = 40;
+      final hosts = <String>[];
+      final up = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(up.close);
+      up.listen((req) {
+        hosts.add(req.headers.value('host') ?? '');
+        req.response
+          ..write('x' * 1024)
+          ..close();
+      });
+
+      final fwd = PortForwarder.create();
+      final listen = await fwd.start(
+        targetPort: up.port,
+        listenPort: 0,
+        rewrite: ForwardRewrite(
+          fixedToken: 'fixed-token-abc',
+          upstreamToken: 'launch-token-xyz',
+          upstreamAuthority: '127.0.0.1:${up.port}',
+        ),
+      );
+      addTearDown(fwd.stop);
+
+      final sw = Stopwatch()..start();
+      var ok = 0;
+      for (var i = 0; i < n; i++) {
+        final res = await get(listen, path: '/asset/$i.js');
+        if (res.statusCode == 200) ok++;
+        await res.drain<void>();
+      }
+      sw.stop();
+
+      expect(ok, n, reason: '40 个资源必须全部 200');
+      expect(hosts.length, n, reason: '每个请求都该打到上游');
+      // 关键断言：**没有一次**带着外部 Host 上去
+      expect(hosts.every((h) => h == '127.0.0.1:${up.port}'), isTrue,
+          reason: '有一次没改写就会 403：${hosts.where((h) => h != '127.0.0.1:${up.port}').take(3)}');
+      // 局域网里这点开销应该无感（40 个请求各自一条连接）
+      expect(sw.elapsed, lessThan(const Duration(seconds: 10)),
+          reason: '40 个请求花了 ${sw.elapsedMilliseconds}ms');
+    });
   });
 }

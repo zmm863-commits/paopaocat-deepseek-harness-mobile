@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dsh_mobile/local/dsh_runtime.dart';
 import 'package:dsh_mobile/local/local_mcp.dart';
@@ -33,13 +35,42 @@ void main() {
           reason: 'Android 上 App 数据目录里的文件不能被执行，只有 nativeLibraryDir 里的能');
     });
 
-    test('args 指向工具箱里的脚本（和 office-zip 同目录，相对 import 才解析得到）', () {
-      final args = LocalMcp.mcpServers(runtime: _runtime()).first['args'] as List;
-      expect(args, hasLength(1));
-      final script = args.first as String;
+    test('args 以脚本结尾，并且**必须**带 --expose-internals（与 ACP 对齐）', () {
+      // 2026-10-30：真机上 MCP 探活 `node 提前退出 exit=0` 且零输出，而同一个
+      // libnode.so 起 ACP 是好的。两者唯一的差别就是这组旗标 —— ACP 带
+      // `--expose-internals` + 两个 shim（Android 缺原生 addon、SELinux 禁 link、
+      // 没有 bash），MCP 之前**只传了脚本路径**，等于裸跑 node。
+      final args =
+          (LocalMcp.mcpServers(runtime: _runtime()).first['args'] as List).cast<String>();
+      expect(args.first, '--expose-internals');
+      final script = args.last;
       expect(script, endsWith('/toolbox/mcp-office.mjs'));
       expect(script, contains('/toolbox/'),
           reason: '必须和 office-zip.mjs / read-xlsx.mjs 落在同一个目录');
+    });
+
+    test('shim 真的落盘时才挂 --require（没解包时不硬塞，免得把探活弄崩）', () async {
+      final tmp = await Directory.systemTemp.createTemp('mcpshim');
+      addTearDown(() async => tmp.delete(recursive: true));
+      final fs = File('${tmp.path}/android-fs-shim.cjs')
+        ..writeAsStringSync('// shim\n');
+      final exec = File('${tmp.path}/android-exec-shim.cjs')
+        ..writeAsStringSync('// shim\n');
+      final rt = DshRuntime(<String, dynamic>{
+        'nodeBinary': '/x/libnode.so',
+        'filesDir': tmp.path,
+        'nativeLibDir': '/x',
+        'nodeHome': '${tmp.path}/dsh',
+        'fsShim': fs.path,
+      });
+      // execShimPath 是派生值：$filesDir/shims/android-exec-shim.cjs
+      Directory('${tmp.path}/shims').createSync(recursive: true);
+      exec.copySync('${tmp.path}/shims/android-exec-shim.cjs');
+
+      final args = (LocalMcp.mcpServers(runtime: rt).first['args'] as List).cast<String>();
+      expect(args.sublist(0, 3), <String>['--expose-internals', '--require', fs.path]);
+      expect(args, contains('${tmp.path}/shims/android-exec-shim.cjs'));
+      expect(args.last, endsWith('mcp-office.mjs'));
     });
 
     test('env 是有序的 name/value 条目数组（不是普通 map）', () {
