@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -95,5 +96,140 @@ void main() {
       Socket.connect(InternetAddress.loopbackIPv4, listen),
       throwsA(isA<SocketException>()),
     );
+  });
+
+  // ── 对外地址改写（0.81）：让用户手里的链接长期有效 ────────────────────
+  //
+  // 真机现场（2026-10-30 截图）：电脑打开复制的地址，得到
+  // `dsh web authentication required; reopen the URL printed by dsh web.`
+  // 因为 DSH 的 launchToken 是进程内随机生成、每次重启都换 —— 复制出去的地址
+  // 一次就废。转发层现在把「App 固定口令」换成当前 launchToken，并把 Host
+  // 改回回环（连 --trusted-host 都不用了，开关也不再重启 DSH）。
+  group('首个请求头改写', () {
+    /// 起一个假上游，记录它收到的 path / host / origin。
+    Future<(HttpServer, List<(String path, String host, String origin)>)>
+        upstreamRecorder() async {
+      final seen = <(String, String, String)>[];
+      final srv = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      srv.listen((req) {
+        seen.add((
+          req.uri.toString(),
+          req.headers.value('host') ?? '',
+          req.headers.value('origin') ?? '',
+        ));
+        req.response
+          ..statusCode = 200
+          ..write('ok');
+        req.response.close();
+      });
+      return (srv, seen);
+    }
+
+    test('固定口令被换成 launchToken，Host 改回回环', () async {
+      final (up, seen) = await upstreamRecorder();
+      addTearDown(up.close);
+      final fwd = PortForwarder.create();
+      final listen = await fwd.start(
+        targetPort: up.port,
+        listenPort: 0,
+        rewrite: ForwardRewrite(
+          fixedToken: 'fixed-token-abc',
+          upstreamToken: 'launch-token-xyz',
+          upstreamAuthority: '127.0.0.1:${up.port}',
+        ),
+      );
+      addTearDown(fwd.stop);
+
+      final res = await get(listen, path: '/?token=fixed-token-abc');
+      expect(res.statusCode, 200);
+      await res.drain<void>();
+
+      expect(seen, hasLength(1));
+      expect(seen.first.$1, contains('token=launch-token-xyz'));
+      expect(seen.first.$1, isNot(contains('fixed-token-abc')));
+      // Host 必须是上游自己 —— 否则 DSH 的 browser-trust fence 直接 403
+      expect(seen.first.$2, '127.0.0.1:${up.port}');
+    });
+
+    test('别的 token 原样送上去（不许把鉴权打开）', () async {
+      final (up, seen) = await upstreamRecorder();
+      addTearDown(up.close);
+      final fwd = PortForwarder.create();
+      final listen = await fwd.start(
+        targetPort: up.port,
+        listenPort: 0,
+        rewrite: const ForwardRewrite(
+          fixedToken: 'fixed-token-abc',
+          upstreamToken: 'launch-token-xyz',
+          upstreamAuthority: '127.0.0.1:1',
+        ),
+      );
+      addTearDown(fwd.stop);
+
+      final res = await get(listen, path: '/?token=someone-else');
+      await res.drain<void>();
+
+      expect(seen.single.$1, contains('token=someone-else'));
+      expect(seen.single.$1, isNot(contains('launch-token-xyz')));
+    });
+
+    test('不带 token 的请求只改 Host，路径与其它参数不动', () async {
+      final (up, seen) = await upstreamRecorder();
+      addTearDown(up.close);
+      final fwd = PortForwarder.create();
+      final listen = await fwd.start(
+        targetPort: up.port,
+        listenPort: 0,
+        rewrite: const ForwardRewrite(
+          fixedToken: 'fixed-token-abc',
+          upstreamToken: 'launch-token-xyz',
+          upstreamAuthority: '127.0.0.1:46123',
+        ),
+      );
+      addTearDown(fwd.stop);
+
+      final res = await get(listen, path: '/api/sessions?limit=5');
+      await res.drain<void>();
+
+      expect(seen.single.$1, '/api/sessions?limit=5');
+      expect(seen.single.$2, '127.0.0.1:46123');
+    });
+
+    test('强制 Connection: close（否则同连接上的第二个请求会带着外部 Host 被 403）', () async {
+      final com = Completer<String>();
+      final srv = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(srv.close);
+      srv.listen((c) {
+        final b = <int>[];
+        c.listen((d) {
+          b.addAll(d);
+          final txt = utf8.decode(b, allowMalformed: true);
+          if (txt.contains('\r\n\r\n') && !com.isCompleted) {
+            final m = RegExp(r'\r\nconnection:\s*([^\r\n]+)', caseSensitive: false)
+                .firstMatch(txt);
+            com.complete(m?.group(1)?.trim() ?? '(没有 connection 头)');
+            c.destroy();
+          }
+        });
+      });
+
+      final fwd = PortForwarder.create();
+      final listen = await fwd.start(
+        targetPort: srv.port,
+        listenPort: 0,
+        rewrite: const ForwardRewrite(
+          fixedToken: 'nope',
+          upstreamToken: 'x',
+          upstreamAuthority: '127.0.0.1:1',
+        ),
+      );
+      addTearDown(fwd.stop);
+
+      final sock = await Socket.connect(InternetAddress.loopbackIPv4, listen);
+      sock.write('GET / HTTP/1.1\r\nHost: 192.168.1.100:45721\r\n\r\n');
+
+      expect(await com.future.timeout(const Duration(seconds: 5)), 'close');
+      sock.destroy();
+    });
   });
 }

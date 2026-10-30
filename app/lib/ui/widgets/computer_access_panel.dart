@@ -7,6 +7,7 @@ import '../../local/bot_server.dart';
 import '../../local/dsh_runtime.dart';
 import '../../local/agnes_web.dart';
 import '../../local/bridge_prefs.dart';
+import '../../local/diagnostics_log.dart';
 import '../../local/design_site.dart';
 import '../../local/lan_endpoints.dart';
 import '../../local/port_forwarder.dart';
@@ -120,8 +121,19 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
     if (!mounted) return;
     setState(() {
       _lan = eps;
+      // 优先回到**上次用过的网卡**：端口已经固定，地址再固定住，用户收藏的
+      // 链接才真的长期有效（真机日志里同一台手机两次开开关，注入的地址一次是
+      // 192.168.199.2、一次是 192.168.1.60 —— 换了网卡，链接就废了）。
       final keep = _selected != null && eps.any((e) => e.address == _selected);
-      if (!keep) _selected = eps.isEmpty ? null : eps.first.address;
+      if (!keep) {
+        final remembered = _prefs?.dshHost ?? '';
+        final hit = eps.where((e) => e.address == remembered).toList();
+        if (hit.isNotEmpty) {
+          _selected = hit.first.address;
+        } else {
+          _selected = eps.isEmpty ? null : eps.first.address;
+        }
+      }
       // 转发器可能已经在跑（离开页面再进来）：把真实状态显示出来，
       // 否则用户会看到"开关是关的，但电脑其实连得上"。
       if (PortForwarder.instance.running) {
@@ -198,19 +210,21 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         final fwdPort =
             await PortForwarder.instance.reservePort(preferred: prefs.dshPort);
         prefs.dshPort = fwdPort;
+        prefs.dshHost = host; // 端口 + 网卡一起记，收藏的地址才真的不失效
         await prefs.save();
         AgnesWeb.accessToken = prefs.token;
-        final authority = '$host:$fwdPort';
 
         // ── 并行启动两个后端（2026-10-28 优化）──────────────────────────
         // 以前是「先起 DSH（20~25 秒）→ 再起设计站（5~10 秒）」串行，
         // 用户要等 70~80 秒。两者互不依赖，可以同时起，等待时间取最长的那个。
         _beginProgress(_Stage.starting);
         AgnesWeb.setKeepAlive(true);
-        final dshFuture = BotServer.ensureStarted(
-          runtime: widget.runtime,
-          trustedAuthorities: <String>[authority],
-        );
+        // ⚠️ 注意：**不再传 `trustedAuthorities`**（2026-10-30 改）。
+        // 那一套要 `--trusted-host`，而它是启动参数 —— 开一次电脑访问就重启一次
+        // DSH，真机上还撞见过重启后 profile 激活失败（退出码 1，面板红一片）。
+        // 现在由转发层把 Host 改写成 127.0.0.1:<port>，DSH 认为自己被本机访问，
+        // 天然放行 —— 开关电脑访问**完全不碰 DSH 进程**。
+        final dshFuture = BotServer.ensureStarted(runtime: widget.runtime);
         // 设计站先失败也不能让异常「无人认领」（Dart 会把它当未捕获错误刷出来），
         // 所以这里就地接住，稍后再按正常流程报给界面。
         Object? agnesErr;
@@ -221,15 +235,35 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
           return null;
         });
 
-        final server = await dshFuture;
+        BotServer server;
+        try {
+          server = await dshFuture;
+        } catch (e) {
+          // 真机 2026-10-30：首次拨开关时 DSH 重启后 profile 激活失败（退出码 1，
+          // `file-upload connection / ui-deliverables connection`），整个面板红一片，
+          // 再点一次开关就好了 —— 说明是**一次性**的竞争，不是配置错。
+          // 与其让用户自己再点一次，不如替他们重试一次（只重试一次，失败照实报）。
+          DiagnosticsLog.add('lan', '启动电脑访问失败，自动重试一次：$e');
+          server = await BotServer.ensureStarted(runtime: widget.runtime);
+        }
         if (!mounted) return;
+        // 给用户的地址用**App 的固定口令**，不是 DSH 那个每次重启都变的 launchToken。
+        // 转发层会在第一个请求里把它换成当前真 token（见 ForwardRewrite）。
+        final launchToken = Uri.parse(server.url).queryParameters['token'] ?? '';
+        final url = 'http://$host:$fwdPort/?token=${prefs.token}';
+        if (launchToken.isEmpty) {
+          DiagnosticsLog.add('lan', '⚠ 没从 DSH 拿到 launchToken，电脑端会 401');
+        }
         _beginProgress(_Stage.port);
         await PortForwarder.instance.start(
           targetPort: server.port,
           listenPort: fwdPort,
+          rewrite: ForwardRewrite(
+            fixedToken: prefs.token,
+            upstreamToken: launchToken,
+            upstreamAuthority: '127.0.0.1:${server.port}',
+          ),
         );
-        final token = Uri.parse(server.url).queryParameters['token'] ?? '';
-        final url = 'http://$host:$fwdPort/${token.isEmpty ? '' : '?token=$token'}';
 
         // ── 设计站：手机里的 Node 后端 + 第二条转发 ──────────────────────
         // 它不是纯静态站（15 个引擎都走 /agnes-studio/api/*），必须把后端跑起来。
@@ -284,12 +318,9 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         await DesignSite.removeEntry(widget.runtime);
         // 关开关才停保活：通知栏那条「电脑正在访问」要跟着消失。
         await WebBridge.stop();
-        // 关掉时也要把信任白名单清掉，否则下次起服务还带着旧 authority
-        // （端口会变，留着没用还多一次重启）。
-        await BotServer.ensureStarted(
-          runtime: widget.runtime,
-          trustedAuthorities: const <String>[],
-        );
+        // 这里**不再重启 DSH**（0.80 是重启的，为的是清掉 `--trusted-host`）。
+        // 现在压根不用 trusted-host：Host 由转发层改写。所以关开关只是收掉
+        // 监听与保活 —— Bot 页不会闪、正在跑的会话也不会被打断。
         if (!mounted) return;
         setState(() {
           _on = false;

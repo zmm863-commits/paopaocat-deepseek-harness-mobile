@@ -82,7 +82,11 @@ class PortForwarder {
   /// 在 [listenPort] 上等连接，全部转到 `127.0.0.1:[targetPort]`。
   ///
   /// [listenPort] 传 0 表示"用 [reservePort] 预定的那个；没预定就让系统挑"。
-  Future<int> start({required int targetPort, int listenPort = 0}) async {
+  Future<int> start({
+    required int targetPort,
+    int listenPort = 0,
+    ForwardRewrite? rewrite,
+  }) async {
     final want = listenPort != 0 ? listenPort : (_reserved ?? 0);
     await stop();
     final server = await ServerSocket.bind(InternetAddress.anyIPv4, want);
@@ -115,6 +119,10 @@ class PortForwarder {
           _open.remove(upstream);
         }
 
+        if (rewrite != null) {
+          _bridgeWithRewrite(client, upstream, rewrite, closeBoth);
+          return;
+        }
         client.listen(
           upstream.add,
           onDone: closeBoth,
@@ -141,6 +149,172 @@ class PortForwarder {
     });
 
     return server.port;
+  }
+
+  /// 只对**第一个请求头**做改写，之后原样透传（SSE / WebSocket 不受影响）。
+  ///
+  /// ## 为什么非改不可（2026-10-30 用户真机截图）
+  ///
+  /// 电脑打开 `http://192.168.0.100:45721/?token=<launchToken>`，返回的是
+  /// `dsh web authentication required; reopen the URL printed by dsh web.`
+  ///
+  /// 根因（读了 `dsh-client-connection` 的实现）：DSH 的 `launchToken` 是
+  /// **进程内随机生成、没有任何注入口子**（`processLaunchToken` = `randomBytes`），
+  /// 藏在内存 Map 里。于是**服务每重启一次，token 就换一把** —— 而 App 有三个
+  /// 地方会重启它（切模型、开关电脑访问、Bot 服务自愈）。用户收藏/复制的地址
+  /// 注定一次就废。光固定端口和 IP 不够，**token 也得固定**。
+  ///
+  /// 做法：App 对外只发**自己的固定口令**（`BridgePrefs.token`，与设计站同一个），
+  /// 转发层收到第一个请求时把手里的固定口令换成当前的 launchToken，再交给 DSH。
+  /// 用户那边的地址从此长期有效。
+  ///
+  /// ## 顺手把 Host 也改回回环
+  ///
+  /// DSH 的 browser-trust fence 是按 Host 判断的：外部地址一律 403。以前靠
+  /// `--trusted-host` 参数放行 —— 但那是**启动参数**，改不了热，于是「开一次
+  /// 电脑访问 = 重启一次 DSH」，真机上还撞见过重启后 profile 激活失败
+  /// （退出码 1，`file-upload connection / ui-deliverables connection`），
+  /// 整个面板红一片。现在把 Host 改写成 `127.0.0.1:<port>`，DSH 认为自己被
+  /// 本机访问，天然放行 —— **不需要 trusted-host，也就不需要重启**。
+  ///
+  /// 安全性：只有 token 恰好等于 App 固定口令时才替换成真 token；别的 token
+  /// 原样送上去让 DSH 自己 401。所以这条通道**没有**把鉴权打开。
+  void _bridgeWithRewrite(
+    Socket client,
+    Socket upstream,
+    ForwardRewrite rw,
+    void Function() closeBoth,
+  ) {
+    final buf = <int>[];
+    var forwarded = false;
+    Timer? guard;
+    var logged = false;
+
+    void flush({required bool raw}) {
+      if (forwarded) return;
+      forwarded = true;
+      guard?.cancel();
+      if (buf.isEmpty) return;
+      if (!raw) {
+        final end = _headEnd(buf);
+        if (end > 0) {
+          final head = utf8.decode(buf.sublist(0, end), allowMalformed: true);
+          final rest = List<int>.from(buf.sublist(end));
+          buf.clear();
+          final out = _rewriteHead(head, rw);
+          if (!logged) {
+            logged = true;
+            DiagnosticsLog.add('lan',
+                '已把对外口令换成当前 launchToken（Host → ${rw.upstreamAuthority}）');
+          }
+          try {
+            upstream.add(utf8.encode(out));
+            if (rest.isNotEmpty) upstream.add(rest);
+          } catch (_) {}
+          return;
+        }
+      }
+      // 头没等到（非 HTTP、或客户端连上不吭声）：原样送上去，别卡着。
+      final all = List<int>.from(buf);
+      buf.clear();
+      try {
+        upstream.add(all);
+      } catch (_) {}
+    }
+
+    // 客户端连上却一直不发请求头（端口探测、健康检查）：10 秒后别占着不干活。
+    guard = Timer(const Duration(seconds: 10), () => flush(raw: true));
+
+    client.listen((chunk) {
+      if (forwarded) {
+        try {
+          upstream.add(chunk);
+        } catch (_) {}
+        return;
+      }
+      buf.addAll(chunk);
+      if (_headEnd(buf) > 0) {
+        flush(raw: false);
+      } else if (buf.length > _maxHeadBytes) {
+        flush(raw: true);
+      }
+    }, onDone: closeBoth, onError: (Object e) => closeBoth(), cancelOnError: true);
+
+    upstream.listen(client.add,
+        onDone: closeBoth, onError: (Object e) => closeBoth(), cancelOnError: true);
+  }
+
+  static const int _maxHeadBytes = 16384;
+
+  /// 找到 `\r\n\r\n` 之后的下一个字节位置（没有就 -1）。
+  static int _headEnd(List<int> b) {
+    for (var i = 3; i < b.length; i++) {
+      if (b[i - 3] == 13 && b[i - 2] == 10 && b[i - 1] == 13 && b[i] == 10) {
+        return i + 1;
+      }
+    }
+    return -1;
+  }
+
+  /// 改写第一个请求头：请求行里的 token、Host / Origin / Referer。
+  /// 纯函数，便于单测。
+  static String _rewriteHead(String head, ForwardRewrite rw) {
+    final lines = head.split('\r\n');
+    if (lines.isEmpty) return head;
+
+    final parts = lines[0].split(' ');
+    if (parts.length >= 2) {
+      final uri = parts[1];
+      final q = uri.indexOf('?');
+      if (q > 0) {
+        final path = uri.substring(0, q);
+        final params = uri.substring(q + 1).split('&');
+        var changed = false;
+        for (var i = 0; i < params.length; i++) {
+          if (!params[i].startsWith('token=')) continue;
+          String v;
+          try {
+            v = Uri.decodeComponent(params[i].substring(6));
+          } catch (_) {
+            v = params[i].substring(6);
+          }
+          // 只换「恰好是我方固定口令」的那一个 —— 别人的 token 原样送，让 DSH 拒。
+          if (rw.fixedToken.isNotEmpty && v == rw.fixedToken) {
+            params[i] = 'token=${Uri.encodeComponent(rw.upstreamToken)}';
+            changed = true;
+          }
+        }
+        if (changed) parts[1] = '$path?${params.join('&')}';
+      }
+      lines[0] = parts.join(' ');
+    }
+
+    var hasConnection = false;
+    for (var i = 1; i < lines.length; i++) {
+      final lower = lines[i].toLowerCase();
+      if (lower.startsWith('host:')) {
+        lines[i] = 'Host: ${rw.upstreamAuthority}';
+      } else if (lower.startsWith('origin:')) {
+        lines[i] = 'Origin: http://${rw.upstreamAuthority}';
+      } else if (lower.startsWith('referer:')) {
+        final u = Uri.tryParse(lines[i].substring(8).trim());
+        if (u != null) {
+          final q = u.hasQuery ? '?${u.query}' : '';
+          lines[i] = 'Referer: http://${rw.upstreamAuthority}${u.path}$q';
+        }
+      } else if (lower.startsWith('connection:')) {
+        // ⚠️ 必须断开长连接（2026-10-30 想清楚才加）：我们只改写**一个连接上的
+        // 第一个请求头**，而 HTTP/1.1 默认 keep-alive —— 浏览器会在同一个连接上
+        // 接着发第二个请求，那一次的 Host 是**外部地址**（没被改写）→ DSH 的
+        // browser-trust fence 直接 403，表现为「首页能开、点两下就白」。
+        // 让服务端每个连接只处理一个请求，既省掉「解析 body 才知道下一个头在哪」
+        // 的复杂状态机，也不影响 SSE / WebSocket（它们本来就是一条长响应）。
+        lines[i] = 'Connection: close';
+        hasConnection = true;
+      }
+    }
+    if (!hasConnection) lines.insert(lines.length - 2, 'Connection: close');
+    return lines.join('\r\n');
   }
 
   /// 上游不通时给浏览器的那一页（HTTP 502）。
@@ -277,4 +451,25 @@ setInterval(tick,3000);
     }
     _open.clear();
   }
+}
+
+/// 对外地址的「翻译规则」：让用户手里的地址**长期有效**。
+///
+/// 见 [PortForwarder._bridgeWithRewrite] 的长注释（为什么 token 必须改写、
+/// 为什么顺带把 Host 改回回环）。纯数据、可测。
+class ForwardRewrite {
+  const ForwardRewrite({
+    required this.fixedToken,
+    required this.upstreamToken,
+    required this.upstreamAuthority,
+  });
+
+  /// 给用户的那把固定口令（App 自己生成，跨重启不变）。
+  final String fixedToken;
+
+  /// DSH 当前进程的 launch token（每次重启都变）。
+  final String upstreamToken;
+
+  /// DSH 自认为的地址，例如 `127.0.0.1:46123`（写进 Host）。
+  final String upstreamAuthority;
 }

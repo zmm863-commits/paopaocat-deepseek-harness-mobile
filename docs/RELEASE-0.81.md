@@ -19,7 +19,10 @@
 所以 0.81 的实际范围 = **原 0.82/0.83 里还没做的 + 0.80 发布时留下的三处缺陷**。
 不重复做已经做完的事，也不为了「填满一个版本号」去改能用的东西。
 
-## 二、六项改动（逐项）
+## 二、八项改动（逐项）
+
+> 前六项是开发期做的；**第 7、8 项是真机反馈打出来的**（见文末「真机第二轮」），
+> 它们把这一版的主题从「有话说」改成了「**地址真的能用**」。
 
 ### 1. 电脑端断线不再是白屏（新）
 
@@ -90,11 +93,72 @@ catch 块**里面**（缩进都是乱的）。后果：设计站起不来时，D
 
 现在补齐到 10 条（口径与 `docs/RELEASE-0.80.md` 一致），日期补 2026-10-29。
 
+## 二点五、真机两轮反馈打出来的两个硬伤（2026-10-30）
+
+### 7. 电脑上打不开手机给的网址（真机截图：`dsh web authentication required`）
+
+用户截图上写着：
+
+```
+http://192.168.0.100:45721/?token=CNmbRCcg…
+→ dsh web authentication required; reopen the URL printed by dsh web.
+```
+
+读了随包运行时里 `dsh-client-connection` 的实现才定下来根因：
+
+```js
+function processLaunchToken(owner) {
+  const created = encodeBase64Url(randomBytes(SECRET_BYTES)); // 每次进程启动都新生成
+  PROCESS_LAUNCH_TOKENS.set(owner, created);
+}
+```
+
+- `launchToken` 是**进程内随机、没有任何注入口子**（内存 Map 里），所以**DSH 每重启一次，token 就换一把**；
+- 认证路径是：`GET /` + `?token=` 且等于当前 launchToken → 303 下发 cookie（`location: "./"`，相对路径）；
+- 而 App 有**三个**地方会重启 DSH：切模型、开关电脑访问（原来是 `--trusted-host` 参数变化）、服务自愈。
+
+**所以「复制出来的地址」注定一次就废。** 光固定端口（0.80 已做）不够，token 也得固定。
+
+修法：App 对外只发**自己的固定口令**（`BridgePrefs.token`，与设计站同一个），
+转发层在**第一个请求头**里把它换成当前 launchToken 再交给 DSH。
+用户手里的地址从此长期有效；别人的 token 原样送上去让 DSH 自己 401（**没有把鉴权打开**）。
+
+### 8. 拨一次开关就重启 DSH，还撞见过起不来
+
+0.80 为了放行 `/api`，带 `--trusted-host <网卡:端口>` **重启** DSH。代价：
+
+- 开关一次 = Bot 页闪一次、正在跑的会话被打断；
+- 真机上（11:01）重启后 profile 直接激活失败，面板红一片：
+  `Bot 服务启动失败（退出码 1）：file-upload connection / ui-deliverables connection,
+  sessionController / bot sessionController, connection` —— 用户点第二次就好了，说明是一次性竞争。
+
+修法：**不再用 `--trusted-host`**。转发层把 `Host` / `Origin` / `Referer` 改写成
+`127.0.0.1:<port>`，DSH 认为自己被本机访问，天然放行。
+
+- 开关电脑访问**完全不碰 DSH 进程**（顺带：关的时候也不再重启）；
+- 面板加了一层兜底：启动失败**自动重试一次**再报错。
+
+### 顺带：地址的第三样也固定了
+
+真机日志里同一台手机两次开开关，注入的地址一次 `192.168.199.2`、一次 `192.168.1.60`
+（热点网卡 vs Wi-Fi，`LanEndpoints.list()` 的默认顺序不保证）。所以 `BridgePrefs`
+新增 `dshHost`，**端口 + 网卡 + 口令三样一起记**，下次优先回到上次那张网卡。
+
+### 一个只有实现时才会想到的坑：必须断开长连接
+
+HTTP/1.1 默认 keep-alive，我们只改写**一个连接上的第一个请求头** —— 浏览器会在同一连接上
+接着发第二个请求，那一次的 `Host` 是**外部地址**（没被改写）→ DSH 的 browser-trust fence
+直接 403，症状是「首页能开、点两下就白」。
+
+所以改写时**强制 `Connection: close`**：服务端每个连接只处理一个请求。代价是页面资源
+一个连接一个（局域网无所谓），换来的是不用写「解析 body 才知道下一个头在哪」的状态机。
+SSE 与 WebSocket 不受影响（它们本来就是一条长响应）。
+
 ## 三、核实后**不改**的两件事（结论要留痕）
 
 | 项 | 上轮留下的疑问 | 核实结果 |
 |---|---|---|
-| README「已知限制」里的浅色主题描述 | 说是写着「浅色仍置灰 / 深色唯一」 | **README 里根本没有这两行**。那是 `docs/HANDOFF.md`（0.14 时代）的旧口径。现状：浅色主题**真实可用**（`app_settings.dart` → `ThemeMode.light`、`dsh_palette.dart` 有完整浅色配色、设置页三个主题按钮），README 第 41 行写的「深/浅双主题一键切换」是准确的 → **不改** |
+| README「已知限制」里的浅色主题描述 | 说是写着「浅色仍置灰 / 深色唯一」 | ⚠️ **我第一次核对漏了，结论已订正**：本地 `README.md` 停在 0.73（没这两行），但**线上 0.80 的 README 里确实有**这两行，而且**是错的** —— 浅色主题真实可用（`app_settings.dart` → `ThemeMode.light`、`dsh_palette.dart` 有完整浅色配色、设置页三个主题按钮）。0.81 已删除这两行，换成 4 条真实限制。<br>**教训**：本地与线上不同步时，「我在本地没搜到」不等于「线上没有」。 |
 | `local/studio_server.dart` 死代码 | PLAN 里列为待删 | **文件已经不存在**，全仓 `grep studio_server` 零引用 → 无需处理 |
 | `agnes_web.dart` 与 `bot_server.dart` 的 `_unpackTo` 重复 | PLAN 里说可抽公共工具 | 两处解包的目标根目录、清理策略、失败语义都不同（一个是设计站静态产物，一个是运行时本体），**抽出来反而要把差异做成参数** → 收益为负，**不做** |
 
@@ -132,15 +196,15 @@ catch 块**里面**（缩进都是乱的）。后果：设计站起不来时，D
 | 项 | 值 |
 |---|---|
 | 文件 | `paopaocat-preview-0.81-20261030-full-arm64-v8a.apk`（**完整包**，`DSH_ANDROID_INCLUDE_RUNTIME=1`） |
-| 字节 | **118,493,095**（113.0 MiB） |
+| 字节 | **118,499,607**（113.0 MiB） |
 | versionCode / versionName | **249 / 0.0.81** |
-| sha256 | `01cb838667e4f52bd53f69ab5b99dc1e6e64b66eabd63b46cbcc1e0bc72fb55c` |
+| sha256 | `5a9584d0b4bb136d08a842d93cd2f2f6f43387a755ba89fd3b83ae8ddef56fb1` |
 | 签名 | `7aaf4448…d3cc17`（与 0.70 起同一把 → 老用户可直接覆盖安装） |
 | ABI | **只有 `lib/arm64-v8a/`** |
 | 包内运行时 | `assets/dsh-runtime.zip` 32.9 MB ✓ |
 | 二维码代码 | `libapp.so` 里 `qr_flutter` 命中 5 处、`QrImageView/QrPainter` 命中 5 处 ✓ |
 | `install/check-release.py` | **七项全 PASS**（版本同一 / 28 个脚本字符串在 libapp.so / 218 个资产逐名+ sha256 一致 / runtime.zip 在 / 无 llama / 10 个 ffmpeg 库齐 / AArch64 ELF） |
-| 增量补丁 | `0.80 → 0.81`：**8,610,898 字节（整包 7.3%）**，sha256 `a43f0ba1…89a2df`；`update.json` 的 `patches[]` 已写入 |
+| 增量补丁 | `0.80 → 0.81`：**8,617,700 字节（整包 7.3%）**，sha256 `72edaf2d…f3add0`；`update.json` 的 `patches[]` 已写入 |
 | `update.json` | 0.81 / 249 / 6 条 notes / 1 个补丁（本地这份**已从 0.78 同步到线上 0.80 再改**，修掉「基线落后两个版本」的隐患） |
 | `notice.json` | 4 条公告换成 0.81 |
 | `README.md` | 包名/体积/哈希/版本行改 0.81；**删掉两条错误的主题限制**；技能数 12 → 23；补 4 条真实限制 |

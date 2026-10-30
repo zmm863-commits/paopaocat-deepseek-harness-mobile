@@ -24,7 +24,7 @@ import '../data/atomic_file.dart';
 /// ⚠️ 口令存在 App 私有目录，随应用卸载消失；「重置口令」会换一把新的，
 /// 旧链接立刻失效（这正是想要的行为）。
 class BridgePrefs {
-  BridgePrefs._(this._file, this.token, this.dshPort, this.agnesPort);
+  BridgePrefs._(this._file, this.token, this.dshPort, this.agnesPort, this.dshHost);
 
   final File _file;
 
@@ -35,6 +35,14 @@ class BridgePrefs {
   int dshPort;
   int agnesPort;
 
+  /// 上次选中的网卡地址（空串 = 还没选过）。
+  ///
+  /// 为什么连 IP 也要记（2026-10-30 真机日志）：端口固定之后**地址还是会变** ——
+  /// 同一台手机连着两次开开关，注入的地址一次是 `192.168.199.2`、一次是
+  /// `192.168.1.60`（热点网卡 vs Wi-Fi 网卡，`LanEndpoints.list()` 的默认顺序
+  /// 不保证）。用户收藏的链接照样失效。所以「固定地址」必须**端口 + 网卡一起记**。
+  String dshHost;
+
   static const String _name = 'bridge.json';
 
   static Future<BridgePrefs> load(String filesDir) async {
@@ -42,6 +50,7 @@ class BridgePrefs {
     var token = '';
     var dsh = 0;
     var agnes = 0;
+    var host = '';
     try {
       if (f.existsSync()) {
         final raw = jsonDecode(f.readAsStringSync());
@@ -49,12 +58,13 @@ class BridgePrefs {
           token = (raw['token'] as String? ?? '').trim();
           dsh = (raw['dshPort'] as num?)?.toInt() ?? 0;
           agnes = (raw['agnesPort'] as num?)?.toInt() ?? 0;
+          host = (raw['dshHost'] as String? ?? '').trim();
         }
       }
     } catch (e) {
       debugPrint('[bridge] 读偏好失败（将重新生成）：$e');
     }
-    final p = BridgePrefs._(f, token, dsh, agnes);
+    final p = BridgePrefs._(f, token, dsh, agnes, host);
     if (p.token.isEmpty) {
       p.token = _randomToken();
       await p.save();
@@ -70,6 +80,7 @@ class BridgePrefs {
               'token': token,
               'dshPort': dshPort,
               'agnesPort': agnesPort,
+              'dshHost': dshHost,
             })}\n',
       );
     } catch (e) {
