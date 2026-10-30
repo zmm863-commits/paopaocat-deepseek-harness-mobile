@@ -49,3 +49,11 @@ release-assets-backup/
 # 鸿蒙工程的本机 SDK 路径（等价于 Android 的 local.properties）
 ohos/local.properties
 app/ohos/local.properties
+
+# 鸿蒙线的大体积二进制与产物（与 Android 的 jniLibs 同理：不进版本库）
+app/ohos/entry/libs/
+ohos-node/lib/
+app/ohos/entry/src/main/resources/rawfile/
+# 鸿蒙 HAP 成品与调试交接包
+release/harmony/
+dist/handoff/

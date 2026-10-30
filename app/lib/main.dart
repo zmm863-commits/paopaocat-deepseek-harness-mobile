@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -243,6 +244,20 @@ class _LocalShellState extends State<LocalShell> {
   DshRuntime? _runtime;
   bool _ready = false;
 
+  /// 当前是否跑在鸿蒙（flutter_ohos）上。
+  ///
+  /// 2026-10-28 真机实测：flutter_ohos 的 Platform.operatingSystem 返回 'ohos'，
+  /// isAndroid 等 getter 全 false。直接正判 operatingSystem：
+  /// Android 上返回 'android'，恒 false，行为完全不变。
+  bool get _onOhos {
+    if (kIsWeb) return false;
+    try {
+      return Platform.operatingSystem == 'ohos';
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 启动画面上的补充说明（运行环境换新时用；不是错误、也不是让人点按钮的页面）。
   String _bootNote = '';
   bool _loading = true;
@@ -327,8 +342,34 @@ class _LocalShellState extends State<LocalShell> {
       //    不看「是不是最新」。运行环境有内容版本，一升版本那个标记就变 —— 拿它当门禁，
       //    升级的人会被拦进准备页，看着像被重装（用户原话：「装精简包不是应该直接进页面吗」）。
       //    换新改在启动画面里静默做（见下面的 _refreshRuntimeQuietly）。
-      final ready = await DshHost.hasRuntime();
-      final rtCurrent = await DshHost.runtimeCurrent();
+      var ready = await DshHost.hasRuntime();
+      var rtCurrent = await DshHost.runtimeCurrent();
+
+      // ── 鸿蒙补偿（省略欢迎页后必须自己 bootstrap）────────────────────
+      // SetupPage（欢迎页）在正常流程里**同时是自动 bootstrap 的触发点**
+      // （用户点「开始准备」→ copyRuntimeAsset + unpackRuntime）。鸿蒙版按
+      // 要求省掉欢迎页，bootstrap 就没人跑了 —— 症状：files/dsh 整个不存在
+      // → Bot 报「没有 Bot 种子」、node 没脚本可跑。这里补上等价流程。
+      if (!ready && _onOhos) {
+        try {
+          debugPrint('[dsh-boot:ohos] 运行环境随包准备中（欢迎页已省略，自动补跑）');
+          final r = await ensureRuntimeZip(
+            filesDir: paths['filesDir'] as String? ?? '',
+            onProgress: (pg) {},
+          );
+          if (r.ok) {
+            await DshHost.unpackRuntime();
+          } else {
+            debugPrint('[dsh-boot:ohos] 取随包运行环境失败: ${r.errorZh ?? ''}');
+          }
+          ready = await DshHost.hasRuntime();
+          rtCurrent = await DshHost.runtimeCurrent();
+          debugPrint('[dsh-boot:ohos] 解压完成 ready=$ready current=$rtCurrent');
+        } catch (e, st) {
+          debugPrint('[dsh-boot:ohos] 自动 bootstrap 失败: $e');
+          debugPrint('[dsh-boot:ohos] 堆栈:\n${st.toString().split('\n').take(8).join('\n')}');
+        }
+      }
 
       // 先载入模型清单。真实来源是设置页写的 `<filesDir>/models.json`
       // （见 data/configured_models.dart）：没配过就是空的，
@@ -679,7 +720,7 @@ class _LocalShellState extends State<LocalShell> {
     }
 
     final rt = _runtime!;
-    if (!_ready) {
+    if (!_ready && !_onOhos) {
       return SetupPage(
         runtime: rt,
         onReady: () => setState(() => _ready = true),

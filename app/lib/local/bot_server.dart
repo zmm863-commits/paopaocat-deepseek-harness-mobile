@@ -42,7 +42,9 @@ class BotServer {
     this.listenHost,
   });
 
-  final Process process;
+  /// node 子进程句柄。**鸿蒙上为 null** —— 那边 node 跑在宿主进程内
+  /// （dlopen libnode.so + node::Start），没有独立进程可管理。
+  final Process? process;
 
   /// 带 token 的地址：`http://127.0.0.1:<port>/?token=…`。WebView 打开它。
   ///
@@ -111,9 +113,24 @@ class BotServer {
   /// 挑完就记住，重启复用；万一被占用（极少数），重启时再挑一次。
   static int _pinnedPort = 0;
 
+  /// 是否跑在鸿蒙（flutter_ohos）上。
+  ///
+  /// 2026-10-28 真机实测：flutter_ohos 的 Platform.operatingSystem 返回 'ohos'。
+  /// 用它做**正判**（Android 返回 'android'，恒 false，行为完全不变）。
+  static bool _hostedOnOhos() {
+    try {
+      return Platform.operatingSystem == 'ohos';
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 挑一个当前空闲的端口（bind 一下再释放）。失败就退回 0（让系统挑）。
   static Future<int> _pickPort() async {
     if (_pinnedPort != 0) return _pinnedPort;
+    // ⚠️ 鸿蒙：`ServerSocket.bind` 在 flutter_ohos 上**会永久挂起**（不返回也不抛），
+    //    实测卡死在这里 → 整个 Bot 启动流程走不下去。直接退回 0，让 node 自己挑。
+    if (_hostedOnOhos()) return 0;
     for (var i = 0; i < 5; i++) {
       try {
         final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
@@ -216,6 +233,76 @@ class BotServer {
       DiagnosticsLog.add('dsh-bot', '写完全权限 patch 失败（Bot 可能每个调用都要批准）：$e');
       return null;
     }
+  }
+
+  /// 鸿蒙：写 CLI 入口 wrapper 到 `<runtime>/lib/dsh-cli-wrapper.mjs`。
+  ///
+  /// 为什么必须有（2026-10-29 真机+qemu 双重实证）：
+  ///   嵌入 node（dlopen libnode.so + node::Start）时，`import.meta.main` 恒为
+  ///   undefined（process.argv 被 musl loader 污染），bin.js 末尾的
+  ///   `if (import.meta.main) await runCli()` 永不执行 → DSH 静默退出 rc=0。
+  ///   绕法：wrapper 显式 `import { runCli } from './bin.js'; await runCli()`。
+  static Future<String> ensureOhosCliWrapper(DshRuntime runtime) async {
+    final wrapper = File('${runtime.runtimeRoot}/lib/dsh-cli-wrapper.mjs');
+    const body = "// 鸿蒙嵌入 node 专用入口：import.meta.main 在嵌入场景恒 undefined。\n"
+        "import { runCli } from './bin.js';\n"
+        "await runCli();\n";
+    if (!wrapper.existsSync() || wrapper.readAsStringSync() != body) {
+      wrapper.writeAsStringSync(body);
+      DiagnosticsLog.add('dsh-bot', '已写鸿蒙 CLI wrapper：${wrapper.path}');
+    }
+    return wrapper.path;
+  }
+
+  /// 鸿蒙 `--jitless` 运行时补丁（最关键的一块）。
+  ///
+  /// 背景链（真机 probeMemory 实测）：
+  ///   1. 鸿蒙 W^X 策略拒绝 PROT_EXEC（mmap/mprotect 都返回 EINVAL）⇒ 必须 --jitless
+  ///   2. --jitless 连带禁用 WebAssembly，而 node 内置 undici 的 llhttp 是 WASM
+  ///   3. 两处触发点：
+  ///      A. ESM 加载 node:http 时 syncExports 遍历导出 → 命中 WebSocket getter
+  ///         → lazyUndici() → 加载内置 undici → 崩
+  ///      B. globalThis.fetch 本身就是内置 undici 的 lazy getter，读它就加载
+  ///   ⇒ 本 shim 在 CJS 阶段拆 A 的 getter、把 B 换成 node-fetch（纯 JS 走
+  ///     node:http，零 undici 依赖；runtime 自带 3.3.2）。
+  ///
+  /// ⚠️ 覆盖 fetch 必须「直接赋值」，**不能用 Object.defineProperty** ——
+  ///    后者会触发 realm 的 syncExports，反而把 fetch getter 求值掉（实测踩过）。
+  static Future<String> ensureOhosJitlessShim(DshRuntime runtime) async {
+    final shim = File('${runtime.runtimeRoot}/lib/jitless-shim.cjs');
+    const body = "// 鸿蒙 --jitless 运行时补丁（--require 加载，必须最先）\n"
+        "'use strict';\n"
+        "const path = require('node:path');\n"
+        "// A. 拆掉会拉 undici 的 lazy getter（保留 globalAgent/maxHeaderSize 等功能）\n"
+        "const UNDICI_EXPORTS = ['WebSocket', 'CloseEvent', 'MessageEvent'];\n"
+        "for (const name of ['node:http', 'node:https']) {\n"
+        "  try {\n"
+        "    const m = require(name);\n"
+        "    for (const key of UNDICI_EXPORTS) {\n"
+        "      const d = Object.getOwnPropertyDescriptor(m, key);\n"
+        "      if (d && typeof d.get === 'function') {\n"
+        "        Object.defineProperty(m, key, { value: undefined, writable: true, configurable: true });\n"
+        "      }\n"
+        "    }\n"
+        "  } catch (e) { /* 模块不存在就跳过 */ }\n"
+        "}\n"
+        "// B. 用 node-fetch 接管 fetch（v3 是 ESM；node 22.12+/24 支持 CJS require(ESM)）\n"
+        "try {\n"
+        "  const nfPath = path.join(__dirname, '..', 'node_modules', 'node-fetch', 'src', 'index.js');\n"
+        "  const nf = require(nfPath);\n"
+        "  globalThis.fetch = nf.default ?? nf;\n"
+        "  if (nf.Headers) globalThis.Headers = nf.Headers;\n"
+        "  if (nf.Request) globalThis.Request = nf.Request;\n"
+        "  if (nf.Response) globalThis.Response = nf.Response;\n"
+        "  process.stderr.write('[jitless-shim] node-fetch 已接管 fetch，undici 不会被加载\\n');\n"
+        "} catch (e) {\n"
+        "  process.stderr.write('[jitless-shim] node-fetch 接管失败: ' + (e && e.message) + '\\n');\n"
+        "}\n";
+    if (!shim.existsSync() || shim.readAsStringSync() != body) {
+      shim.writeAsStringSync(body);
+      DiagnosticsLog.add('dsh-bot', '已写鸿蒙 jitless 补丁：${shim.path}');
+    }
+    return shim.path;
   }
 
   static Future<void> ensureProfile(DshRuntime runtime) async {
@@ -487,6 +574,15 @@ class BotServer {
     // 完全权限单独一份 patch、**永远传**（即使 overlay 因为任何原因仍不存在）。
     final fullAccessPatch = await _ensureFullAccessPatch(runtime);
 
+    // 鸿蒙：CLI 入口换成 wrapper（import.meta.main 坑），并准备好 --jitless 补丁。
+    // 详见 [ensureOhosCliWrapper] / [ensureOhosJitlessShim] 的说明。
+    var cliEntry = runtime.dshBin;
+    String? jitlessShim;
+    if (_hostedOnOhos()) {
+      cliEntry = await ensureOhosCliWrapper(runtime);
+      jitlessShim = await ensureOhosJitlessShim(runtime);
+    }
+
     // 这次要绑哪个地址（null = 只绑回环）。读静态值而不是参数：降级重试时会把
     // `_listenHost` 清空，proc 起来之前这里必须拿到的是**最终**决定。
     final host = _listenHost;
@@ -494,11 +590,18 @@ class BotServer {
     final args = <String>[
       // ⚠️ 必须在最前：见类注释「硬约束 1」。
       '--expose-internals',
+      // ── 鸿蒙关键 flag（2026-10-29 真机+qemu 实证）─────────────────────
+      // 鸿蒙 W^X 策略拒绝 PROT_EXEC（native 探针实测 mmap/mprotect 都返回 EINVAL）
+      // ⇒ 必须 --jitless。它连带禁用 WebAssembly，所以还要配上面的 jitlessShim
+      // 把 undici 的 WASM llhttp 彻底绕开。
+      if (_hostedOnOhos()) '--jitless',
+      // ⚠️ jitlessShim 必须排在 fsShim 之前：它要最早把 node:http 的 getter 拆掉。
+      if (jitlessShim != null) ...['--require', jitlessShim],
       '--require', runtime.fsShim,
       // 执行环境 shim：Android 上没有 bash，而 DSH 的 bash 工具写死了 spawn('bash')。
       // Bot 要能干活（跑命令、写文件）就靠它。
       '--require', runtime.execShimPath,
-      runtime.dshBin,
+      cliEntry,
       '--profile', profileName,
       // ⚠️ **--patch 必须留在 --no-open 之前**（0.77 测试包在真机上就栽在这里）：
       //    dsh 的 launcher 只认自己的参数，**一旦出现它不认识的 token，后面全部
@@ -601,64 +704,145 @@ class BotServer {
       if (!dir.existsSync()) dir.createSync(recursive: true);
     }
 
-    final process = await Process.start(
-      runtime.nodeBinary,
-      args,
-      environment: env,
-      includeParentEnvironment: true,
-      // ⚠️ 工作目录必须和 App 主界面**同一个**（2026-10-27 定位到的根因）：
-      //    DSH 的会话是**按 cwd 分组**存在 `<DSH_HOME>/sessions/--<路径转义>--/` 下的。
-      //    以前这里写死 nodeHome，于是 bottest 读写的是
-      //    `sessions/--<dshhome>--`，而 App 对话写在 `sessions/--<workspace>--`
-      //    —— 两套目录互不相干，所以浏览器里永远是「暂无会话」。
-      workingDirectory: _sessionWorkingDir(runtime),
-    );
-
     final urlCompleter = Completer<Uri>();
     final outTail = <String>[];
     final errTail = <String>[];
     var exited = false;
+    Process? process;
 
-    process.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-      if (line.trim().isEmpty) return;
-      outTail.add(line);
-      if (outTail.length > 40) outTail.removeAt(0);
-      onLog?.call(line);
-      // 就绪行：`dsh web: http://127.0.0.1:1234/?token=…`
-      final m = RegExp(r'https?://\S+').firstMatch(line);
-      if (m != null && !urlCompleter.isCompleted) {
-        final raw = m.group(0)!.replaceAll(RegExp(r'[.,;)]+$'), '');
-        urlCompleter.complete(Uri.parse(raw));
+    if (_hostedOnOhos()) {
+      // ── 鸿蒙：**在宿主进程内**启动 node（见 DshHost.startNodeArgs 的说明）──
+      // 没有子进程，所以没有 stdout stream / exitCode / kill —— 靠轮询落盘文件。
+      final urlLog = File('${runtime.filesDir}/dsh-web-url.log');
+      if (urlLog.existsSync()) {
+        try {
+          urlLog.deleteSync();
+        } catch (_) {}
       }
-    }, onError: (Object e) => debugPrint('[dsh-bot] stdout 错误：$e'));
+      final started = await DshHost.startNodeArgs(
+        args: args,
+        env: env,
+        stdoutPath: urlLog.path,
+        tracePath: '${runtime.filesDir}/dsh-node-trace.log',
+      );
+      if (started['ok'] != true) {
+        throw StateError(
+            '宿主进程内启动 node 失败：${started['error'] ?? '未知原因'}');
+      }
+      DiagnosticsLog.add('dsh-bot',
+          'node 已在宿主进程内启动（argc=${started['argc']}），轮询落盘日志抓就绪行');
+      // 轮询：jitless 是解释器模式，冷启比 Android 慢不少，给足 150 秒。
+      unawaited(() async {
+        final deadline = DateTime.now().add(const Duration(seconds: 150));
+        var lastLen = 0;
+        while (DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+          if (!urlLog.existsSync()) continue;
+          String txt;
+          try {
+            txt = urlLog.readAsStringSync();
+          } catch (_) {
+            continue;
+          }
+          if (txt.length == lastLen) continue;
+          lastLen = txt.length;
+          for (final line in txt.split('\n')) {
+            final t = line.trim();
+            if (t.isEmpty) continue;
+            if (t.startsWith('[INFO:flutter') || t.startsWith('[INFO:')) continue;
+            if (t.length > 400) continue;
+            if (!outTail.contains(t)) {
+              outTail.add(t);
+              if (outTail.length > 40) outTail.removeAt(0);
+              onLog?.call(t);
+              DiagnosticsLog.add('dsh-bot:node', t);
+            }
+          }
+          final m = RegExp(r'https?://\S+').firstMatch(txt);
+          if (m != null && !urlCompleter.isCompleted) {
+            final rawUrl = m.group(0)!.replaceAll(RegExp(r'[.,;)]+$'), '');
+            urlCompleter.complete(Uri.parse(rawUrl));
+            return;
+          }
+          // 崩溃现场：trace 里有 CRASH 就提前报错，别干等 150 秒
+          final trace = File('${runtime.filesDir}/dsh-node-trace.log');
+          if (trace.existsSync()) {
+            try {
+              final tt = trace.readAsStringSync();
+              if (tt.contains('CRASH signal=')) {
+                final line = tt
+                    .split('\n')
+                    .lastWhere((l) => l.contains('CRASH'), orElse: () => '');
+                if (!urlCompleter.isCompleted) {
+                  urlCompleter.completeError(StateError('node 崩溃：$line'));
+                }
+                return;
+              }
+            } catch (_) {}
+          }
+        }
+        if (!urlCompleter.isCompleted) {
+          urlCompleter.completeError(StateError(
+              'node 150 秒内没有报告就绪地址：${_tail(errTail, outTail)}'));
+        }
+      }());
+    } else {
+      // ── Android / 桌面：仍是子进程 ──
+      process = await Process.start(
+        runtime.nodeBinary,
+        args,
+        environment: env,
+        includeParentEnvironment: true,
+        // ⚠️ 工作目录必须和 App 主界面**同一个**（2026-10-27 定位到的根因）：
+        //    DSH 的会话是**按 cwd 分组**存在 `<DSH_HOME>/sessions/--<路径转义>--/` 下的。
+        //    以前这里写死 nodeHome，于是 bottest 读写的是
+        //    `sessions/--<dshhome>--`，而 App 对话写在 `sessions/--<workspace>--`
+        //    —— 两套目录互不相干，所以浏览器里永远是「暂无会话」。
+        workingDirectory: _sessionWorkingDir(runtime),
+      );
 
-    process.stderr
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-      if (line.trim().isEmpty) return;
-      errTail.add(line);
-      if (errTail.length > 40) errTail.removeAt(0);
-      onLog?.call(line);
-      DiagnosticsLog.add('dsh-bot:err', line);
-    }, onError: (Object e) => debugPrint('[dsh-bot] stderr 错误：$e'));
+      final proc = process;
+      proc.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        if (line.trim().isEmpty) return;
+        outTail.add(line);
+        if (outTail.length > 40) outTail.removeAt(0);
+        onLog?.call(line);
+        // 就绪行：`dsh web: http://127.0.0.1:1234/?token=…`
+        final m = RegExp(r'https?://\S+').firstMatch(line);
+        if (m != null && !urlCompleter.isCompleted) {
+          final raw = m.group(0)!.replaceAll(RegExp(r'[.,;)]+$'), '');
+          urlCompleter.complete(Uri.parse(raw));
+        }
+      }, onError: (Object e) => debugPrint('[dsh-bot] stdout 错误：$e'));
 
-    unawaited(process.exitCode.then((code) {
-      exited = true;
-      if (_current?.process == process) {
-        _current!._exited = true;
-        _current = null;
-        live.value = null;
-      }
-      if (!urlCompleter.isCompleted) {
-        urlCompleter.completeError(StateError(
-            'Bot 服务启动失败（退出码 $code）：${_tail(errTail, outTail)}'));
-      }
-      DiagnosticsLog.add('dsh-bot', 'web 服务退出，码=$code');
-    }));
+      proc.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        if (line.trim().isEmpty) return;
+        errTail.add(line);
+        if (errTail.length > 40) errTail.removeAt(0);
+        onLog?.call(line);
+        DiagnosticsLog.add('dsh-bot:err', line);
+      }, onError: (Object e) => debugPrint('[dsh-bot] stderr 错误：$e'));
+
+      unawaited(proc.exitCode.then((code) {
+        exited = true;
+        if (_current?.process == proc) {
+          _current!._exited = true;
+          _current = null;
+          live.value = null;
+        }
+        if (!urlCompleter.isCompleted) {
+          urlCompleter.completeError(StateError(
+              'Bot 服务启动失败（退出码 $code）：${_tail(errTail, outTail)}'));
+        }
+        DiagnosticsLog.add('dsh-bot', 'web 服务退出，码=$code');
+      }));
+    }
 
     // 首次启动要把 dsh 的插件树拉起来，冷启实测 10~25 秒；给足 90 秒，
     // 超时如实把两个流最后几行抛出去（用户才知道卡在哪）。
@@ -679,7 +863,7 @@ class BotServer {
       final msg = '$e';
       if (host != null && msg.contains('unknown option')) {
         try {
-          process.kill(ProcessSignal.sigkill);
+          process?.kill(ProcessSignal.sigkill);
         } catch (_) {}
         _listenHost = null;
         DiagnosticsLog.add('dsh-bot',
@@ -862,12 +1046,20 @@ class BotServer {
       live.value = null;
     }
     _exited = true;
+    final proc = process;
+    if (proc == null) {
+      // 鸿蒙：node 在宿主进程内，**没法单独结束**（node::Start 每进程只能调一次，
+      // 强行终止会带走整个 App）。这里只标记退出，真正重启只能靠重开 App。
+      DiagnosticsLog.add('dsh-bot',
+          '鸿蒙：node 在宿主进程内无法单独停止（已标记退出，重启需重开 App）');
+      return;
+    }
     try {
-      process.kill(ProcessSignal.sigterm);
-      await process.exitCode.timeout(const Duration(seconds: 5));
+      proc.kill(ProcessSignal.sigterm);
+      await proc.exitCode.timeout(const Duration(seconds: 5));
     } catch (_) {
       try {
-        process.kill(ProcessSignal.sigkill);
+        proc.kill(ProcessSignal.sigkill);
       } catch (_) {}
     }
   }

@@ -1,0 +1,182 @@
+name: dsh_mobile
+description: "DSH Mobile —— 远程使用电脑上的 DSH Agent（会话、流式消息、工具卡片、命令审批）"
+publish_to: 'none'
+version: 0.0.79+225
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  # 本机离线配音（2026-10-13，B 方案）：sherpa-onnx（Apache-2.0）的官方 Flutter 包。
+  # 它会带进来**按 ABI 拆分**的原生库包（sherpa_onnx_android_arm64 等），
+  # 我们只出 arm64-v8a（见 android/gradle.properties 的 dshAbi），
+  # 其它 ABI 的 .so 会被 abiFilters 挡在 APK 外面。
+  # 验证记录（体积/实时率/模型选择）见 docs/本机离线配音-验证.md。
+  sherpa_onnx: ^1.13.8
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.0
+  web_socket_channel: ^3.0.0
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.0
+  crypto: ^3.0.0
+  # HTML 产物预览用：App 内 WebView 真正渲染网页。
+  # 为什么加它：用户反馈「生成的是 HTML，打开看到的却是源码」—— 之前 .html 走的是
+  # 文本预览那条路。加了它才能在 App 内渲染；系统浏览器是保底路径
+  # （见 lib/ui/pages/library_page.dart 的 _buildHtmlPreview）。
+  webview_flutter: ^4.14.1
+
+  # 2026-10-19：Bot 页是 WebView，网页里的「添加文件」需要一个宿主侧的文件选择器；
+  # WebView 的 onShowFileChooser 只是**请求**，真正弹出选择器并回传路径要靠它。
+  file_picker: ^8.0.0
+  # WebView 的 Android 平台实现：文件选择器（setOnShowFileSelector）在这个包里。
+  webview_flutter_android: ^4.0.0
+
+  # 鸿蒙 WebView 实现（webview_flutter 的 OpenHarmony 联邦实现，pub.dev 官方适配包）。
+  # 没有它 Bot 页会报 platform_webview_controller 未实现。
+  webview_flutter_ohos: ^3.15.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # 专家库快照：由 `install/build-expert-catalog.mjs` 从本机已安装的 DSH 插件
+  # `@michengai/dsh-agency-agents` 的真实资产目录解析而来（321 名专家 / 22 个分区）。
+  # 重新生成：node install/build-expert-catalog.mjs
+  assets:
+    - assets/experts/agency_catalog.json
+    # 品牌 logo：由 install/make-icon.py 从 design/launcher-icon-source.png 生成，
+    # **与桌面启动器图标同源**（同一张图 + 圆角）。用户 2026-10-03 要求把原来的
+    # 白猫素材全部换成这张图，所以旧资源 paopaocat_mascot.png 已删除。
+    - assets/images/
+    # 随包工具箱：App 启动时由 `local/android_toolbox.dart` 复制到私有目录，
+    # 再由 node 调用。**源码就在这里**（不是内嵌成 Dart 字符串），
+    # 好处是能在电脑上用 node 直接跑、先验证过再发版。
+    #   android-exec-shim.cjs → 让模型真的能跑 `bash -c ...` / `node xxx.mjs`
+    #   make-pptx.mjs         → 用纯 node 写出**真的** .pptx（用户第 3 条反馈）
+    #   rotate-proxy.mjs      → 本地模型轮换代理（用户第 6 条反馈）
+    #   make-image.mjs / make-video.mjs → 内置 Agnes 免费生图 / 生视频（第 7 条）
+    - assets/toolbox/
+    # 本机离线配音要用的解包器（`untar-bz2.mjs`）依赖一份 vendor 的 bz2 解码库。
+    # ⚠️ 与技能那边**同一条铁律**：Flutter 的 assets **不进子目录**，
+    #    所以这两个目录必须逐个列 —— 少一行，手机上 `require` 就会失败，
+    #    而 APK 里看不出来（本地测试也会过，因为测试读的是磁盘）。
+    #    由 test/toolbox_assets_test.dart 守着（磁盘上有的必须都在包里）。
+    - assets/toolbox/vendor/seek-bzip/
+    - assets/toolbox/vendor/seek-bzip/lib/
+    # 「APP界面设计台」（创作台里的入口）：泡泡猫设计工作站（基于 m3e-canvas，MIT）的
+    # **静态产物**（Next.js `output: export`）。字体也在这里（`fonts/`）。
+    # ⚠️ Flutter 的 assets **不递归**：子目录必须逐个列，少一行手机上就白屏/图标消失。
+    #    清单由脚本枚举生成，`test/studio_assets_test.dart` 守着两边一致。
+    # 重新生成：cd /root/软件/m3e-canvas && npx next build && cp -r out/. <这里>
+    - assets/studio/
+    - assets/studio/404/
+    - assets/studio/_next/static/chunks/
+    - assets/studio/_next/static/media/
+    - assets/studio/_next/static/rexaG2S0zLQn--z9fjBst/
+    - assets/studio/_not-found/
+    - assets/studio/fonts/
+    - assets/studio/fonts/material-symbols/
+    - assets/studio/fonts/roboto/
+    - assets/studio/fonts/roboto-flex/
+    - assets/studio/fonts/roboto-serif/
+    - assets/studio/icons/
+    - assets/studio/logos/
+    # 随包内置技能：App 启动时由 `data/builtin_skills.dart` 装到
+    # `<DSH_HOME>/skills/<name>/SKILL.md`（DSH 的用户级技能根）。
+    # 首页 12 条「内置会话」各自绑定这里的一个技能 —— 技能不在设备上，
+    # 模型手边就没有「做幻灯片 / 数据分析」这类流程可用（用户第 8 条反馈）。
+    #
+    # ⚠️ **必须逐个目录列**（实测结论，别合并成 `- assets/skills/`）：
+    # 只写父目录时，Flutter 打包**不会进子目录**，APK 里一条技能都没有 ——
+    # 设备日志会是 `Unable to load asset: "assets/skills/<name>/SKILL.md"`，
+    # 于是 12 个技能全部安装失败（我第一版就是这么翻车的，
+    # 见 docs/logs 与 RELEASE-0.09 的"真机发现"）。
+    - assets/skills/phone-agent/
+    - assets/skills/make-slides/
+    - assets/skills/make-image/
+    - assets/skills/make-video/
+    - assets/skills/data-analysis/
+    - assets/skills/doc-processing/
+    - assets/skills/doc-digest/
+    - assets/skills/sheet-cleanup/
+    - assets/skills/code-tool/
+    - assets/skills/file-organize/
+    - assets/skills/translate-polish/
+    - assets/skills/study-cards/
+    - assets/skills/weekly-report/
+    # 2026-10-12：搬来 Anthropic 官方开源技能库（github.com/anthropics/skills，Apache-2.0）
+    # 里两个**与本机环境兼容**的技能（中文改写版）。为什么只搬这两个：
+    # 那个仓库里的 docx/pptx/xlsx/pdf 要 python3（本机没有），
+    # brand-guidelines / academy-guide / claude-api 是 Anthropic 自家品牌与
+    # Claude 产品的内容（对我们的用户没有意义），见 docs/需求台账.md 那一条。
+    # ⚠️ **逐个目录列**（含上面的 LICENSE.txt：Apache-2.0 要求随分发给一份许可副本）。
+    - assets/skills/frontend-design/
+    - assets/skills/discernment-nudge/
+    # 2026-10-12：文档合写（**我们自己写的**，不是搬运；单文件，只有 SKILL.md）。
+    - assets/skills/doc-cowrite/
+    # 2026-10-12：小说改游戏（NovelToGame v0.4.0，MIT）。它们是**多文件技能**
+    # （SKILL.md + references/），所以「整目录安装」是它们的前置。
+    # ⚠️ 与上面同理：必须逐个目录列，写父目录不会递归。
+    - assets/skills/novel-to-game/
+    - assets/skills/novel-game-analyze/
+    - assets/skills/game-concept/
+    - assets/skills/game-world-design/
+    - assets/skills/game-art-direction/
+    - assets/skills/game-build/
+    - assets/skills/game-qa/
+    # ⚠️ 子目录必须**另起一行**：Flutter 的目录声明不进子目录
+    - assets/skills/novel-to-game/references/
+    # ⚠️ 子目录必须**另起一行**：Flutter 的目录声明不进子目录
+    - assets/skills/novel-game-analyze/references/
+    # ⚠️ 子目录必须**另起一行**：Flutter 的目录声明不进子目录
+    - assets/skills/game-concept/references/
+    # ⚠️ 子目录必须**另起一行**：Flutter 的目录声明不进子目录
+    - assets/skills/game-world-design/references/
+    # ⚠️ 子目录必须**另起一行**：Flutter 的目录声明不进子目录
+    - assets/skills/game-art-direction/references/
+    # ⚠️ 子目录必须**另起一行**：Flutter 的目录声明不进子目录
+    - assets/skills/game-build/references/
+    # ⚠️ 子目录必须**另起一行**：Flutter 的目录声明不进子目录
+    - assets/skills/game-qa/references/
+    # 2026-10-12（用户「a和b」的 B）：**画图表** —— diagram-design v2.6（MIT）。
+    # 44 种图型，产物是**自包含 HTML + 内联 SVG**（所以资料库能直接渲染看）。
+    # ⚠️ 它是**三层**的（SKILL.md / references/ / assets/），每一层都要单独列。
+    # 只搬"必需"的：63 份 references 方法文档 + 五套模板（minimal/dark/full/motion/terminal）
+    # + icons；上游 211 个 example-*.html（4.4MB 质量参照）与 5 个 python 脚本**没随包**
+    # （原因写在 SKILL.md 顶部的署名区块里，模型读得到）。
+    - assets/skills/diagram-design/
+    - assets/skills/diagram-design/references/
+    - assets/skills/diagram-design/assets/
+    # 「打开手机上的应用」（用户 2026-10-09）：模型靠技能目录发现这个能力，
+    # ⚠️ 与上面同样的坑：**必须逐目录列**，写父目录不会递归。
+    # 端侧模型清单：`lib/local/model_manifest.dart` 解析它、`model_downloader.dart`
+    # 按它多源下载 + 断点续传 + sha256 校验。
+    # 为什么做成 assets 而不是写死在代码里：加模型/换源不该要改代码重发版；
+    # 而且 bytes / sha256 是**数据**，由 install/models/refresh-manifest.mjs 回填。
+    # ⚠️ 与 skills 同理：目录写法在旧版本上不保证递归，这里显式列到文件级最稳。
+    - assets/models/model_manifest.json
+    # 知识库清单（用户 2026-10-09 要求：本地大模型栏目下加「知识库」）。
+    # ⚠️ 与 models / skills 同理：**显式列到文件级**，不写目录 —— 写目录在旧版本
+    # 上不保证递归，会变成"清单在、内容不在"。
+    # ⚠️ 这里**不再有随包样例**（用户 2026-10-09 决定：样本库不要内置）：
+    #    原先随包的 400 条样例已删除，assets/kb/ 下只有这份清单 ——
+    #    知识库内容一律靠下载或从手机导入。
+    - assets/kb/kb_manifest.json
+
+# ⚠️ 把 shared_preferences_android 钉在 2.4.28（2026-10-17）。
+#
+# 为什么必须钉：0.77 的 87 版一切正常，而它用的就是 2.4.28（那时 lock 与解析一致）。
+# 后来 lock 与 .dart_tool/package_config.json 漂移成 2.5.0，就出现
+#   java.lang.NoSuchMethodError: no non-static method
+#     "Lio/flutter/plugins/sharedpreferences/SharedPreferencesApiR..."
+# （Dart 侧按 2.5 的 Pigeon 接口调、原生侧还是 2.4 的实现）→ 设置存不住。
+# 我一度删掉 lock 让它重解析，结果两边都变成 2.5.0，**报错依旧** —— 说明 2.5.0 在
+# 这个 Flutter 版本下本身就不行。所以直接钉回 2.4.28。
+dependency_overrides:
+  shared_preferences_android: 2.4.28

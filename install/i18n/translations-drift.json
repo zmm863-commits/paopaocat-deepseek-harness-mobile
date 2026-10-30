@@ -4948,5 +4948,145 @@
     "en": "Tap = tap that spot on the virtual screen; drag = swipe. The frame refreshes every 0.5 s.",
     "ja": "タップ＝仮想画面のその位置をタップ、ドラッグ＝スワイプ。画面は0.5秒ごとに更新。",
     "ko": "탭＝가상 화면의 그 지점을 탭, 드래그＝스와이프. 화면은 0.5초마다 갱신."
+  },
+  "DSH 网页": {
+    "en": "DSH web page",
+    "ja": "DSH ウェブページ",
+    "ko": "DSH 웹 페이지"
+  },
+  "二维码生成失败，直接照下面手打": {
+    "en": "Couldn't draw the QR code — type the address below instead",
+    "ja": "QR コードを作成できませんでした。下のアドレスを手入力してください",
+    "ko": "QR 코드를 만들지 못했습니다. 아래 주소를 직접 입력하세요"
+  },
+  "准备运行环境…": {
+    "en": "Preparing the runtime…",
+    "ja": "実行環境を準備しています…",
+    "ko": "실행 환경을 준비하는 중…"
+  },
+  "刷新网卡": {
+    "en": "Refresh adapters",
+    "ja": "ネットワークを更新",
+    "ko": "네트워크 새로고침"
+  },
+  "口令已重置，下次开启时生效": {
+    "en": "Passcode reset — takes effect next time you turn it on",
+    "ja": "パスコードをリセットしました。次にオンにしたとき有効になります",
+    "ko": "암호를 재설정했습니다. 다음에 켤 때 적용됩니다"
+  },
+  "在电脑上打开": {
+    "en": "Open on your computer",
+    "ja": "パソコンで開く",
+    "ko": "컴퓨터에서 열기"
+  },
+  "复制网址": {
+    "en": "Copy URL",
+    "ja": "URL をコピー",
+    "ko": "주소 복사"
+  },
+  "复制这个地址": {
+    "en": "Copy this address",
+    "ja": "このアドレスをコピー",
+    "ko": "이 주소 복사"
+  },
+  "已等 {0} 秒": {
+    "en": "Waiting {0}s",
+    "ja": "{0} 秒経過",
+    "ko": "{0}초 경과"
+  },
+  "扫码打开": {
+    "en": "Scan to open",
+    "ja": "スキャンして開く",
+    "ko": "스캔하여 열기"
+  },
+  "正在关闭…": {
+    "en": "Turning off…",
+    "ja": "オフにしています…",
+    "ko": "끄는 중…"
+  },
+  "正在启动 DSH 与设计站…": {
+    "en": "Starting DSH and the design studio…",
+    "ja": "DSH とデザインスタジオを起動しています…",
+    "ko": "DSH와 디자인 스튜디오를 시작하는 중…"
+  },
+  "正在打开对外端口…": {
+    "en": "Opening the external port…",
+    "ja": "外部ポートを開いています…",
+    "ko": "외부 포트를 여는 중…"
+  },
+  "正在接上设计站…": {
+    "en": "Connecting the design studio…",
+    "ja": "デザインスタジオに接続しています…",
+    "ko": "디자인 스튜디오에 연결하는 중…"
+  },
+  "没找到可用网卡。先在系统里打开「USB 网络共享」，或连上同一个 Wi-Fi，再点刷新。": {
+    "en": "No usable network adapter. Turn on USB tethering in the system, or join the same Wi-Fi, then tap Refresh.",
+    "ja": "利用できるネットワークが見つかりません。システムで「USB テザリング」をオンにするか、同じ Wi-Fi に接続してから更新を押してください。",
+    "ko": "사용할 수 있는 네트워크가 없습니다. 시스템에서 USB 테더링을 켜거나 같은 Wi-Fi에 연결한 뒤 새로고침을 누르세요."
+  },
+  "没找到可用网卡。打开「USB 网络共享」或连上 Wi-Fi 后点刷新。": {
+    "en": "No usable network adapter. Turn on USB tethering or join a Wi-Fi, then tap Refresh.",
+    "ja": "利用できるネットワークが見つかりません。「USB テザリング」をオンにするか Wi-Fi に接続してから更新を押してください。",
+    "ko": "사용할 수 있는 네트워크가 없습니다. USB 테더링을 켜거나 Wi-Fi에 연결한 뒤 새로고침을 누르세요."
+  },
+  "电脑有扫码工具就扫这个码；没有的话照着下面手打：": {
+    "en": "If your computer can scan QR codes, scan this; otherwise type the address below:",
+    "ja": "パソコンに QR 読み取りがあればこれをスキャンしてください。なければ下のアドレスを入力します：",
+    "ko": "컴퓨터에 QR 스캔 기능이 있으면 이 코드를 스캔하세요. 없으면 아래 주소를 직접 입력하세요:"
+  },
+  "移动桌面平台": {
+    "en": "Mobile desktop platform",
+    "ja": "モバイルデスクトップ",
+    "ko": "모바일 데스크톱 플랫폼"
+  },
+  "网址已复制": {
+    "en": "URL copied",
+    "ja": "URL をコピーしました",
+    "ko": "주소를 복사했습니다"
+  },
+  "让电脑用浏览器打开手机上的 DSH": {
+    "en": "Open the DSH on your phone from a computer browser",
+    "ja": "パソコンのブラウザでスマホの DSH を開く",
+    "ko": "컴퓨터 브라우저에서 휴대폰의 DSH 열기"
+  },
+  "设计站": {
+    "en": "Design studio",
+    "ja": "デザインスタジオ",
+    "ko": "디자인 스튜디오"
+  },
+  "设计站未启动": {
+    "en": "Design studio not running",
+    "ja": "デザインスタジオは未起動",
+    "ko": "디자인 스튜디오가 실행되지 않음"
+  },
+  "设计站没能启动：{0}": {
+    "en": "The design studio failed to start: {0}",
+    "ja": "デザインスタジオを起動できませんでした: {0}",
+    "ko": "디자인 스튜디오를 시작하지 못했습니다: {0}"
+  },
+  "设计站（资料存手机、用手机模型）：{0}": {
+    "en": "Design studio (files and models stay on the phone): {0}",
+    "ja": "デザインスタジオ（データとモデルはスマホ内）: {0}",
+    "ko": "디자인 스튜디오(자료와 모델은 휴대폰에 저장): {0}"
+  },
+  "资料、模型、工具执行都在手机上，电脑只需要一个浏览器。手机和电脑要在同一张网里（USB 网络共享或同一个 Wi-Fi）。": {
+    "en": "Files, models and tool runs all stay on the phone — the computer only needs a browser. Phone and computer must be on the same network (USB tethering or the same Wi-Fi).",
+    "ja": "データ・モデル・ツール実行はすべてスマホ側です。パソコンはブラウザだけで構いません。スマホとパソコンは同じネットワーク（USB テザリングまたは同じ Wi-Fi）にいる必要があります。",
+    "ko": "자료, 모델, 도구 실행은 모두 휴대폰에 있습니다. 컴퓨터는 브라우저만 있으면 됩니다. 휴대폰과 컴퓨터가 같은 네트워크(USB 테더링 또는 같은 Wi-Fi)에 있어야 합니다."
+  },
+  "这个地址带身份凭证（token），别发给别人。": {
+    "en": "This address carries an access token — don't share it.",
+    "ja": "このアドレスにはアクセストークンが含まれます。他人に送らないでください。",
+    "ko": "이 주소에는 접근 토큰이 포함되어 있습니다. 다른 사람에게 보내지 마세요."
+  },
+  "这个网址带身份凭证（token），别发给别人。": {
+    "en": "This URL carries an access token — don't share it.",
+    "ja": "この URL にはアクセストークンが含まれます。他人に送らないでください。",
+    "ko": "이 주소에는 접근 토큰이 포함되어 있습니다. 다른 사람에게 보내지 마세요."
+  },
+  "重置口令": {
+    "en": "Reset passcode",
+    "ja": "パスコードをリセット",
+    "ko": "암호 재설정"
   }
 }

@@ -148,6 +148,31 @@ class DshHost {
   static Future<int> copyRuntimeAsset() async =>
       await channel.invokeMethod<int>('copyRuntimeAsset') ?? 0;
 
+  /// 鸿蒙专用：**在宿主进程内**启动 node（不是 spawn 子进程）。
+  ///
+  /// 为什么（2026-10-29 真机实证）：鸿蒙 seccomp/沙箱不允许 App 执行外部程序，
+  /// 只能在进程内 dlopen `libnode.so` + 调 `node::Start`。原生侧会起一个后台
+  /// 线程去做（92MB 的 dlopen 放主线程会被看门狗判定 ANR 并杀掉），本方法
+  /// **立即返回**，调用方靠轮询 `stdoutPath` 抓就绪行。
+  ///
+  /// - [stdoutPath]：node 的 stdout/stderr 都 dup2 到这里（App 进程的 stderr
+  ///   在鸿蒙上进不了 hilog，不重定向就永远看不到 DSH 的报错）。
+  /// - [tracePath]：崩溃笔迹文件，原生每走一步追加一行；进程被强杀也能留下现场。
+  static Future<Map<String, dynamic>> startNodeArgs({
+    required List<String> args,
+    required Map<String, String> env,
+    required String stdoutPath,
+    String? tracePath,
+  }) async {
+    final raw = await channel.invokeMethod<Map>('startNode', <String, dynamic>{
+      'args': args,
+      'env': env,
+      'stdoutPath': stdoutPath,
+      'tracePath': tracePath ?? '',
+    });
+    return Map<String, dynamic>.from(raw ?? const {});
+  }
+
   // ------------------------------------------------------- 定时任务保活（前台服务）
 
   /// 启动/更新保活前台服务（常驻通知，见 `DshSchedulerService.kt`）。
