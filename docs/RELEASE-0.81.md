@@ -132,15 +132,15 @@ catch 块**里面**（缩进都是乱的）。后果：设计站起不来时，D
 | 项 | 值 |
 |---|---|
 | 文件 | `paopaocat-preview-0.81-20261030-full-arm64-v8a.apk`（**完整包**，`DSH_ANDROID_INCLUDE_RUNTIME=1`） |
-| 字节 | **118,493,083**（113.0 MiB） |
+| 字节 | **118,493,095**（113.0 MiB） |
 | versionCode / versionName | **249 / 0.0.81** |
-| sha256 | `0d7afe1038a431895db277e56cbe55c9b02b04a9d97234248fb4a01a1c8419d1` |
+| sha256 | `01cb838667e4f52bd53f69ab5b99dc1e6e64b66eabd63b46cbcc1e0bc72fb55c` |
 | 签名 | `7aaf4448…d3cc17`（与 0.70 起同一把 → 老用户可直接覆盖安装） |
 | ABI | **只有 `lib/arm64-v8a/`** |
 | 包内运行时 | `assets/dsh-runtime.zip` 32.9 MB ✓ |
 | 二维码代码 | `libapp.so` 里 `qr_flutter` 命中 5 处、`QrImageView/QrPainter` 命中 5 处 ✓ |
 | `install/check-release.py` | **七项全 PASS**（版本同一 / 28 个脚本字符串在 libapp.so / 218 个资产逐名+ sha256 一致 / runtime.zip 在 / 无 llama / 10 个 ffmpeg 库齐 / AArch64 ELF） |
-| 增量补丁 | `0.80 → 0.81`：**8,610,901 字节（整包 7.3%）**，sha256 `e13f5e42…65ea7c`；`update.json` 的 `patches[]` 已写入 |
+| 增量补丁 | `0.80 → 0.81`：**8,610,898 字节（整包 7.3%）**，sha256 `a43f0ba1…89a2df`；`update.json` 的 `patches[]` 已写入 |
 | `update.json` | 0.81 / 249 / 6 条 notes / 1 个补丁（本地这份**已从 0.78 同步到线上 0.80 再改**，修掉「基线落后两个版本」的隐患） |
 | `notice.json` | 4 条公告换成 0.81 |
 | `README.md` | 包名/体积/哈希/版本行改 0.81；**删掉两条错误的主题限制**；技能数 12 → 23；补 4 条真实限制 |

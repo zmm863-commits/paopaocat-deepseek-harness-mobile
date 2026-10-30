@@ -366,7 +366,7 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
               color: scheme.surface,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(DshMetrics.radius(6)),
               border: Border.all(color: scheme.outlineVariant, width: 0.8),
             ),
             child: DropdownButton<String>(

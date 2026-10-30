@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../i18n/dsh_i18n.dart';
+import '../theme/dsh_tokens.dart';
 
 /// 「用手机把它打开」对话框：**一个二维码 + 一串能手打的地址**。
 ///
@@ -81,7 +82,7 @@ class _ComputerAccessQrDialogState extends State<ComputerAccessQrDialog> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(DshMetrics.radius(10)),
                   ),
                   child: QrImageView(
                     data: _url,
