@@ -232,6 +232,55 @@ void main() {
       sock.destroy();
     });
 
+    test('WebSocket 升级请求：不许把 Connection 改成 close（否则握手失败、前端一直「重新连接」）', () async {
+      // 真机现象（2026-10-30）：电脑上打开 DSH 网页后，Bot 页一直显示「重新连接」。
+      // 根因是上一轮为了挡 keep-alive 无条件把 `Connection` 改成 `close`，
+      // 而 WS 握手必须是 `Connection: Upgrade`。这一条把它钉住。
+      final com = Completer<String>();
+      final srv = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(srv.close);
+      srv.listen((c) {
+        final b = <int>[];
+        c.listen((d) {
+          b.addAll(d);
+          final txt = utf8.decode(b, allowMalformed: true);
+          if (txt.contains('\r\n\r\n') && !com.isCompleted) {
+            com.complete(txt.toLowerCase());
+            c.destroy();
+          }
+        });
+      });
+
+      final fwd = PortForwarder.create();
+      final listen = await fwd.start(
+        targetPort: srv.port,
+        listenPort: 0,
+        rewrite: const ForwardRewrite(
+          fixedToken: 'nope',
+          upstreamToken: 'x',
+          upstreamAuthority: '127.0.0.1:1',
+        ),
+      );
+      addTearDown(fwd.stop);
+
+      final sock = await Socket.connect(InternetAddress.loopbackIPv4, listen);
+      sock.write('GET /bot HTTP/1.1\r\n'
+          'Host: 192.168.3.196:36979\r\n'
+          'Connection: Upgrade\r\n'
+          'Upgrade: websocket\r\n'
+          'Sec-WebSocket-Version: 13\r\n'
+          'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n');
+
+      final head = await com.future.timeout(const Duration(seconds: 5));
+      expect(head, contains('connection: upgrade'),
+          reason: 'WS 握手必须保留 Upgrade，改成 close 就是「一直重新连接」');
+      expect(head, isNot(contains('connection: close')));
+      expect(head, contains('upgrade: websocket'));
+      // Host 仍然要换成上游 —— 否则 fence 403
+      expect(head, contains('host: 127.0.0.1:1'));
+      sock.destroy();
+    });
+
     test('整页几十个资源：每一次请求都要被改写（否则第 2 个起就 403）', () async {
       // 真机风险点（0.81 自评里写的）：我们只改写「一个连接上的第一个请求头」，
       // 靠 `Connection: close` 让每个请求各占一条连接。这一条就是拿 40 个请求

@@ -1055,6 +1055,42 @@ body { overscroll-behavior-y: contain; }
     }
   }
 
+  /// 打开 ds-bot 自己的设置面板（直接落到「通用」页）。
+  ///
+  /// 为什么不能直接调：设置面板的开关是 React 组件闭包里的 `actions.openSettings`，
+  /// 网页外部拿不到。所以由 [BotServer] 的 `_patchBotWeb` 注入
+  /// `window.__dshmOpenBotSettings` 这个钩子（挂在常驻的 ☰ 菜单渲染处，不需要
+  /// 用户先点开什么）；万一补丁没打上（ds-bot 升版、锚点失效），退一步用 DOM 兜底：
+  /// 点开 ☰，再点「Bot 设置」。
+  Future<void> _openBotSettings() async {
+    final web = _web;
+    if (web == null) return;
+    try {
+      await web.runJavaScript('''
+(function(){
+  try {
+    if (window.__dshmOpenBotSettings) { window.__dshmOpenBotSettings(); return; }
+    var labels = ['Bot 设置', 'Bot settings'];
+    var buttons = document.querySelectorAll('button[aria-label]');
+    for (var i = 0; i < buttons.length; i++) {
+      var a = (buttons[i].getAttribute('aria-label') || '');
+      if (a === 'Menu' || a === '菜单') { buttons[i].click(); break; }
+    }
+    setTimeout(function(){
+      var items = document.querySelectorAll('[role="menuitem"], .bt-menu button');
+      for (var j = 0; j < items.length; j++) {
+        var txt = (items[j].textContent || '').trim();
+        if (labels.indexOf(txt) >= 0) { items[j].click(); return; }
+      }
+    }, 220);
+  } catch (e) {}
+})();
+''');
+    } catch (e) {
+      DiagnosticsLog.add('dsh-bot', '打开 Bot 设置失败：$e');
+    }
+  }
+
   Future<void> _stopService() async {
     final server = BotServer.current;
     if (server == null) return;
@@ -1099,11 +1135,16 @@ body { overscroll-behavior-y: contain; }
               onSelected: (v) {
                 if (v == 'stop') unawaited(_stopService());
                 if (v == 'retry') unawaited(_boot());
+                if (v == 'settings') unawaited(_openBotSettings());
               },
               itemBuilder: (context) => [
                 if (_phase == _Phase.ready)
                   const PopupMenuItem(value: 'stop', child: Text('停止 Bot 服务')),
                 const PopupMenuItem(value: 'retry', child: Text('重新启动')),
+                // 放在「重新启动」下面（用户 2026-10-30 指定的位置）。
+                // 0.80 那轮减法把对话框「+」菜单里的「设置」去掉了，这里补回来。
+                if (_phase == _Phase.ready)
+                  const PopupMenuItem(value: 'settings', child: Text('设置')),
               ],
             ),
           ],

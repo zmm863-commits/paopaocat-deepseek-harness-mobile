@@ -92,6 +92,11 @@ const EDITS = [
     '  "Could not reach DSH. Check that it is still running.": "连不上 DSH，请确认它还在运行。",',
     '  "Could not reach DSH. Check that it is still running.": "连不上泡泡猫 DSH，请确认它还在运行。",',
   ],
+  [
+    '⑩ 给宿主 App 挂「打开 Bot 设置」的钩子（App 的 ⋯ →「设置」靠它）',
+    '  const groups = [\n    [\n      [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],',
+    '  window.__dshmOpenBotSettings = (key) => actions.openSettings(key || "general");\n  const groups = [\n    [\n      [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],',
+  ],
 ]
 
 const ALL_IDS = EDITS.map((_, i) => i + 1)

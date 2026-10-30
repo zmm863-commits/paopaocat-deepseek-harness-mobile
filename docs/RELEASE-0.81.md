@@ -196,15 +196,15 @@ SSE 与 WebSocket 不受影响（它们本来就是一条长响应）。
 | 项 | 值 |
 |---|---|
 | 文件 | `paopaocat-preview-0.81-20261030-full-arm64-v8a.apk`（**完整包**，`DSH_ANDROID_INCLUDE_RUNTIME=1`） |
-| 字节 | **118,508,819**（113.0 MiB） |
+| 字节 | **118,511,167**（113.0 MiB） |
 | versionCode / versionName | **249 / 0.0.81** |
-| sha256 | `d4f0498310bab6b58363e85cf7ff035f921a1999930d35ff4a7d593fe018cda5` |
+| sha256 | `42d46a1d80add944614cc5d1b627056d7d17baabdbdd7fa38023165181f403de` |
 | 签名 | `7aaf4448…d3cc17`（与 0.70 起同一把 → 老用户可直接覆盖安装） |
 | ABI | **只有 `lib/arm64-v8a/`** |
 | 包内运行时 | `assets/dsh-runtime.zip` 32.9 MB ✓ |
 | 二维码代码 | `libapp.so` 里 `qr_flutter` 命中 5 处、`QrImageView/QrPainter` 命中 5 处 ✓ |
 | `install/check-release.py` | **七项全 PASS**（版本同一 / 28 个脚本字符串在 libapp.so / 218 个资产逐名+ sha256 一致 / runtime.zip 在 / 无 llama / 10 个 ffmpeg 库齐 / AArch64 ELF） |
-| 增量补丁 | `0.80 → 0.81`：**8,626,928 字节（整包 7.3%）**，sha256 `9b6881a4…84ff558`；`update.json` 的 `patches[]` 已写入 |
+| 增量补丁 | `0.80 → 0.81`：**8,628,796 字节（整包 7.3%）**，sha256 `25dd3981…e02bd02a`；`update.json` 的 `patches[]` 已写入 |
 | `update.json` | 0.81 / 249 / 6 条 notes / 1 个补丁（本地这份**已从 0.78 同步到线上 0.80 再改**，修掉「基线落后两个版本」的隐患） |
 | `notice.json` | 4 条公告换成 0.81 |
 | `README.md` | 包名/体积/哈希/版本行改 0.81；**删掉两条错误的主题限制**；技能数 12 → 23；补 4 条真实限制 |
@@ -302,3 +302,108 @@ raw 不通就直接被 jsDelivr（2.16s）兜住。单源（用户自填镜像�
 | `port_forwarder_test` | 9 条（新增整页 40 资源） |
 | `local_mcp_test` | 7 条（args 与 ACP 对齐 / shim 落盘才挂） |
 | `update_checker_test` | 22 条（新增并发回归） |
+
+## 十一、真机第三轮：用户报的 5 个问题（每个都挖到根因）
+
+这一节的共同点：**都不是"改错了"，而是"只改了一个入口"**。
+
+### 1. 电脑上打开地址 → `dsh web authentication required`
+
+**根因**：面板里有**两处**会算出给用户的地址 —— `_apply()`（拨开关那一刻）
+和 `_load()`（离开页面再进来 / App 重启后恢复显示）。上一轮只改了前者，
+后者仍在用 DSH 的 `launchToken`（每次进程启动随机生成、没有注入口子）。
+用户把地址复制到电脑时，拿到的正是后者 → 转发层认不出（它只认 App 的
+32 位十六进制固定口令）→ 原样送给 DSH → 401。
+
+**判据**：用户那条地址末尾是 48 位 base64url，而 App 的固定口令是 32 位十六进制。
+
+**修法**：收敛成唯一的 `publicDshUrl(host, port, token)`，两处共用；再加源码门禁
+（不许手拼 `_url = 'http://…'`、不许拿 `queryParameters['token']` 凑地址、必须两处都调用）。
+
+**真机验证**（红魔 NX809J）：面板地址 token 变为 32 位十六进制后，
+`adb forward` + curl → 带口令 **303** → 换 cookie **200 / 36,773 字节
+`<title>DeepSeek Harness</title>`**；不带口令 **401**。
+
+### 2. 电脑上打开后，Bot 页一直「重新连接」
+
+**根因**：上一轮为了挡 keep-alive（否则同连接第二个请求带外部 Host → 403），
+把所有请求的 `Connection` 无条件改成 `close`。而 **WebSocket 握手必须是
+`Connection: Upgrade`** —— 被改掉后握手直接失败，前端永远在重连。
+
+**修法**：先判断 `Upgrade: websocket`（或 `Connection` 里含 upgrade）：
+是 → **Connection 原样保留**；只有普通请求才断连接。
+
+**测试**：转发器单测 4 → **10 条**，新增一条专盯 WS 握手（断言上游收到的是
+`connection: upgrade`、不许是 `close`）；负向自检去掉 upgrade 保护 → 该条精确变红。
+
+### 3. Bot 页变成「只能查看」，顶部说「Bot 团队已在另一个 dsh 中打开（pid 6982）」
+
+**根因**：读 `ds-bot/src/host/home-lock.js` 才定下来 —— 同主机时它用
+`process.kill(pid, 0)` 判活，**活着的 pid 就当成"另一个 dsh"**：
+
+```js
+if (holder.host === host) return holder.pid !== pid && isAlive(holder.pid)
+```
+
+而 Android **会复用 pid**。6982 早已不是我们的进程，可它"活着" → 永久判只读，
+用户还找不到那个"另一个 dsh"（它不存在）。ds-bot 自己的注释也承认这点
+（reused pid keeps the second host read-only）。
+
+**修法**：启动 DSH 前清掉 `dshhome/bot/state.lock`。手机端只可能有一个 DSH
+（BotServer 单例，重启前先 stop 旧进程），安全；**团队数据 `state.json` 一个字节
+都不动**（测试钉住）。5 条测试 + 负向自检。
+
+### 4. 「重置口令」被挤出屏幕（扫码打开右边"还有个选项在屏幕外"）
+
+**根因**：那一排原来是 `Row`。本版又加了「扫码打开」→ 四颗按钮在 360dp 宽上
+装不下；`Row` 溢出**不会换行、只会被静默裁掉**，用户连它叫什么都不知道。
+
+**修法**：抽成独立组件 `ComputerAccessActions`，`Row` → `Wrap`（满了自动折行）。
+抽出来是为了**能被测到** —— 面板依赖运行时/端口转发/文件系统，widget test 里
+难以点亮「已开启」状态，而这排恰恰只在已开启时才溢出。
+5 条测试（四颗全可见 / 320dp / 240dp / 未开启只一颗 / busy 全禁用），
+负向自检改回 `Row` → 5 条全红。
+
+### 5. Bot 页右上角 ⋯ 里没有「设置」入口
+
+**根因**：0.80 那轮按用户要求做减法，把对话框「+」菜单里的「设置」去掉了，
+入口就没了（它其实一直在左上角 ☰ 菜单里叫「Bot 设置」，但那是用户找不到的位置）。
+
+**修法**：⋯ 菜单在「重新启动」**下面**加一项「设置」，点开直接是 Bot 设置的「通用」页。
+网页里的 `actions.openSettings("general")` 是 React 闭包、外部拿不到，所以由
+`_patchBotWeb` 给网页挂 `window.__dshmOpenBotSettings` 钩子（挂在常驻的 ☰ 菜单
+渲染处，页面一加载就执行）；万一补丁没打上，退一步用 DOM 兜底（点 ☰ → 点「Bot 设置」）。
+
+**两份补丁必须同步**：`bot_server.dart` 的 `_botWebTrims` 与
+`install/patch-dsbot-web.mjs` 的 `EDITS` 共享同一套幂等标记
+（`/* dshm-web-trim:1,2,… */`）。条数一旦分叉，手机端会整批放弃补丁**且不报错**。
+新增 `test/dsbot_patch_sync_test.dart` 3 条把「条数一致 / 第 10 条两边都在 /
+设置必须排在重新启动后面」钉死；负向自检删掉 mjs 那条 → 2 条变红。
+
+### 这一轮的验证
+
+| 项 | 结果 |
+|---|---|
+| `dart analyze` | No issues found |
+| 全量（排除截图类） | **1220 通过 / 1 跳过 / 1 失败**（唯一失败仍是 `wss_integration_test` 的环境前置） |
+| 真机 | 红魔 NX809J / Android 16 / 1216×2688；第十版 `lastUpdateTime 22:36:03` |
+| 包 | 118,511,167 字节 · `42d46a1d…81f403de` · 七项校验全 PASS |
+| 补丁 | 8,628,796 字节（7.3%）· `25dd3981…e02bd02a` |
+
+### 顺带记下的两条环境事实（不是我们的 bug）
+
+- **这台红魔的 `adb install` 永远不可用**：`cmd package install-create`
+  **不带任何参数**也返回 `session [-1]`（`pm` / `cmd package` / 各种 `-i` `--user`
+  组合全一样；权限 `INSTALL_PACKAGES: granted=true`、重启无效、安装验证已关）。
+  判定是 ROM 在 `IPackageManager.createSession` 层面对 shell 写死。
+  但**普通 App 身份能装** —— 用 UI 走「打开方式 → 安装包查看器（夸克）→
+  勾选风险 → 继续安装」可成，本版所有真机包都是这么装上去的。
+- **这台机器的 `logcat` 大部分时候是空的**（开机后吐一批，`logcat -c` 之后就再不出）。
+  所以 App 内部日志只能靠用户导出的 `dsh-report-*.txt`。
+
+### 未收尾（如实）
+
+- **MCP 三个 Office 工具是否回来**：代码已按 ACP 对齐启动旗标，但缺一台
+  `logcat` 可用的机器或一份诊断报告，**尚未实证**。
+- 移动桌面平台的 WebSocket 修复在真机上验过逻辑（单测）与握手规则，
+  但"电脑上 Bot 页不再转圈"这一条**等用户复验**。

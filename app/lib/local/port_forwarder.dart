@@ -289,6 +289,24 @@ class PortForwarder {
       lines[0] = parts.join(' ');
     }
 
+    // 先判断这次是不是 **WebSocket 升级**（2026-10-30 真机第二阶段）。
+    //
+    // 用户报「打开以后的 Bot 页是重新连接」—— 根因是上一轮为了挡 keep-alive
+    // 把 Connection 强改成 close，而 WebSocket 握手**必须**是
+    // `Connection: Upgrade` + `Upgrade: websocket`：被改成 close 后服务端直接
+    // 按普通请求处理，握手失败 → 前端一直显示"重新连接"。
+    //
+    // 升级请求天然是"一个连接一个请求"（之后全是 WS 帧），所以**不需要也不该**
+    // 动它的 Connection。
+    var isUpgrade = false;
+    for (var i = 1; i < lines.length; i++) {
+      final lower = lines[i].toLowerCase();
+      if (lower.startsWith('upgrade:')) isUpgrade = true;
+      if (lower.startsWith('connection:') && lower.contains('upgrade')) {
+        isUpgrade = true;
+      }
+    }
+
     var hasConnection = false;
     for (var i = 1; i < lines.length; i++) {
       final lower = lines[i].toLowerCase();
@@ -303,17 +321,18 @@ class PortForwarder {
           lines[i] = 'Referer: http://${rw.upstreamAuthority}${u.path}$q';
         }
       } else if (lower.startsWith('connection:')) {
-        // ⚠️ 必须断开长连接（2026-10-30 想清楚才加）：我们只改写**一个连接上的
-        // 第一个请求头**，而 HTTP/1.1 默认 keep-alive —— 浏览器会在同一个连接上
-        // 接着发第二个请求，那一次的 Host 是**外部地址**（没被改写）→ DSH 的
-        // browser-trust fence 直接 403，表现为「首页能开、点两下就白」。
-        // 让服务端每个连接只处理一个请求，既省掉「解析 body 才知道下一个头在哪」
-        // 的复杂状态机，也不影响 SSE / WebSocket（它们本来就是一条长响应）。
-        lines[i] = 'Connection: close';
         hasConnection = true;
+        if (isUpgrade) continue; // WS 升级：原样保留 Connection: Upgrade
+        // 普通请求必须断开长连接：我们只改写**一个连接上的第一个请求头**，
+        // 而 HTTP/1.1 默认 keep-alive —— 浏览器会在同一连接上接着发第二个请求，
+        // 那一次的 Host 是**外部地址**（没被改写）→ fence 403，
+        // 症状是「首页能开、点两下就白」。
+        lines[i] = 'Connection: close';
       }
     }
-    if (!hasConnection) lines.insert(lines.length - 2, 'Connection: close');
+    if (!hasConnection && !isUpgrade) {
+      lines.insert(lines.length - 2, 'Connection: close');
+    }
     return lines.join('\r\n');
   }
 

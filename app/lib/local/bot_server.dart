@@ -459,6 +459,20 @@ class BotServer {
       '  "Could not reach DSH. Check that it is still running.": "连不上 DSH，请确认它还在运行。",',
       '  "Could not reach DSH. Check that it is still running.": "连不上泡泡猫 DSH，请确认它还在运行。",',
     ],
+    // 13) 给宿主 App 挂一个「打开 Bot 设置」的钩子（2026-10-30 用户要求）：
+    //     0.80 那轮减法把对话框「+」菜单里的「设置」去掉了，用户找不到入口，
+    //     于是要在 App 的右上角 ⋯ 菜单里补一个（放在「重新启动」下面）。
+    //     Flutter 那边只能通过 JS 触发网页里的动作，所以这里把 actions 暴露出去：
+    //     挂在这个常驻菜单渲染处（☰ 与会话头同时渲染），不需要用户先点开什么。
+    <String>[
+      '  const groups = [\n'
+          '    [\n'
+          '      [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],',
+      '  window.__dshmOpenBotSettings = (key) => actions.openSettings(key || "general");\n'
+          '  const groups = [\n'
+          '    [\n'
+          '      [t("Usage"), GaugeIcon, () => actions.openSettings("usage")],',
+    ],
   ];
 
   /// 网页版 Bot 页的**产品化裁剪** —— 给 ds-bot 的 client 包打补丁（用户 2026-10-28 要求）：
