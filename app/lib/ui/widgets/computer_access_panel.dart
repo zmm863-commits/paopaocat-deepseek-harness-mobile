@@ -16,6 +16,7 @@ import '../theme/dsh_tokens.dart';
 import 'computer_access_actions.dart';
 import 'computer_access_url.dart';
 import 'computer_access_qr.dart';
+import 'computer_access_selfcheck.dart';
 
 /// 「电脑访问」面板：把手机上的 DSH 网页服务绑到某张网卡，让电脑用浏览器直接打开。
 ///
@@ -487,7 +488,44 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
               style: TextStyle(
                   fontSize: 11, color: scheme.error, height: 1.55)),
         ],
+        // 「连不上？点这里自检」（2026-10-31）
+        //
+        // 起因：三天里三个用户报"连不上"，但真因分属三层 ——
+        // 浏览器没把地址当网址（DNS 层）/ 端口没人听 / 口令不对。
+        // 用户只会说"连不上"，于是每来一个都要来回三轮。
+        // 这个按钮真的发一次请求，把"哪一环断了"直接说清楚。
+        if (_on) ...[
+          const SizedBox(height: 2),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _busy ? null : _showSelfCheck,
+              icon: const Icon(Icons.troubleshoot, size: 15),
+              label: Text(context.tr('连不上？点这里自检'),
+                  style: const TextStyle(fontSize: 11.5)),
+            ),
+          ),
+        ],
       ],
+    );
+  }
+
+  /// 「连不上？点这里自检」—— 真的连一次，把结论写成一段人话。
+  Future<void> _showSelfCheck() async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    final report = await runSelfCheck(
+      forwardRunning: PortForwarder.instance.running,
+      forwardPort: PortForwarder.instance.port,
+      serverRunning: BotServer.current != null,
+      serverPort: BotServer.current?.port,
+      host: _selected,
+      token: prefs.token,
+    );
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ComputerAccessSelfCheckDialog(report: report),
     );
   }
 }
