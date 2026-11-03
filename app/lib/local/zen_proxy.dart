@@ -207,12 +207,15 @@ class ZenProxy {
     final alive = <String>[];
 
     Future<bool> one(String model) async {
+      // ⚠️ 超时收短（2026-11-03 真机反馈「初始化特别慢」）：
+      // 免费端点正常情况下 1~2 秒就回；等 6+12 秒的只可能是已经挂掉的那批。
+      // 48 个模型里但凡有十来个这种，原来的超时会让启动多等好几分钟。
       final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 6);
+        ..connectionTimeout = const Duration(seconds: 3);
       try {
         final req = await client
             .postUrl(Uri.parse('http://127.0.0.1:$port$path'))
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 4));
         req.headers.contentType =
             ContentType('application', 'json', charset: 'utf-8');
         req.write(jsonEncode(<String, Object?>{
@@ -223,7 +226,7 @@ class ZenProxy {
           'max_tokens': 1,
           'stream': false,
         }));
-        final resp = await req.close().timeout(const Duration(seconds: 12));
+        final resp = await req.close().timeout(const Duration(seconds: 8));
         // 只要 2xx —— 4xx/5xx 都算"这个模型此刻用不了"。
         return resp.statusCode >= 200 && resp.statusCode < 300;
       } catch (_) {
@@ -233,8 +236,13 @@ class ZenProxy {
       }
     }
 
-    // 每批 4 个并发：既不太慢，也不至于一次打太多请求把上游惹毛。
-    const int batch = 4;
+    // 每批 12 个并发（原来是 4）。
+    //
+    // ⚠️ 为什么改（2026-11-03 真机反馈）：三条通道合并后要测的模型从 22 涨到 48，
+    //    4 个一批 = 12 批，每批最坏 18 秒 → 启动能被拖到一分多钟。
+    //    这些请求打在**本机代理**上、再由代理发往各上游，代理本身是异步的，
+    //    12 个一批不会把上游惹毛（真正限流的是各家自己的配额）。
+    const int batch = 12;
     for (var i = 0; i < models.length; i += batch) {
       final chunk = models.sublist(
           i, i + batch > models.length ? models.length : i + batch);

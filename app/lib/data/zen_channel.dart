@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 
 import '../i18n/dsh_i18n.dart';
@@ -148,6 +152,9 @@ class ZenChannel {
           ovhModels: aliveOvh,
         ),
       );
+      // 把这次探活的结果落盘：下次启动直接用，不必再等一遍
+      _writeAliveCache(runtime,
+          zen: aliveZen, kilo: aliveKilo, ovh: aliveOvh);
       debugPrint('[dsh-zen] ping $tested 个 → $alive 个可用，已写入'
           '（zen ${aliveZen.length} / kilo ${aliveKilo.length} / ovh ${aliveOvh.length}，'
           '端口 $port）');
@@ -218,6 +225,58 @@ class ZenChannel {
   ///
   /// 为什么每次启动都要刷：端口是系统随机分配的（见类注释），配置里那份
   /// 昨天的 `baseUrl` 今天一定是错的。
+  /// 上次探活通过的模型清单（落盘缓存）。
+  ///
+  /// ## 为什么要有它（2026-11-03 真机反馈「这一版初始化特别慢」）
+  ///
+  /// 启动流程里 `refreshIfEnabled` 是 **await** 的，而它内部要把三条通道的
+  /// 模型逐个探活。0.81 只有 OpenCode 一条（约 22 个），这版接了 Kilo 和
+  /// OVHcloud 之后变成 **48 个** —— 要测的数量翻倍，启动就被拖长了。
+  ///
+  /// 现在的做法：**先用上次的结果把配置写出来**（毫秒级），探活丢到后台跑，
+  /// 跑完再更新一次。这样既不用让用户盯着加载页等，也仍然守「只列能用的」规矩。
+  static File _aliveCacheFile(DshRuntime runtime) =>
+      File('${runtime.filesDir}/zen-alive.json');
+
+  static ({List<String> zen, List<String> kilo, List<String> ovh, int at})?
+      _readAliveCache(DshRuntime runtime) {
+    try {
+      final f = _aliveCacheFile(runtime);
+      if (!f.existsSync()) return null;
+      final m = jsonDecode(f.readAsStringSync());
+      if (m is! Map) return null;
+      List<String> ls(Object? v) => (v is List)
+          ? v.whereType<String>().toList(growable: false)
+          : const <String>[];
+      return (
+        zen: ls(m['zen']),
+        kilo: ls(m['kilo']),
+        ovh: ls(m['ovh']),
+        at: (m['at'] is num) ? (m['at'] as num).toInt() : 0,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void _writeAliveCache(
+    DshRuntime runtime, {
+    required List<String> zen,
+    required List<String> kilo,
+    required List<String> ovh,
+  }) {
+    try {
+      _aliveCacheFile(runtime).writeAsStringSync(jsonEncode(<String, Object?>{
+        'at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        'zen': zen,
+        'kilo': kilo,
+        'ovh': ovh,
+      }));
+    } catch (e) {
+      debugPrint('[dsh-zen] 写探活缓存失败（不影响功能）: $e');
+    }
+  }
+
   static Future<void> refreshIfEnabled({
     required bool enabled,
     required DshRuntime runtime,
@@ -227,6 +286,42 @@ class ZenChannel {
       await disable(runtime: runtime);
       return;
     }
+
+    // ── 快速路径：上次探活过就直接用它写配置，不等这轮探活 ──────────
+    //
+    // 缓存超过 24 小时就不用（免费通道变动很快，太旧的清单里可能大半都挂了）。
+    final cached = _readAliveCache(runtime);
+    if (cached != null) {
+      final ageSec = DateTime.now().millisecondsSinceEpoch ~/ 1000 - cached.at;
+      final alive = cached.zen.length + cached.kilo.length + cached.ovh.length;
+      if (ageSec < 24 * 3600 && alive > 0) {
+        final port = await ZenProxy.instance.ensureRunning(runtime: runtime);
+        if (port != null) {
+          try {
+            final cfg = ConfiguredModels.readConfig(runtime.filesDir);
+            await ConfiguredModels.saveConfig(
+              filesDir: runtime.filesDir,
+              config: _withZen(
+                cfg,
+                port: port,
+                models: cached.zen,
+                kiloModels: cached.kilo,
+                ovhModels: cached.ovh,
+              ),
+            );
+            debugPrint('[dsh-zen] 启动走缓存快速路径：$alive 个模型'
+                '（缓存 ${ageSec ~/ 60} 分钟前），探活已转后台');
+            // 后台重探，跑完再更新一次配置（不阻塞启动）
+            unawaited(enable(runtime: runtime));
+            return;
+          } catch (e) {
+            debugPrint('[dsh-zen] 快速路径写配置失败，退回完整流程: $e');
+          }
+        }
+      }
+    }
+
+    // ── 常规路径：没有可用缓存时才同步探活 ──
     final r = await enable(runtime: runtime);
     if (r.ok) return;
     // ⚠️ 刷新失败就把免费模型**从配置里摘掉**，而不是留着指向一个已经失效的本地端口
