@@ -157,13 +157,12 @@ class _ModelSheetState extends State<_ModelSheet> {
       ));
     }
 
-    // ①.5 **本机模型不再列在这里**（用户口径，2026-10-09）。
+    // ①.5 **本地大模型暂时不列在这里**（2026-11-03 用户决定）。
     //
-    // 以前这里会把正在跑的本地模型列成一个分组，好让会话里能选它。但真机实测
-    // 证明：1–2B 的端侧模型吃不下 DSH 的 Agent 协议（约 7k tokens 系统提示 +
-    // 工具 + 技能目录），问一句就吐多语种乱码、还把工具调用当正文写出来。
-    // 所以本地模型**只做简单对话**（见「本地大模型」页的入口）——
-    // 留在这儿只会让用户选了它、然后拿到一份乱码。
+    // 0.82 不出这个功能，所以会话的模型选择器里也不该出现它 ——
+    // 否则用户会选到一个「服务没跑」的空分组，又是一次"看着能用其实不能"。
+    //
+    // 完整实现、恢复办法见 `settings_tab.dart` 里那段注释（两处入口一起加回）。
 
     // ② 配置里的每个厂家
     //
@@ -270,23 +269,10 @@ class _ModelSheetState extends State<_ModelSheet> {
                 ),
               ),
               const Divider(height: 12, thickness: 0.5),
-              if (LocalModelServer.instance.spec != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
-                  child: Text(
-                    // 本机模型**故意不在这儿**（见 _groups 里的注释）。
-                    // ⚠️ 这里原来写的是「请到『设置 → 本地大模型』页点『跟它聊两句』」——
-                    // 但那个入口 **0.70 就撤下了**（用户：「不是太成熟，把这个功能删掉先」），
-                    // 照原文写就是把用户指到一个**进不去的地方**（死链）。所以改成如实说明。
-                    context.tr('本机模型不在这里 —— 本地模型只做简单对话，'
-                        '且它的入口已撤下，暂时没有界面能进入它。'),
-                    style: TextStyle(
-                      color: DshColors.textFaint.withValues(alpha: 0.9),
-                      fontSize: 10.5,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
+              // （这里原来有一条"本地模型没启动"的引导提示，
+              //   2026-11-03 随入口一起撤下 —— 0.82 不提供该功能，
+              //   指路指到一个不存在的地方比不指更糟。恢复见 settings_tab.dart。）
+
               Expanded(
                 child: groups.isEmpty
                     ? _emptyState()

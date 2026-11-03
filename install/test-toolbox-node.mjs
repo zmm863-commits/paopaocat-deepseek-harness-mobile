@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -156,6 +156,9 @@ section('P0-2a exec shim：模型驱动的 shell 能继承哪些环境变量');
 
 section('P0-3 轮换代理：必须有客户端令牌，且比对是等时的');
 const PROXY = join(REPO, 'app/assets/toolbox/rotate-proxy.mjs');
+const ZEN = join(REPO, 'app/assets/toolbox/zen-proxy.mjs');
+const BACKUP = join(REPO, 'app/assets/toolbox/backup.mjs');
+const VERIFY_RT = join(REPO, 'install/verify-runtime.mjs');
 {
   const proxy = await import(PROXY);
 
@@ -388,6 +391,420 @@ const PROXY = join(REPO, 'app/assets/toolbox/rotate-proxy.mjs');
       child.kill('SIGKILL');
       upstream.close();
     }
+  });
+
+  // ── 空组不能连坐（2026-10-31 用户报：「轮换池中间有无法使用的模型会造成
+  //    整个轮换池无法使用」）。
+  //
+  //    根因：Dart 侧把"所有成员都不可用"的组以 `members: []` 下发（成员模型被
+  //    上游收回、厂家被删、本机服务没在跑…），而代理以前对空组直接
+  //    `die()` → `process.exit(2)` → **整份配置被拒、所有组一起挂**。
+  //    换句话说：坏的那一组不是自己坏，它把好的也带走了。
+  //
+  //    这两条测试分别钉「跳过而不是退出」和「好的那组真的还能用」——
+  //    后者是关键：只断言进程不退出不够，得证明它还能服务。
+  test('validateConfig：空组被跳过，其它组原样保留', () => {
+    const cfg = proxy.validateConfig(
+      JSON.stringify({
+        token: 't',
+        groups: {
+          empty: { members: [] },
+          ok: { members: [{ name: 'a', baseUrl: 'https://x/v1', model: 'm' }] },
+        },
+      }),
+      '测试配置',
+    );
+    assert.equal(cfg.groups.empty, undefined, '空组应该被剔除，而不是让整个进程退出');
+    assert.ok(cfg.groups.ok && cfg.groups.ok.members.length === 1, '其它组必须原样保留');
+  });
+
+  await testAsync('空组存在时，其它组仍能正常对话（整池不再连坐）', async () => {
+    const http = await import('node:http');
+    const upstream = http.createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, from: 'upstream' }));
+    });
+    await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+    const upPort = upstream.address().port;
+
+    const child = spawn(process.execPath, [PROXY, '--config-stdin', '--no-auth', '--port', '0'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    child.stdin.write(JSON.stringify({
+      groups: {
+        // ← 那个"无法使用的模型"留下的空组
+        empty: { members: [] },
+        ok: { members: [{ name: 'a', baseUrl: `http://127.0.0.1:${upPort}/v1`, model: 'm' }] },
+      },
+    }));
+    child.stdin.end();
+    let out = '';
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    const port = await new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error('代理没就绪 —— 空组大概又把进程带崩了')), 10000);
+      const check = () => {
+        const m = /listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(out);
+        if (m) { clearTimeout(t); res(Number(m[1])); } else setTimeout(check, 50);
+      };
+      check();
+    });
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'ok', messages: [{ role: 'user', content: 'hi' }] }),
+      });
+      assert.equal(r.status, 200, '好的那个组必须仍能成功（这才叫不连坐）');
+      assert.equal(child.exitCode, null, '代理进程必须还活着');
+    } finally {
+      child.kill('SIGKILL');
+      upstream.close();
+    }
+  });
+
+  // ── 按 body 形状判流式（2026-10-31）──
+  //
+  // 上游高负载时会用 `application/json` 的 header 回一整个 SSE 帧序列。
+  // 照抄 header 就会让下游按 JSON 解析 → 整轮失败，而且失败得极像"模型坏了"，
+  // 还可能把这个本来好好的模型标成不可用。
+  //
+  // 这条测试故意起一个**说谎**的假上游，验证两件事：
+  //   ① 代理把 content-type 纠正成 text/event-stream；
+  //   ② **首块没丢** —— 嗅探读走的那一块必须补发出去（这是最容易写错的地方）。
+  await testAsync('上游把 SSE 说成 application/json 时，代理按形状纠正且首块不丢', async () => {
+    const http = await import('node:http');
+    const frames = [
+      'data: {"id":"1","choices":[{"delta":{"content":"你好"}}]}\n\n',
+      'data: {"id":"1","choices":[{"delta":{"content":"世界"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ].join('');
+    const upstream = http.createServer((req, res) => {
+      req.on('data', () => {});
+      req.on('end', () => {
+        // ⚠️ 关键：header 故意写错成 application/json
+        res.writeHead(200, { 'content-type': 'application/json' });
+        // 分两次写 —— 第一块正好是嗅探会读走的那块
+        res.write(frames.slice(0, 24));
+        setTimeout(() => {
+          res.write(frames.slice(24));
+          res.end();
+        }, 30);
+      });
+    });
+    await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+    const upPort = upstream.address().port;
+
+    const child = spawn(process.execPath,
+      [ZEN, '--port', '0', '--upstream', `http://127.0.0.1:${upPort}`],
+      { stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    const port = await new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error('zen-proxy 没就绪')), 10000);
+      const check = () => {
+        const m = /listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(out);
+        if (m) { clearTimeout(t); res(Number(m[1])); } else setTimeout(check, 50);
+      };
+      check();
+    });
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'x', messages: [{ role: 'user', content: 'hi' }] }),
+      });
+      const ct = r.headers.get('content-type') || '';
+      const text = await r.text();
+      assert.match(ct, /event-stream/,
+          `content-type 应该被纠正成 SSE，实际：${ct}`);
+      assert.equal(text, frames,
+          'body 必须完整 —— 嗅探读走的那块要补发，否则每轮都会丢掉开头');
+    } finally {
+      child.kill('SIGKILL');
+      upstream.close();
+    }
+  });
+
+  // ── 两条上游靠路径分流（2026-10-31 接入 Kilo）──
+  //
+  // 两个上游共用一个本地端口：`/v1/*` 走 Zen、`/kilo/v1/*` 走 Kilo。
+  // 这条测试用两个**行为不同**的假上游，验证：路径真的分开了、
+  // 各自的过滤规则各自生效、一条出错不会串到另一条。
+  await testAsync('两条上游靠路径分流：/v1 与 /kilo/v1 互不串台', async () => {
+    const http = await import('node:http');
+    // Zen 上游：它的免费判定是"名字里含 free"
+    const zenUp = http.createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [
+        { id: 'mimo-v2.6-flash-free' },
+        { id: 'some-paid-model' },
+      ] }));
+    });
+    await new Promise((r) => zenUp.listen(0, '127.0.0.1', r));
+    // Kilo 上游：它的免费判定是 `isFree === true`
+    const kiloUp = http.createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [
+        { id: 'dots-studio/dots-3-note-preview:free', isFree: true },
+        { id: 'expensive/model', isFree: false },
+      ] }));
+    });
+    await new Promise((r) => kiloUp.listen(0, '127.0.0.1', r));
+
+    const child = spawn(process.execPath, [
+      ZEN, '--port', '0',
+      '--upstream', `http://127.0.0.1:${zenUp.address().port}`,
+      '--kilo-upstream', `http://127.0.0.1:${kiloUp.address().port}`,
+    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    const port = await new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error('zen-proxy 没就绪')), 10000);
+      const check = () => {
+        const m = /listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(out);
+        if (m) { clearTimeout(t); res(Number(m[1])); } else setTimeout(check, 50);
+      };
+      check();
+    });
+    try {
+      const z = await (await fetch(`http://127.0.0.1:${port}/v1/models`)).json();
+      const k = await (await fetch(`http://127.0.0.1:${port}/kilo/v1/models`)).json();
+      assert.deepEqual(z.data.map((m) => m.id), ['mimo-v2.6-flash-free'],
+          'Zen 那条只该列名字含 free 的');
+      assert.deepEqual(k.data.map((m) => m.id), ['dots-studio/dots-3-note-preview:free'],
+          'Kilo 那条只该列 isFree=true 的（而且 id 原样保留）');
+      assert.equal(k.data[0].owned_by, 'kilo', 'kilo 组的 owned_by 要能区分出来');
+    } finally {
+      child.kill('SIGKILL');
+      zenUp.close();
+      kiloUp.close();
+    }
+  });
+
+  // ── 非流式整块响应不能卡死（2026-11-01 真机抓到的坑）──
+  //
+  // OVHcloud 这类非流式上游：模型要几秒才吐第一块，然后**整个 JSON 一次到齐**。
+  // 嗅探（sniffFirst）的 read() 会把这一整块读走、流随即 end；若之后还去等 `end`
+  // 事件，它已经在嗅探期间 fire 过了 → 新监听永远等不到 → 下游 curl 拿到 0 字节
+  // 且挂死。修法是嗅探后检查 `r.readableEnded`，已结束就直接收尾。
+  //
+  // 这条测试用一个"延迟后一次性回整块 JSON"的假上游钉住它：修之前会挂到超时，
+  // 修之后必须拿到完整 body。
+  await testAsync('非流式整块响应：嗅探读走后不能卡死（readableEnded 收尾）', async () => {
+    const http = await import('node:http');
+    const payload = JSON.stringify({
+      id: 'chatcmpl-x', object: 'chat.completion',
+      choices: [{ index: 0, message: { role: 'assistant', content: '通了' }, finish_reason: 'stop' }],
+    });
+    // 延迟 1.5 秒（超过嗅探窗口 1200ms）后一次性回整块 —— 复刻 OVH 的形状。
+    const up = http.createServer((req, res) => {
+      req.on('data', () => {});
+      req.on('end', () => {
+        setTimeout(() => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(payload);
+        }, 1500);
+      });
+    });
+    await new Promise((r) => up.listen(0, '127.0.0.1', r));
+
+    const child = spawn(process.execPath,
+      [ZEN, '--port', '0', '--ovh-upstream', `http://127.0.0.1:${up.address().port}`],
+      { stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    const port = await new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error('zen-proxy 没就绪')), 10000);
+      const check = () => {
+        const m = /listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(out);
+        if (m) { clearTimeout(t); res(Number(m[1])); } else setTimeout(check, 50);
+      };
+      check();
+    });
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const r = await fetch(`http://127.0.0.1:${port}/ovh/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }),
+        signal: ctrl.signal,
+      });
+      const text = await r.text();
+      clearTimeout(timer);
+      assert.equal(text, payload,
+          '整块响应必须完整转发 —— 修之前这里会挂到 8 秒超时（拿到空 body）');
+      const j = JSON.parse(text);
+      assert.equal(j.choices[0].message.content, '通了');
+    } finally {
+      child.kill('SIGKILL');
+      up.close();
+    }
+  });
+
+  // ── 换机迁移的备份包（2026-10-31）──
+  //
+  // 这套东西的责任比看起来重：它要把用户的**全部聊天记录**变成一个文件，
+  // 而这个文件会经过网盘、微信、数据线 —— 任何一环都可能被人看到。
+  // 所以下面五条守的是"别人拿不到 / 拿不到半份 / 写不到别处去"。
+  const runBackup = (args, password) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [BACKUP, ...args], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.stdin.write(password + '\n');
+    child.stdin.end();
+    child.on('close', (code) => resolve({ code, out, err }));
+  });
+
+  const seedBackupRoot = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pcbak-'));
+    mkdirSync(join(dir, 'sessions', 's1'), { recursive: true });
+    mkdirSync(join(dir, 'workspace'), { recursive: true });
+    mkdirSync(join(dir, 'dsh'), { recursive: true });
+    writeFileSync(join(dir, 'sessions', 's1', 'session.v4.jsonl'), 'hello session');
+    writeFileSync(join(dir, 'workspace', 'report.md'), '我的文档');
+    writeFileSync(join(dir, 'models.json'), '{"v":1}');
+    // 这两个**必须不被迁移**
+    writeFileSync(join(dir, 'dsh', 'runtime.bin'), 'x'.repeat(100));
+    writeFileSync(join(dir, 'bridge.json'), '{"token":"secret"}');
+    return dir;
+  };
+
+  await testAsync('备份包：打包 → 查看 → 还原，内容逐字节一致', async () => {
+    const src = seedBackupRoot();
+    const out = join(src, 'out.pcbak');
+    const packed = await runBackup(['pack', '--root', src, '--out', out], 'pass12345');
+    assert.equal(packed.code, 0, `打包失败：${packed.err}`);
+
+    const info = await runBackup(['list', '--in', out], 'pass12345');
+    assert.equal(info.code, 0, `读取失败：${info.err}`);
+    const m = JSON.parse(info.out.trim());
+    // sessions 下 1 个 + workspace 下 1 个 + models.json = 3（dsh/ 与 bridge.json 不迁）
+    assert.equal(m.files, 3, `应该只打 3 个文件，实际 ${m.files}`);
+
+    const dst = mkdtempSync(join(tmpdir(), 'pcbak-dst-'));
+    const un = await runBackup(['unpack', '--in', out, '--root', dst], 'pass12345');
+    assert.equal(un.code, 0, `还原失败：${un.err}`);
+    assert.equal(readFileSync(join(dst, 'workspace', 'report.md'), 'utf8'), '我的文档');
+    assert.equal(readFileSync(join(dst, 'sessions', 's1', 'session.v4.jsonl'), 'utf8'), 'hello session');
+    // 不该被还原出来的东西
+    assert.equal(existsSync(join(dst, 'dsh', 'runtime.bin')), false, '运行时文件不该进备份包');
+    assert.equal(existsSync(join(dst, 'bridge.json')), false, '桌面平台口令不该进备份包');
+  });
+
+  await testAsync('备份包：密码不对拒绝打开', async () => {
+    const src = seedBackupRoot();
+    const out = join(src, 'out.pcbak');
+    await runBackup(['pack', '--root', src, '--out', out], 'pass12345');
+    const bad = await runBackup(['list', '--in', out], 'wrongpass');
+    assert.equal(bad.code, 2, '错密码必须以非 0 退出');
+    assert.match(bad.err, /密码不对|损坏/, `报错要说得清楚，实际：${bad.err}`);
+  });
+
+  await testAsync('备份包：被改一个字节就拒绝（GCM 完整性校验）', async () => {
+    const src = seedBackupRoot();
+    const out = join(src, 'out.pcbak');
+    await runBackup(['pack', '--root', src, '--out', out], 'pass12345');
+    const buf = readFileSync(out);
+    buf[60] ^= 0xff; // 改动密文区一个字节
+    const tampered = join(src, 'tampered.pcbak');
+    writeFileSync(tampered, buf);
+    const r = await runBackup(['list', '--in', tampered], 'pass12345');
+    assert.equal(r.code, 2, '篡改过的包不能通过');
+    assert.match(r.err, /密码不对|损坏/);
+  });
+
+  await testAsync('备份包：拒绝目录穿越（包内写 ../ 不能逃出目标目录）', async () => {
+    // 手工造一个恶意包：名字里带 ../
+    const { randomBytes, scryptSync, createCipheriv } = await import('node:crypto');
+    const oz = await import(join(REPO, 'app/assets/toolbox/office-zip.mjs'));
+    const manifest = { v: 1, kind: 'paopaocat-backup', createdAt: new Date().toISOString(), files: [], skipped: [] };
+    const zip = oz.zipWrite([
+      ['manifest.json', Buffer.from(JSON.stringify(manifest))],
+      ['../evil.txt', Buffer.from('pwned')],
+      ['ok.txt', Buffer.from('legit')],
+    ]);
+    const salt = randomBytes(16);
+    const iv = randomBytes(12);
+    const key = scryptSync('pass12345', salt, 32);
+    const c = createCipheriv('aes-256-gcm', key, iv);
+    const body = Buffer.concat([c.update(zip), c.final()]);
+    const dir = mkdtempSync(join(tmpdir(), 'pcbak-evil-'));
+    const evil = join(dir, 'evil.pcbak');
+    writeFileSync(evil, Buffer.concat([Buffer.from('PCB1'), salt, iv, c.getAuthTag(), body]));
+
+    const dst = mkdtempSync(join(tmpdir(), 'pcbak-safe-'));
+    const r = await runBackup(['unpack', '--in', evil, '--root', dst], 'pass12345');
+    assert.equal(r.code, 0);
+    assert.equal(existsSync(join(dir, 'evil.txt')), false,
+        '绝不能写到目标目录外面去（这是解压类功能最经典的洞）');
+    assert.equal(existsSync(join(dst, 'ok.txt')), true, '正常文件仍要能还原');
+  });
+
+  await testAsync('备份包：选错文件时报错说人话', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pcbak-not-'));
+    const notOurs = join(dir, 'random.bin');
+    writeFileSync(notOurs, Buffer.from('this is not a backup file at all'));
+    const r = await runBackup(['list', '--in', notOurs], 'pass12345');
+    assert.equal(r.code, 2);
+    assert.match(r.err, /不是泡泡猫的备份包|太小/, `报错要能指导用户，实际：${r.err}`);
+  });
+
+  // ── 出包前的 runtime 体检（2026-11-01 加，防再把桌面版打进 Android 包）──
+  //
+  // 曾把 __migr 里那份 151MB 桌面完整安装（含 730 条 Windows LibreOffice）当
+  // Android runtime 用，编出 238MB 的包（正确 ~118MB）。桌面包和 slim 包内核版本
+  // 一样，光看版本号拦不住 —— 所以脚本按「体积 / win32 / anysearch」三条硬判。
+  // 这条测试用 Python 现造三种 zip（正确 / 含 win32 / 缺 anysearch），钉住判定。
+  await testAsync('verify-runtime：正确包通过，含 win32 / 缺 anysearch 的被拦', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const makeZip = (path, entries) => {
+      // 用 python 的 zipfile 造（Node 侧没有现成 zip 写库，见 backup.mjs 同理，但这里
+      // 只为造测试夹具，直接借 python 最省事）。
+      const py = `
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], 'w') as z:
+    for name in ${JSON.stringify(entries)}:
+        z.writestr(name, b'x')
+`;
+      execFileSync('python3', ['-c', py, path], { stdio: 'ignore' });
+    };
+    const run = (zip) => {
+      try {
+        const out = execFileSync(process.execPath, [VERIFY_RT, zip], {
+          encoding: 'utf8',
+        });
+        return { code: 0, out };
+      } catch (e) {
+        return { code: e.status, out: (e.stderr || '') + (e.stdout || '') };
+      }
+    };
+    const dir = mkdtempSync(join(tmpdir(), 'vrt-'));
+
+    // ① 正确：含 anysearch、无 win32、体积小 → 通过
+    const good = join(dir, 'good.zip');
+    makeZip(good, ['app/x.js', 'app/node_modules/@deepseek-ai/dsh-web-search-anysearch/lib/index.js']);
+    const g = run(good);
+    assert.equal(g.code, 0, `正确包应该通过，实际：${g.out}`);
+
+    // ② 含 win32 libreoffice → 拦
+    const bad = join(dir, 'bad.zip');
+    makeZip(bad, ['app/node_modules/@deepseek-ai/libreoffice-kit-win32-x64/bin/soffice.exe',
+                  'app/node_modules/@deepseek-ai/dsh-web-search-anysearch/lib/index.js']);
+    const b = run(bad);
+    assert.notEqual(b.code, 0, '含 win32 libreoffice 的包应该被拦');
+    assert.match(b.out, /win32 libreoffice/, `报错要点名 win32，实际：${b.out}`);
+
+    // ③ 缺 anysearch → 拦
+    const noAny = join(dir, 'noany.zip');
+    makeZip(noAny, ['app/x.js']);
+    const n = run(noAny);
+    assert.notEqual(n.code, 0, '缺 anysearch 的包应该被拦');
+    assert.match(n.out, /anysearch/, `报错要提 anysearch，实际：${n.out}`);
   });
 
   await testAsync('lastGood 只写状态文件，且**不含任何凭据**', async () => {

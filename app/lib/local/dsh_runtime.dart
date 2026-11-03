@@ -694,16 +694,16 @@ class DshRuntime {
   String get pptxScriptPath => '$toolboxDir/make-pptx.mjs';
   String get rotateProxyScriptPath => '$toolboxDir/rotate-proxy.mjs';
 
+  /// 换机迁移的备份脚本（打包 / 加密 / 还原，见 backup.mjs）。
+  String get backupScriptPath => '$toolboxDir/backup.mjs';
+
   /// 看图代理（用户意见②）：把图片转成文字描述，好喂给只认文字的模型。
   String get visionProxyScriptPath => '$toolboxDir/vision-proxy.mjs';
 
-  /// 轮换代理的**兜底**起始端口。
-  ///
-  /// ⚠️ 正常路径已经不用它了（审计 P0-3）：代理现在用 `--port 0` 让系统挑一个
-  /// **空闲**端口，真实端口由代理在就绪行里报出来、`RotationProxy` 再回填给 overlay。
-  /// 固定端口（39321~39330）的问题是：同机任何应用扫这 10 个端口就能找到它，
-  /// 然后用用户的 Key 花钱。这里只留给"代理没起来"时 overlay 的占位值。
-  static const int rotateBasePort = 39321;
+  // ⚠️ 曾有一个 `rotateBasePort = 39321` 常量，用作"代理没起来时 overlay 的占位
+  // 端口"。2026-10-31 删除：那是**假象**——它让 overlay 里出现一个指向死端口的
+  // rotate 厂家，用户在会话里选中那个组只会收到 connection refused。
+  // 现在代理没起来就**不写** rotate 厂家（见 writeOverlayFromConfig）。
 
   /// 轮换代理的**客户端令牌**（审计 P0-3）。
   ///
@@ -810,7 +810,9 @@ class DshRuntime {
   /// 一旦 DSH 路由里没声明过某个 model，切过去就报未知模型。
   ///
   /// [activeRoute] 是选中项的全限定 route（`deepseek/xxx` 或 `rotate/cat`）。
-  /// [rotatePort] 是本地轮换代理的端口；配置里有组时才会写 `rotate` 这个厂家。
+  /// [rotatePort] 是本地轮换代理的端口。**只有它非 null（代理真的起来了）才写
+  /// `rotate` 这个厂家** —— 配置里有组但代理起不来时（所有成员都不可用），
+  /// 写进去只会得到一个指向死端口的厂家。见下方 `if (groups.isNotEmpty && ...)`。
   ///
   /// [localModel] 是本机跑着的端侧模型（见 `local_model_server.dart`）。
   /// **它必须是"正在运行"的规格**：传 null 就不写 `local` 厂家 ——
@@ -990,8 +992,19 @@ class DshRuntime {
 
     // 轮换组：注册成 `rotate` 这个厂家下的"模型"（每个组一个），
     // 真正干活的是本地代理（见 local/rotation_proxy.dart）。
-    if (groups.isNotEmpty) {
-      final port = rotatePort ?? rotateBasePort;
+    //
+    // ⚠️ 只有**代理真的起来了**（`rotatePort != null`）才写这个厂家。
+    //
+    // 以前的条件是 `groups.isNotEmpty`，端口兜底到 [rotateBasePort]。而
+    // 「所有组都没有可用成员」时代理根本起不来（它会拒绝空配置），overlay 里
+    // 于是留下一个**指向空端口**的 rotate 厂家：用户在会话里选中那个组，只会
+    // 收到一句 "connection refused"，看不出任何原因。2026-10-31 用户报的
+    // 「轮换池中间有无法使用的模型造成整个轮换池不能用」就是这一族症状。
+    //
+    // 宁可不写（组在选择器里消失）+ 一条诊断日志，也不编"能用"的假象 ——
+    // 这与本文件其它地方（没有可用模型就不重写 overlay）是同一条原则。
+    if (groups.isNotEmpty && rotatePort != null) {
+      final port = rotatePort;
       buf.writeln('      ${_yamlStr(ConfiguredModels.rotateProviderId)}:');
       buf.writeln('        apiKeyEnv: ROTATE_API_KEY');
       buf.writeln('        api: openai-completions');

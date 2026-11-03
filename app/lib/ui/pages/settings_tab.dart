@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../widgets/dsh_panel.dart';
 import '../widgets/computer_access_panel.dart';
+import 'backup_page.dart';
 import '../widgets/wechat_qr_block.dart';
 
 
@@ -20,6 +21,8 @@ import '../../data/anysearch.dart';
 import '../../data/polli_channel.dart';
 import '../../data/zen_channel.dart';
 import '../../local/dsh_runtime.dart';
+import '../../local/port_forwarder.dart';
+import '../../local/web_bridge.dart';
 import '../../state/app_settings.dart';
 import '../theme/dsh_tokens.dart';
 import '../widgets/common.dart';
@@ -193,6 +196,29 @@ class _SettingsTabState extends State<SettingsTab> {
                     ),
                   ),
                   const SizedBox(height: 10),
+                  // ── 「本机模型」入口**暂时撤下**（2026-11-03 用户决定）──────────
+                  //
+                  // 用户原话：「0.82 版暂时不出本地大模型，留到 0.83 版单独攻坚」。
+                  //
+                  // ## 为什么撤
+                  //
+                  // 不是不做了 —— 是**还没做到能用**。0.82 内部验证到的状态：
+                  //   ✅ MNN 引擎能起来、能推理（MiniMind2 实测 451 tok/s）
+                  //   ✅ 会话里能选中、能建会话、能拿 reply
+                  //   ⚠️ 流式首字延迟还没调好（真流式实现有内存问题，未收敛）
+                  //   ⚠️ 小模型吃不下 DSH 的 Agent 协议（回复可能为空）
+                  //
+                  // 半成品放出去 = 用户点进去发现不能用，比没有更糟。
+                  //
+                  // ## 怎么恢复（0.83）
+                  //
+                  // 所有代码**都还在原位**，恢复只需把下面这段加回来：
+                  //   • 页面：`local_models_manager_page.dart`（模型管理，只管下载/运行）
+                  //   • 引擎：`libmnn_mini_server.so`（4.9MB，仍在 jniLibs 里）
+                  //   • 会话：`model_sheet.dart` 里的「本地大模型」分组（同样已撤）
+                  //   • 清单：`model_manifest.json` 里 12 个 MNN 条目（保留未删）
+                  //
+                  // 也就是：**加回两个 UI 入口 + 修好流式**，功能就回来了。
                   // 「图像 / 视频模型」—— 用户 2026-10-11 的设计问题：
                   // 「模型页是否增加一个图形和视频的设置页，用户设置好后可以在影视工具里选择
                   // 图形和视频大模型」→ 加，且与会话模型**分开存**（见 data/media_models.dart）。
@@ -253,7 +279,7 @@ class _SettingsTabState extends State<SettingsTab> {
                         children: <Widget>[
                           const SizedBox(height: 10),
                           DshCollapsibleSection(
-                            title: context.tr('实验通道 · OpenCode Zen（第三方通道）'),
+                            title: context.tr('免Key通道'),
                             child: _card(
                               child: _ZenChannelBlock(
                                 runtime: runtime,
@@ -400,6 +426,42 @@ class _SettingsTabState extends State<SettingsTab> {
 
                   // 用户要求：原来的「关于」改名「文件地址」（它本来列的就是各种路径），
                   // 「关于」另起一块，放求关注文案 + 公众号二维码 + 公众号 ID。
+                  // 「备份与恢复」（2026-10-31 定名，原「备份与换手机」）：换机与还原都靠它。
+                  // 不做网盘直连 —— 只产出/消费一个文件，传那一步交给用户
+                  // 已经在用的工具（微信、网盘 App、数据线）。
+                  DshCollapsibleSection(
+                    title: context.tr('备份与恢复'),
+                    child: _card(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.tr('打包会话、记忆、模型配置与工作区文件，'
+                                '换新手机时还原。'),
+                            style: TextStyle(
+                                color: DshColors.textDim,
+                                fontSize: 11.5,
+                                height: 1.55),
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: FilledButton.tonalIcon(
+                              onPressed: () => Navigator.of(context)
+                                  .push(MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    BackupPage(runtime: widget.runtime),
+                              )),
+                              icon: const Icon(Icons.inventory_2_outlined,
+                                  size: 16),
+                              label: Text(context.tr('打开备份与恢复'),
+                                  style: const TextStyle(fontSize: 12)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   DshCollapsibleSection(
                     title: context.tr('文件地址'),
                     child: _card(child: _locationsSection()),
@@ -417,7 +479,7 @@ class _SettingsTabState extends State<SettingsTab> {
               DshGroupSection(
                 title: context.tr('移动桌面平台'),
                 children: <Widget>[
-                  _card(child: ComputerAccessPanel(runtime: widget.runtime)),
+                  _card(child: ComputerAccessPanel(runtime: widget.runtime, settings: widget.appSettings)),
                 ],
               ),
               const SizedBox(height: 10),
@@ -1477,6 +1539,33 @@ class _PermissionsSectionState extends State<_PermissionsSection> {
     }
   }
 
+  /// 开关「后台运行」：先存设置，再立刻启停前台服务。
+  ///
+  /// 为什么不只存设置：用户点这个开关**期望马上生效**（通知栏立刻出现/消失）。
+  /// 等到下次启动才生效会让人以为没成功。
+  Future<void> _toggleBackground(bool v) async {
+    await widget.settings.setBackgroundKeepAlive(v);
+    // 电脑访问开着时，保活归它管（通知显示「电脑正在访问」），这里不去抢。
+    if (!PortForwarder.instance.running) {
+      if (v) {
+        await WebBridge.start('DSH 在后台保持运行',
+            mode: WebBridge.modeKeepAlive);
+      } else {
+        await WebBridge.stop();
+      }
+    }
+    if (!mounted) return;
+    setState(() {});
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(v
+            ? context.tr('后台运行已开启（通知栏那条「后台运行中」是 Android 的要求，撤不掉）')
+            : context.tr('后台运行已关闭，通知栏那条也撤掉了')),
+      ));
+  }
+
   Future<void> _openAppSettings() async {
     final messenger = ScaffoldMessenger.of(context);
     final ok = await DshHost.openAppSettings();
@@ -1562,6 +1651,48 @@ class _PermissionsSectionState extends State<_PermissionsSection> {
             _btn(context.tr('申请常用权限'), _request),
             _btn(context.tr('去系统设置'), _openAppSettings),
           ],
+        ),
+        const SizedBox(height: 14),
+        // ── 「后台运行」（2026-11-02 用户要求，默认开）──────────────────────
+        //
+        // 为什么放在「手机权限」而原来在「移动桌面平台」里：后台运行本质是
+        // **一组系统设置**（电池优化 + 厂商省电开关 + 常驻前台服务），和权限是
+        // 同一类东西；而"电脑访问"只是其中一个**使用者**，不是它的归属。
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(context.tr('后台运行'),
+                      style:
+                          TextStyle(color: DshColors.text, fontSize: 12.5)),
+                  const SizedBox(height: 2),
+                  Text(
+                    context.tr('让 App 切后台/熄屏后不被系统回收 —— 会话能继续跑、'
+                        '定时任务能按时触发。默认开。'),
+                    style: TextStyle(
+                        color: DshColors.textFaint,
+                        fontSize: 10.5,
+                        height: 1.45),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: widget.settings.backgroundKeepAlive,
+              onChanged: _toggleBackground,
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // Android 的硬约束必须说破，否则"为什么通知栏一直有条通知"会变成投诉。
+        Text(
+          context.tr('⚠️ Android 规定：前台服务必须挂一条通知。所以这项开着时，'
+              '通知栏会有一条常驻的「后台运行中」——它不响不振动（低优先级），'
+              '但撤不掉。关掉这个开关，那条通知才会消失。'),
+          style: TextStyle(
+              color: DshColors.textFaint, fontSize: 10.5, height: 1.45),
         ),
         const SizedBox(height: 12),
         Text(
@@ -1847,7 +1978,9 @@ class _SpeechCheckState extends State<_SpeechCheck> {
 }
 
 /// 把译文模板里的 `{0}` 换成实际值（与其它页面同一套规则）。
-String _fill(String template, String v) => template.replaceAll('{0}', v);
+/// 两个占位符的填充（`{0}` = 测了几个，`{1}` = 几个可用）。
+String _fill2(String template, String a, String b) =>
+    template.replaceAll('{0}', a).replaceAll('{1}', b);
 
 /// 「免费模型（无需 Key）」的设置块。
 ///
@@ -2455,9 +2588,9 @@ class _ZenChannelBlockState extends State<_ZenChannelBlock> {
   }
 
   Future<void> _toggle(bool on) async {
-    // ⚠️ 下面要连续 await（起代理/取模型/写配置），所以文案先取出来 ——
+    // ⚠️ 下面要连续 await（起代理/取模型/逐个测/写配置），所以文案先取出来 ——
     //    既避开"await 之后用 context"，也避免页面已经回收还去读 context。
-    final tAdded = context.tr('已加入 {0} 个免费模型，去模型选择器里看看。');
+    final tAdded = context.tr('测了 {0} 个模型，{1} 个此刻能用，已加进列表。');
     final tClosed = context.tr('已关闭，并把这批免费模型从模型列表里移除。');
     setState(() {
       _busy = true;
@@ -2471,7 +2604,7 @@ class _ZenChannelBlockState extends State<_ZenChannelBlock> {
         await widget.settings.setZenEnabled(true);
         // ⚠️ 必须走这个回调：它负责把新的模型配置写进 overlay 并重建 runtime。
         await widget.onModelChanged();
-        _notice = _fill(tAdded, '${r.models}');
+        _notice = _fill2(tAdded, '${r.tested}', '${r.alive}');
       } else {
         // 没成 → 不要把开关留在"开"的状态（否则用户以为开了、其实没有）。
         await widget.settings.setZenEnabled(false);
@@ -2490,13 +2623,13 @@ class _ZenChannelBlockState extends State<_ZenChannelBlock> {
   }
 
   Future<void> _refreshModels() async {
-    final tRefreshed = context.tr('已刷新：{0} 个免费模型。');
+    final tRefreshed = context.tr('测了 {0} 个模型，{1} 个此刻能用。');
     setState(() => _busy = true);
     final r = await ZenChannel.enable(runtime: widget.runtime);
     if (!mounted) return;
     if (r.ok) {
       await widget.onModelChanged();
-      _notice = _fill(tRefreshed, '${r.models}');
+      _notice = _fill2(tRefreshed, '${r.tested}', '${r.alive}');
     } else {
       _notice = r.error;
     }
@@ -2514,13 +2647,13 @@ class _ZenChannelBlockState extends State<_ZenChannelBlock> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         DshRichText(
-          context.tr('打开后，App 会在本机起一个小小的**转发代理**，把请求按'
-              '**官方 CLI 的样子**发到 OpenCode 的匿名免费额度，并把拿到的免费模型'
-              '直接加进你的模型列表 —— **不用配置任何 Key**。\n\n'
-              '⚠️ 只是想"不用 Key 就能聊"的话，**用上面那条（免 Key 免费模型）就好** —— '
-              '这条 Zen 通道自 2026-09-16 起被上游改过 6 次门禁，时好时坏'
-              '（2026-10-16 本机实测又能用了，但它随时可能再变）；'
-              '想知道此刻通不通，点下面的「通道自检」。'),
+          // 2026-11-03 用户：「文本表述太乱了，简明扼要」。
+          // 原文案 5 行、讲了实现原理（转发代理/官方 CLI 样子）+ 历史沿革（改过 6 次门禁），
+          // 对用户来说都是噪音。现在只留三句：做什么、怎么来、什么时候点自检。
+          context.tr('打开后，App 在本机起一个转发代理，把三条免 Key 上游'
+              '（OpenCode / Kilo / OVHcloud）的免费模型加进你的模型列表 —— '
+              '**不用配任何 Key**。\n'
+              '加进来之前会**逐个试一下**，连不上的不列出来。'),
           style: TextStyle(color: DshColors.textDim, fontSize: 12, height: 1.5),
         ),
         const SizedBox(height: 10),
@@ -2533,8 +2666,8 @@ class _ZenChannelBlockState extends State<_ZenChannelBlock> {
           children: <Widget>[
             Expanded(
               child: Text(
-                context.tr('这条通道用不了的时候才需要它：点一次自检，它会告诉你到底是哪种问题'
-                    '（网络不通 / 被上游拒绝 / 模型名退役 / Key 失效 / 限流），'
+                context.tr('通道出问题时再点：它会指出是哪种原因'
+                    '（网络不通 / 被上游拒绝 / 模型名退役 / 限流），'
                     '并可以把结论一键发给开发者。'),
                 style: TextStyle(
                     color: DshColors.textFaint, fontSize: 11, height: 1.5),

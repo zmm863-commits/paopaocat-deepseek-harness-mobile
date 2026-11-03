@@ -92,6 +92,17 @@ class AppSettings extends ChangeNotifier {
   /// 在 Bot 页上太容易误触到别的页签（网页里本来就有自己的横滑/滚动）。
   static const String _kSwipeSwitch = 'dsh_swipe_switch';
 
+  /// 「后台运行」（2026-11-02 用户要求）：**默认开**。
+  ///
+  /// 控制一个常驻前台服务（`WebBridgeService`），让 App 切后台/熄屏后不被系统
+  /// 随意回收 —— 会话能继续跑、定时任务能按时触发。开关放在「设置 → 应用 →
+  /// 手机权限」里（它本质是一组系统设置，和权限是同一类东西）。
+  ///
+  /// ⚠️ **Android 的硬约束**：前台服务必须挂一条通知。所以默认开 = 一装就有
+  /// 一条常驻通知。它走 `IMPORTANCE_LOW`（不响不振动、不弹横幅），但**撤不掉** ——
+  /// 这是 Android 的设计，不是我们没做好。
+  static const String _kBackgroundKeepAlive = 'dsh_background_keepalive';
+
   /// 「会话里提供子智能体工具」（出厂是提供的）。
   ///
   /// 关掉 = overlay 里把这几个 id 覆盖成 `disabled: true`（见
@@ -197,6 +208,9 @@ class AppSettings extends ChangeNotifier {
 
   /// 左右滑动切换页面（见 [_kSwipeSwitch]）。**默认开**。
   bool _swipeSwitch = true;
+
+  /// 「后台运行」是否开启 —— **默认 true**，见 [_kBackgroundKeepAlive]。
+  bool _backgroundKeepAlive = true;
 
   /// 子会话用的模型路由（`provider/model`）；null/空 = 跟随父会话。
   String? _subagentRoute;
@@ -325,6 +339,9 @@ class AppSettings extends ChangeNotifier {
 
   /// 左右滑动切换页面是否开启 —— **默认 true**，见 [_kSwipeSwitch]。
   bool get swipeSwitch => _swipeSwitch;
+
+  /// 「后台运行」是否开启 —— **默认 true**，见 [_kBackgroundKeepAlive]。
+  bool get backgroundKeepAlive => _backgroundKeepAlive;
 
   /// 子会话用的模型路由（`provider/model`）；空 = 跟随父会话。
   String? get subagentRoute => _subagentRoute;
@@ -499,6 +516,8 @@ class AppSettings extends ChangeNotifier {
       // 同上：默认开（匿名可用，不用填任何东西）。
       _anysearchEnabled = prefs.getBool(_kAnysearchEnabled) ?? true;
       _swipeSwitch = prefs.getBool(_kSwipeSwitch) ?? true;
+      // 后台运行默认开 —— 装完就有效，不用用户先去设置里找开关。
+      _backgroundKeepAlive = prefs.getBool(_kBackgroundKeepAlive) ?? true;
       // 出厂就是提供子智能体的，所以默认 true。
       _subagentEnabled = prefs.getBool(_kSubagentEnabled) ?? true;
       _phoneAgentEnabled = prefs.getBool(_kPhoneAgentEnabled) ?? false;
@@ -755,6 +774,21 @@ class AppSettings extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_kZenEnabled, v);
       debugPrint('[dsh-app-settings] 社区免费通道 = $v');
+    } catch (e) {
+      debugPrint('[dsh-app-settings] persist failed: $e');
+    }
+  }
+
+  /// 开关「后台运行」。真正的启停（起/停前台服务）由调用方负责 ——
+  /// 见 `ui/app_shell.dart` 的 `_syncBackgroundKeepAlive`。这里只记住选择。
+  Future<void> setBackgroundKeepAlive(bool v) async {
+    if (v == _backgroundKeepAlive) return;
+    _backgroundKeepAlive = v;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kBackgroundKeepAlive, v);
+      debugPrint('[dsh-app-settings] 后台运行 = $v');
     } catch (e) {
       debugPrint('[dsh-app-settings] persist failed: $e');
     }

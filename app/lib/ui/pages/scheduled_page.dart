@@ -60,7 +60,17 @@ class _ScheduledPageState extends State<ScheduledPage> {
     super.didUpdateWidget(oldWidget);
     // 每切到本页一次就重读一次（用户要求「切换即刷新」）：
     // 后台服务跑完的任务、运行历史都要能立刻反映出来。
-    if (oldWidget.refreshTick != widget.refreshTick) _store.load();
+    //
+    // ⚠️ 必须推迟到 build 结束后（2026-11-01 真机日志：
+    // `setState() called during build`）—— `ScheduleStore.load()` 虽然标了
+    // async，但函数体里没有 await，Dart 会**同步**跑完整个函数再返回；
+    // 于是它在 build 阶段就 notifyListeners()，AppShell 的 _onSchedulesChanged
+    // 监听器里 setState() → build 中途改树 → 异常。
+    if (oldWidget.refreshTick != widget.refreshTick) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _store.load();
+      });
+    }
   }
 
   @override

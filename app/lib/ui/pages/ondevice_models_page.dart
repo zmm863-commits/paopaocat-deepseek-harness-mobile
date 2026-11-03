@@ -766,11 +766,10 @@ class _OnDeviceModelsPageState extends State<OnDeviceModelsPage> {
   bool _engineBundled(String engine) {
     final dir = widget.runtime.nativeLibDir;
     if (dir.isEmpty) return false;
+    // 只认 MNN（2026-11-03）。另外两个引擎已从清单里下线。
     return switch (engine) {
-      'llama.cpp' => File('$dir/libllamaserver.so').existsSync(),
-      // LiteRT-LM 是 Google 官方 AAR 带进来的 .so（`litertlm-android`）。
-      // 它在包里 = 这一档"有引擎"，Gemma 4 那批 `.litertlm` 从🔴变🟢。
-      'litert-lm' => File('$dir/liblitertlm_jni.so').existsSync(),
+      // 我们自编的最小 server（4.9MB，静态链了 libMNN.a）。
+      'mnn' => File('$dir/libmnn_mini_server.so').existsSync(),
       _ => false,
     };
   }
@@ -784,13 +783,11 @@ class _OnDeviceModelsPageState extends State<OnDeviceModelsPage> {
   /// 按钮藏起来、**一个字都不解释**，于是"点选本地大模型显示本地服务没起来"。
   static String _engineWhy(String engine) {
     switch (engine) {
-      case 'llama.cpp':
-        return '本版跑不了：它要 llama.cpp 引擎，而这个引擎 0.47 起就不随包了'
-            '（在骁龙 8 Elite 这类机型上处理长请求必崩）';
-      case 'litert-lm':
-        return '包里没找到 LiteRT-LM 引擎（liblitertlm_jni.so）—— 安装不完整，重装一次试试';
+      case 'mnn':
+        return '包里没找到 MNN 引擎（libmnn_mini_server.so）—— 安装不完整，重装一次试试';
       default:
-        return '本版不认识「$engine」这个引擎';
+        // 清单里已只有 MNN；万一有旧数据残留，如实说"这版不支持"。
+        return '这版只支持 MNN 引擎（这个模型要的是「$engine」）—— 换一个带 MNN 标记的模型';
     }
   }
 
@@ -1374,7 +1371,9 @@ class _OnDeviceModelsPageState extends State<OnDeviceModelsPage> {
         // 重复两遍 —— 用户说的"排版太乱"有它一份。许可保留（依据行不含它）。
         note: '${_fmt(best.totalBytes)}'
             '　${context.tr('许可：{0}', [best.license])}'
-            '${best.companions.isEmpty ? '' : '　${context.tr('含视觉编码器（mmproj）')}'}',
+            // MNN 的 companions 是配置文件（llm_config/tokenizer），不是视觉编码器 ——
+            // 标成 mmproj 是错的，用户会以为这模型能看图（2026-11-02）。
+            '${best.companions.isEmpty || best.engine == 'mnn' ? '' : '　${context.tr('含视觉编码器（mmproj）')}'}',
         trailing: dl != null
             ? Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1437,7 +1436,8 @@ class _OnDeviceModelsPageState extends State<OnDeviceModelsPage> {
     final note = <String>[
       _fmt(i.bytes + i.companions.fold<int>(0, (a, c) => a + c.bytes)),
       // 同上：内存要求只由依据行（fit.reason）说一次。
-      if (i.companions.isNotEmpty) context.tr('含视觉编码器（mmproj）'),
+      if (i.companions.isNotEmpty && engineName != 'mnn')
+        context.tr('含视觉编码器（mmproj）'),
       // 只报"已经校验过"这一种：没回填 sha256 时挂一整句像故障提示，
       // 用户会以为自己的文件有问题（这一点页面底部已统一说明）。
       // 来源（ModelScope/…) 也从这一行去掉 —— 一行塞五六段是"乱"的主因之一。

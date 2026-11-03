@@ -98,33 +98,28 @@ void main() {
   // 这个 bug 的形状：**代码一行没错、编译不报错、测试全绿**，只有真机上
   // "什么都起不来"。所以必须把"引擎 → 文件名"这个映射钉死。
   // ══════════════════════════════════════════════════════════════════════════
-  group('引擎 → 该查哪个 .so（拿 A 的文件判 B 的模型 = 谁都起不来）', () {
-    test('litert-lm 查 liblitertlm_jni.so，绝不是 libllamaserver.so', () {
-      expect(LocalModelServer.engineLibName('litert-lm'), 'liblitertlm_jni.so');
-      expect(LocalModelServer.engineLibName('litert-lm'),
-          isNot(LocalModelServer.executableName),
-          reason: '这正是用户日志里那个 bug：litert 模型被拿去查 llama.cpp 的 .so');
+  group('引擎 → 该查哪个 .so（2026-11-03 起只认 MNN）', () {
+    test('mnn 查 libmnn_mini_server.so', () {
+      expect(LocalModelServer.engineLibName('mnn'), 'libmnn_mini_server.so');
     });
 
-    test('llama.cpp 查 libllamaserver.so（已下线，但它自己的文件名不能错）', () {
-      expect(LocalModelServer.engineLibName('llama.cpp'),
-          LocalModelServer.executableName);
-    });
-
-    test('认不出的引擎 → null（由调用方给一句人话，而不是拿别的引擎的文件硬判）', () {
+    test('已下线的两个引擎 → null（不许再拿别的引擎的文件硬判）', () {
+      // 这正是用户日志里那个 bug 的根：拿 A 引擎的文件去判 B 引擎的模型，
+      // 结果「引擎不存在」永远成立。下线之后必须是 null，让调用方给一句人话。
+      expect(LocalModelServer.engineLibName('llama.cpp'), isNull);
+      expect(LocalModelServer.engineLibName('litert-lm'), isNull);
       expect(LocalModelServer.engineLibName('vllm'), isNull);
       expect(LocalModelServer.engineLibName(''), isNull);
     });
 
-    test('两种引擎的文件名必须不同 —— 否则这个 bug 又会以别的形式回来', () {
-      expect(LocalModelServer.engineLibName('litert-lm'),
-          isNot(LocalModelServer.engineLibName('llama.cpp')));
+    test('认不出的引擎 → null', () {
+      expect(LocalModelServer.engineLibName('gguf'), isNull);
     });
 
     test('hasEngine：引擎目录为空时一律 false（不猜）', () {
       final s = LocalModelServer.instance;
       // 没 configure 过 → _nativeLibDir 为空 → 任何引擎都算"没有"
-      expect(s.hasEngine('litert-lm'), isFalse);
+      expect(s.hasEngine('mnn'), isFalse);
       expect(s.hasEngine('llama.cpp'), isFalse);
       expect(s.hasEngine('vllm'), isFalse);
     });

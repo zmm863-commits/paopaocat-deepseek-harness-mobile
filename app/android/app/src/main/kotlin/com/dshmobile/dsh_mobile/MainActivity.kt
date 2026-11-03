@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.app.NotificationManager
 import android.Manifest
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -203,6 +204,51 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
+     * 打开厂商自己的那个开关页；一个都进不去就退到「本应用」的系统详情页。
+     *
+     * 返回 `"vendor"`（进了厂商页）/ `"details"`（退到详情页）/ `null`（都没成功）。
+     *
+     * ⚠️ 两处必须做对，否则在真机上会**静默失败**：
+     *   1. 先 `resolveActivityInfo` 再 `exported` 检查 —— 厂商的这些 activity 有的
+     *      **不导出**，直接 startActivity 会抛 SecurityException（被 catch 掉就成了
+     *      "点了没反应"，最难查）。
+     *   2. 按 action 打开时，resolved 出来的组件名可能与声明的不同 —— 要把
+     *      `info.packageName/info.name` 回填进去，否则打开的是别的页面。
+     */
+    private fun openVendorSettings(switch: VendorSettings.Switch): String? {
+        val pm = packageManager
+        fun launch(intent: Intent): Boolean = try {
+            startActivity(intent)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+        val vendor = VendorSettings.vendorOf(Build.MANUFACTURER, Build.BRAND)
+        for (page in VendorSettings.pages(vendor, switch)) {
+            val cls = page.cls
+            val intent = if (cls != null) {
+                Intent().setComponent(ComponentName(page.pkg, cls))
+            } else {
+                val action = page.action ?: continue
+                Intent(action).setPackage(page.pkg)
+            }
+            page.packageExtra?.let { intent.putExtra(it, packageName) }
+            page.labelExtra?.let {
+                intent.putExtra(it, applicationInfo.loadLabel(pm).toString())
+            }
+            val info = try {
+                intent.resolveActivityInfo(pm, 0)
+            } catch (_: Throwable) {
+                null
+            }
+            if (info?.exported != true) continue
+            if (cls == null) intent.setClassName(info.packageName, info.name)
+            if (launch(intent)) return "vendor"
+        }
+        return if (launch(VendorSettings.detailsIntent(packageName))) "details" else null
+    }
+
+    /**
      * 问 Dart："这次返回要不要真的退？"
      *
      *   * Dart 回 true  → `moveTaskToBack(true)`：**退到后台**（用户原话"实际是退到后台了"）
@@ -286,7 +332,10 @@ class MainActivity : FlutterActivity() {
                     "webBridgeStart" -> {
                         try {
                             val detail = call.argument<String>("detail") ?: ""
-                            WebBridgeService.start(this@MainActivity, detail)
+                            // mode 决定通知标题：keepalive =「后台运行中」，webaccess =「电脑正在访问」
+                            val mode = call.argument<String>("mode")
+                                ?: WebBridgeService.MODE_WEBACCESS
+                            WebBridgeService.start(this@MainActivity, detail, mode)
                             result.success(true)
                         } catch (e: Throwable) {
                             result.error("webBridgeStart", e.message, null)
@@ -298,6 +347,65 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         } catch (e: Throwable) {
                             result.error("webBridgeStop", e.message, null)
+                        }
+                    }
+                    // ---- 后台运行：电池优化豁免（2026-10-31）----
+                    //
+                    // ⚠️ App **不能**自己"打开后台运行权限"—— 那是系统设置的领域，
+                    // 第三方应用无权改。能做的只有两件事：
+                    //   ① 问系统"我现在到底豁免了没有"，如实显示；
+                    //   ② 用 REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 弹一次系统确认框。
+                    //
+                    // 所以界面上**不该有「后台运行开关」**：那种开关只能记住"用户点过"，
+                    // 改不了系统行为，正是故障报告里批的「UI 状态 ≠ 运行状态」。
+                    // 要的是**状态显示 + 一键直达**，见 ComputerAccessPanel 的说明。
+                    "batteryOptimStatus" -> {
+                        try {
+                            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                            result.success(pm.isIgnoringBatteryOptimizations(packageName))
+                        } catch (e: Throwable) {
+                            result.error("batteryOptimStatus", e.message, null)
+                        }
+                    }
+                    "batteryOptimRequest" -> {
+                        try {
+                            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                            if (pm.isIgnoringBatteryOptimizations(packageName)) {
+                                result.success("already")
+                            } else {
+                                val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                                i.data = Uri.parse("package:$packageName")
+                                startActivity(i)
+                                result.success("requested")
+                            }
+                        } catch (e: Throwable) {
+                            // 不少国产 ROM 没有这个 activity → 退到"应用详情页"，
+                            // 用户自己进「电池 / 耗电管理」选无限制。
+                            // 用**已有的** openAppSettingsPage()（返回 Boolean，内部已 try/catch，
+                            // 不会抛异常）—— 2026-11-01 编译时发现我另加了一个同名 Unit 版
+                            // 导致 Conflicting overloads，已删。
+                            result.success(
+                                if (openAppSettingsPage()) "fallback" else "fallback-failed"
+                            )
+                        }
+                    }
+                    "batteryOptimOpenSettings" -> result.success(openAppSettingsPage())
+                    // ---- 厂商自己的「后台不被杀」开关（2026-10-31）----
+                    //
+                    // 上面那个 batteryOptimRequest 只管**标准 Android**。国产 ROM 还有一套
+                    // 系统 API 读不到也改不了的开关（vivo 允许后台高耗电 / 小米 省电策略 /
+                    // 华为·荣耀 应用启动管理 / OPPO 后台行为），不开照样断。
+                    // 这里只负责**把用户送到那一页**，跳转表见 VendorSettings.kt。
+                    "vendorKey" -> {
+                        result.success(VendorSettings.vendorOf(Build.MANUFACTURER, Build.BRAND))
+                    }
+                    "openVendorSettings" -> {
+                        try {
+                            val sw = VendorSettings.Switch.parse(call.argument<String>("switch"))
+                                ?: VendorSettings.Switch.BACKGROUND
+                            result.success(openVendorSettings(sw))
+                        } catch (e: Throwable) {
+                            result.error("openVendorSettings", e.message, null)
                         }
                     }
                     // ---- 手机界面操作（Agent 看屏幕/点屏幕）----
@@ -1249,10 +1357,6 @@ class MainActivity : FlutterActivity() {
 
             override fun onError(error: Int) {
                 Log.w(TAG, "on-device speech error=$error")
-                // ⚠️ 设备端识别"自称可用"但实际会失败（这台机器没装该语言的离线模型、
-                // 不支持这个语言标签、或识别环境有问题）。这时**必须退回系统识别那条路**，
-                // 而不是把"没识别到"直接甩给用户 —— 用户反馈「语音依然不能使用」，
-                // 这里是最可能的盲点。
                 try {
                     recognizer?.destroy()
                 } catch (_: Throwable) {

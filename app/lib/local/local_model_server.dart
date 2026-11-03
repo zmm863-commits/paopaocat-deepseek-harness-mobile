@@ -169,7 +169,7 @@ class LocalModelServer {
   /// **进程内**的（走原生通道，没有子进程），只看 `_proc` 会在它明明在跑时返回
   /// false —— 后果是服务区那颗状态点一直是灰的、"服务运行中"的说明不出现、
   /// 推理后端与上下文两颗按钮本该置灰却可以点。
-  bool get running => _proc != null || _liteRtLmActive;
+  bool get running => _proc != null;
 
   int? get port => _port;
 
@@ -204,9 +204,15 @@ class LocalModelServer {
   /// 拿 A 引擎的文件去判 B 引擎的模型。
   ///
   /// 返回 null = 这个引擎没有"独立的可执行文件"可判，交给原生侧自己报错。
+  /// 只认 **MNN**（2026-11-03 用户口径：「调用本地大模型只认 mnn 引擎」）。
+  ///
+  /// 另外两个引擎的下线理由（都是实测跑不动，不是不想支持）：
+  ///   * `llama.cpp` —— 骁龙 8 Elite / Armv9.2 上长请求必 SIGSEGV，且 0.47 起不随包；
+  ///   * `litert-lm` —— 同样不在包里，界面上只会报"引擎不存在"。
+  ///
+  /// 返回 null = 「这版没有这个引擎」，UI 据此显示"缺引擎"。
   static String? engineLibName(String engine) => switch (engine) {
-        'llama.cpp' => 'libllamaserver.so',
-        'litert-lm' => 'liblitertlm_jni.so',
+        'mnn' => 'libmnn_mini_server.so',
         _ => null,
       };
 
@@ -369,14 +375,15 @@ class LocalModelServer {
     // 这里只要"通过原生通道让它启动、拿到端口"，**下面那整套（overlay 注册 /
     // 模型选择器 / 会话指纹 / 用量统计）一行都不用改** —— 对 DSH 来说它就是
     // 一台"跑在 127.0.0.1:某端口"的本机服务。
-    if (model.engine == 'litert-lm') {
-      return _ensureLiteRtLm(
-        model: model,
-        modelPath: modelPath,
-        contextSize: contextSize,
-        backend: useBackend,
-        requestedPort: port ?? _liteRtLmBasePort,
-      );
+    // 只认 MNN（2026-11-03）。以前这里分两条路（litert-lm 进程内 / llama 子进程），
+    // 现在收成一条：**能起的只有 MNN**。清单里若混着别的引擎，当场拒绝并说明，
+    // 而不是让它去起一个注定失败的进程。
+    if (model.engine != 'mnn') {
+      _lastError = tr('这版只支持 MNN 引擎（这个模型要的是 {0}）—— '
+          '回「本地大模型」页换一个带 MNN 标记的模型', [model.engine]);
+      debugPrint('$_logTag 拒绝非 MNN 引擎：${model.engine}');
+      DiagnosticsLog.add(_logTag, '拒绝非 MNN 引擎：${model.engine}');
+      return null;
     }
 
     // Gemma 家族的模型**自带模板太严**（只认"首条 system + 之后严格交替"），
@@ -407,6 +414,7 @@ class LocalModelServer {
         backend: useBackend,
         tuned: tuned,
         chatTemplate: chatTemplate,
+        modelId: model.id,
       );
       if (!ok) {
         // **带优化开关起不来**（个别机型/驱动不支持 flash-attn / KV 量化）→ 退回兼容参数再试一次。
@@ -425,6 +433,7 @@ class LocalModelServer {
             backend: useBackend,
             tuned: false,
             chatTemplate: chatTemplate,
+            modelId: model.id,
           );
           if (!ok2) {
             if (_exitedEarly) {
@@ -492,35 +501,27 @@ class LocalModelServer {
     /// 覆盖对话模板（传模板**源码**）。null = 用模型自带的模板。
     /// 只有 Gemma 家族会传 —— 它自带模板太严，见 `loose_chat_templates.dart`。
     String? chatTemplate,
+
+
+    /// 模型 id —— MNN 那条把它当作对外报的模型名。
+    required String modelId,
   }) async {
     final threads = Platform.numberOfProcessors.clamp(2, 6);
+    // ── MNN 的命令行（2026-11-03 起这是唯一一条路）─────────────────────────
+    //
+    //   mnn_mini_server <config.json> [port] [model-id]
+    //
+    // config.json 在**模型主文件所在的目录**：主文件是 llm.mnn.weight，
+    // llm_config.json / tokenizer.txt / llm.mnn 都是同目录的伴生文件，
+    // 引擎按 config 里的相对路径自己找。
+    //
+    // 不传 -ngl/-c/-t 那些 llama 参数 —— MNN 不认（会被当多余参数忽略，
+    // 但日志里会多一行噪音，且让人误以为在调 llama）。
+    final dir = File(modelPath).parent.path;
     final args = <String>[
-      '-m', modelPath,
-      '--host', '127.0.0.1',
-      '--port', '$port',
-      '-c', '$contextSize',
-      '-t', '$threads',
-      // 后端：`-ngl` = offload 到 GPU 的层数。0 = 纯 CPU，99 = 尽量全上 GPU。
-      // 引擎没有 Vulkan 时传 99 也是安全的（llama.cpp 会退回 CPU 并打一行日志），
-      // 所以这里不需要提前探测，避免多一次进程启动。
-      '-ngl', backend.ngl,
-      // 覆盖对话模板（Gemma 家族必须有，否则 DSH 的多条 system 会被引擎 400 拒掉）。
-      // 注意 `--chat-template` 接受的是**模板源码**，不是只能用内置名。
-      if (chatTemplate != null) ...<String>['--chat-template', chatTemplate],
-      // 关掉它自己的 Web UI（我们不需要，也省掉一批静态资源请求）。
-      '--no-webui',
-      // ── 性能开关：**暂时全部移除**（2026-10-08 真机结论）────────────────
-      //
-      // 这几个开关（flash-attn / KV q8_0 / cache-reuse / threads-batch）是 0.28 加的，
-      // 但因为 `--flash-attn` 参数写错（裸开关吞掉下一个参数），**从来没真正生效过** ——
-      // 0.26 时代用户能跑，跑的就是**没有这些开关的基础参数**。
-      //
-      // 0.31 修好参数后它们第一次真正跑起来，结果在这台机器（骁龙 8 Elite / Armv9）上
-      // **CPU、GPU、NPU 全都段错误（code=-11）**：自检（27 tokens 的短请求）能过，
-      // 但 DSH 的真实长请求（~7000 token 系统提示 + 多轮历史）一跑就崩。
-      //
-      // 所以先全部移除，回到 0.26 能跑的基础参数。到底是哪个开关在 Armv9 上段错误，
-      // 等本机复现定位后再按需加回 —— **"能用"永远优先于"快"**。
+      '$dir/llm_config.json',
+      '$port',
+      modelId,
     ];
     _exitCode = null;
     // ⚠️ proc 必须声明在 try 之外：等就绪失败时要拿它来 kill。

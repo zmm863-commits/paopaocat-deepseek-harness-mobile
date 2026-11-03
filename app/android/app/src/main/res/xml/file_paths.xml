@@ -48,4 +48,10 @@
          已配置根"），界面上表现为"下载好了却装不了"。**只给 updates/ 这一层** ——
          不要写 "."，那会把整个私有目录（含运行时 zip、标记文件）都开出去。 -->
     <files-path name="updates" path="updates/" />
+    <!-- 备份包：files/backups/（2026-11-03）。
+         必须在这里开，否则「分享」抛 NOT_SHAREABLE（真机原话：
+         `Failed to find configured root that contains .../泡泡猫备份-xxx.pcbak`）。
+         备份包原来写在 files/ 根下 —— 那层故意没开（里面有运行时 zip、标记文件），
+         所以挪进这个专有子目录再单独开一条。 -->
+    <files-path name="backups" path="backups/" />
 </paths>

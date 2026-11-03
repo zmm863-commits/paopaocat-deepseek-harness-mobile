@@ -19,6 +19,11 @@
     <!-- Android 13+ 不授权则常驻通知不可见（服务仍会运行） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- 后台运行：「忽略电池优化」豁免（Android 6 / API 23+）。
+         ⚠️ App **不能**自己授予它 —— 只能弹系统确认框（MainActivity 的
+         batteryOptimRequest），用户点「允许」才生效。所以界面上没有"开关"，
+         只有状态显示 + 一键直达。本 App 不上 Google Play，不涉及其上架政策。 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <!-- 屏幕助手要列出"所有能从桌面启动的 App"（Android 11+ 包可见性）。
          本 App 不上 Google Play，不涉及它的上架政策限制。 -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"

@@ -6,6 +6,8 @@ import '../../i18n/dsh_i18n.dart';
 import '../../local/bot_server.dart';
 import '../../local/dsh_runtime.dart';
 import '../../local/agnes_web.dart';
+import '../../local/battery_optim.dart';
+import '../../state/app_settings.dart';
 import '../../local/bridge_prefs.dart';
 import '../../local/diagnostics_log.dart';
 import '../../local/design_site.dart';
@@ -37,9 +39,16 @@ import 'computer_access_selfcheck.dart';
 /// `--host` 是启动参数，改不了热绑定。开关一拨就要重启 web 服务，Bot 页的
 /// WebView 会短暂断开（[BotServer.live] 会通知它新地址并重连）。
 class ComputerAccessPanel extends StatefulWidget {
-  const ComputerAccessPanel({super.key, required this.runtime});
+  const ComputerAccessPanel({
+    super.key,
+    required this.runtime,
+    required this.settings,
+  });
 
   final DshRuntime runtime;
+
+  /// 读「后台运行」开关：关掉电脑访问时要决定「退回后台保活」还是「彻底停掉」。
+  final AppSettings settings;
 
   @override
   State<ComputerAccessPanel> createState() => _ComputerAccessPanelState();
@@ -53,6 +62,19 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
   String? _note;
   bool _busy = false;
   bool _on = false;
+
+  /// 系统「忽略电池优化」的真状态。`null` = 查不到（老设备 / 通道失败）。
+  ///
+  /// ⚠️ 用三态而不是 bool：查不到的时候**必须**能显示成"不确定"。
+  /// 默认 false 会在查不到时给出一个假警报，默认 true 则是假绿灯。
+  bool? _batteryIgnoring;
+
+  /// 认出来的手机厂商（`vivo`/`xiaomi`/`huawei`/`honor`/`oppo`），null = 不用管。
+  String? _vendor;
+
+  /// 用户**去过**哪些厂商设置页。注意：这是"去过"，不是"已开启" ——
+  /// 系统不告诉 App 那些开关的状态，界面上也不会把它画成勾。
+  Set<String> _visited = <String>{};
 
   /// 进行中的人话阶段（「准备运行环境…」「正在启动 DSH 与设计站…」）。
   ///
@@ -120,6 +142,8 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
 
   Future<void> _load() async {
     _prefs = await BridgePrefs.load(widget.runtime.filesDir);
+    // 顺手问一次后台那三道关的真状态（不阻塞主加载，查不到就显示"不确定"）。
+    unawaited(_loadBackground());
     final eps = await LanEndpoints.list();
     if (!mounted) return;
     setState(() {
@@ -323,8 +347,16 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
         AgnesWeb.publicUrl = null;
         AgnesWeb.lastError = null;
         await DesignSite.removeEntry(widget.runtime);
-        // 关开关才停保活：通知栏那条「电脑正在访问」要跟着消失。
-        await WebBridge.stop();
+        // 关开关时怎么处理保活（2026-11-02 调整）：
+        //   * 「后台运行」开着 → **退回** keepalive（通知改成「后台运行中」），
+        //     而不是彻底停掉 —— 用户关的是"电脑访问"，不是"让 App 在后台活着"。
+        //   * 「后台运行」关着 → 才彻底 stop（通知栏那条跟着消失）。
+        if (widget.settings.backgroundKeepAlive) {
+          await WebBridge.start('DSH 在后台保持运行',
+              mode: WebBridge.modeKeepAlive);
+        } else {
+          await WebBridge.stop();
+        }
         // 这里**不再重启 DSH**（0.80 是重启的，为的是清掉 `--trusted-host`）。
         // 现在压根不用 trusted-host：Host 由转发层改写。所以关开关只是收掉
         // 监听与保活 —— Bot 页不会闪、正在跑的会话也不会被打断。
@@ -506,8 +538,216 @@ class _ComputerAccessPanelState extends State<ComputerAccessPanel> {
             ),
           ),
         ],
+        // 「后台运行」—— 只有**真状态 + 一键直达**，没有开关（2026-10-31）。
+        //
+        // 用户问"是不是要加个后台运行开关"。答案是不加：Android 不允许第三方
+        // 应用给自己开后台权限，那种开关只能记住"用户点过"，改不了系统行为 ——
+        // 正是那份故障复盘里批的「UI 状态 ≠ 运行状态」。
+        if (_on) ...[
+          const SizedBox(height: 4),
+          _backgroundSection(scheme),
+        ],
       ],
     );
+  }
+
+  /// 「后台运行」这一段：**三道关**逐条列出 —— 能检测的检测，检测不了的诚实说不知道。
+  ///
+  /// 为什么不是一个开关：见 [BatteryOptim] 顶部那张表。厂商那一关系统不告诉 App
+  /// 开没开，所以那几行只写「去过 / 没去过」，**绝不打勾** —— 打勾就是替系统撒谎。
+  Widget _backgroundSection(ColorScheme scheme) {
+    final ignoring = _batteryIgnoring;
+    final vendor = _vendor;
+    final vendorLabel = _vendorBackgroundLabel(vendor);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.battery_saver_outlined,
+                size: 15, color: DshColors.textDim),
+            const SizedBox(width: 6),
+            Text(context.tr('后台运行'),
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        _accessRow(
+          scheme: scheme,
+          ok: ignoring,
+          title: context.tr('忽略电池优化'),
+          detail: ignoring == true
+              ? context.tr('已豁免：系统不会因为省电策略回收本服务')
+              : ignoring == false
+                  ? context.tr('未豁免：息屏几分钟后系统可能回收本服务，电脑那边就打不开了')
+                  : context.tr('查不到当前状态（这台设备不支持查询）'),
+          action: ignoring == true ? context.tr('去看看') : context.tr('允许'),
+          // 已豁免时点「去看看」要走"打开详情页核对"，别再申请（见 _fixBattery）。
+          onTap: _busy
+              ? null
+              : () => _fixBattery(alreadyIgnoring: ignoring == true),
+        ),
+        if (vendor != null && vendorLabel != null)
+          _accessRow(
+            scheme: scheme,
+            ok: _visited.contains('background') ? true : null,
+            title: vendorLabel,
+            detail: _visited.contains('background')
+                ? context.tr('已送你去过设置页，回来确认一眼是否已放行（系统不告诉 App）')
+                : context.tr('这家 ROM 的开关系统读不到也改不了，只能你手动打开'),
+            action: _visited.contains('background')
+                ? context.tr('再去一次')
+                : context.tr('去打开'),
+            onTap: _busy ? null : () => _openVendor('background'),
+          ),
+        if (_vendorHasAutostart(vendor))
+          _accessRow(
+            scheme: scheme,
+            ok: _visited.contains('autostart') ? true : null,
+            title: context.tr('自启动'),
+            detail: _visited.contains('autostart')
+                ? context.tr('已送你去过设置页，回来确认一眼（系统不告诉 App）')
+                : context.tr('允许 App 开机后自己起来'),
+            action: _visited.contains('autostart')
+                ? context.tr('再去一次')
+                : context.tr('去打开'),
+            onTap: _busy ? null : () => _openVendor('autostart'),
+          ),
+      ],
+    );
+  }
+
+  /// 一行权限项：左边一个状态点，中间标题 + 说明，右边一个动作。
+  ///
+  /// [ok] 三态：`true` 绿点 / `false` 红点 / `null` 灰点（**不知道**）。
+  /// 三态是刻意的 —— 只有 true/false 会逼着我们给厂商开关编一个答案。
+  Widget _accessRow({
+    required ColorScheme scheme,
+    required bool? ok,
+    required String title,
+    required String detail,
+    required String action,
+    required VoidCallback? onTap,
+  }) {
+    final color = ok == true
+        ? DshColors.ok
+        : ok == false
+            ? DshColors.err
+            : scheme.outline;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Icon(Icons.circle, size: 6, color: color),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        color: ok == true ? color : DshColors.text,
+                        fontWeight:
+                            ok == true ? FontWeight.w600 : FontWeight.w400)),
+                Text(detail,
+                    style: TextStyle(
+                        fontSize: 10, color: color, height: 1.45)),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onTap,
+            child: Text(action, style: const TextStyle(fontSize: 11.5)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 这家的「后台不被杀」开关叫什么（各家名字完全不同，写错了用户找不到）。
+  String? _vendorBackgroundLabel(String? v) {
+    if (v == 'vivo') return context.tr('允许后台高耗电');
+    if (v == 'xiaomi') return context.tr('省电策略');
+    if (v == 'huawei' || v == 'honor') return context.tr('应用启动管理');
+    if (v == 'oppo') return context.tr('后台行为');
+    return null;
+  }
+
+  /// 哪些厂商有**独立**的自启动页（华为/荣耀把它和后台合成一页，OPPO 在详情页）。
+  bool _vendorHasAutostart(String? v) => v == 'vivo' || v == 'xiaomi';
+
+  /// 请求豁免 / 打开系统页，然后**回读真状态**。
+  ///
+  /// ⚠️ 不管走哪条路都要重新查一次：系统框弹完用户可能点了「取消」，
+  /// 我们不能因为"弹过框"就把界面刷成绿灯 —— 那又是一次 UI 骗人。
+  /// 「允许 / 去看看」那一行的点击（2026-11-01 修「点了没反应」）。
+  ///
+  /// 两种状态要点的是**两件不同的事**，以前都调 [BatteryOptim.request]：
+  ///   * 还没豁免（按钮「允许」）→ 发系统确认框，让用户点允许；
+  ///   * 已经豁免（按钮「去看看」）→ 再发确认框系统**不弹**（已经允许了），
+  ///     用户点了就"没反应"。这时该做的是**打开详情页让他自己看一眼**。
+  Future<void> _fixBattery({required bool alreadyIgnoring}) async {
+    if (alreadyIgnoring) {
+      // 已豁免：别再申请（系统不弹窗 = 看着没反应），直接送他去详情页核对。
+      final ok = await BatteryOptim.openSettings();
+      if (!mounted) return;
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(context.tr(
+              '打不开系统设置页。请手动到「设置 → 应用 → 本应用 → 电池」里确认是「无限制」。')),
+        ));
+      }
+      await _loadBackground();
+      return;
+    }
+    final r = await BatteryOptim.request();
+    if (!mounted) return;
+    if (r == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(context.tr(
+            '打不开系统设置页。请手动到「设置 → 应用 → 本应用 → 电池」里选「无限制」。')),
+      ));
+    }
+    // 用户在系统页里操作完回到 App，给一点时间再回读。
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    await _loadBackground();
+  }
+
+  /// 把用户送到厂商那一页，并记下"去过"（**不是**"已开启"）。
+  Future<void> _openVendor(String switchWire) async {
+    final r = await BatteryOptim.openVendorSettings(switchWire);
+    if (!mounted) return;
+    if (r == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(context.tr(
+            '打不开系统设置页。请手动到「设置 → 应用 → 本应用」里找电池/自启动那一项。')),
+      ));
+      return;
+    }
+    await BatteryOptim.markVisited(widget.runtime.filesDir, switchWire);
+    if (!mounted) return;
+    setState(() => _visited = <String>{..._visited, switchWire});
+    // 从设置页回来时顺手回读一次系统那一关（厂商那关读不到，只能读 AOSP 的）。
+    await _loadBackground();
+  }
+
+  Future<void> _loadBackground() async {
+    final ignoring = await BatteryOptim.isIgnoring();
+    final vendor = await BatteryOptim.vendor();
+    final visited = await BatteryOptim.visited(widget.runtime.filesDir);
+    if (!mounted) return;
+    setState(() {
+      _batteryIgnoring = ignoring;
+      _vendor = vendor;
+      _visited = visited;
+    });
   }
 
   /// 「连不上？点这里自检」—— 真的连一次，把结论写成一段人话。

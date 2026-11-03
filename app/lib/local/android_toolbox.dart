@@ -100,6 +100,13 @@ class AndroidToolbox {
     // ⚠️ vendor 的内部相对结构必须原样保留：`lib/index.js` 里要求
     //    `require('../package.json')`，摆错一层就起不来。
     'assets/toolbox/untar-bz2.mjs': 'toolbox/untar-bz2.mjs',
+    // 换机迁移的备份包：打包 / 加密 / 还原（2026-10-31）。
+    // 放在 node 侧做的理由：AES-GCM 与 scrypt 是 node:crypto 自带的，
+    // 而 Dart 侧要引 cryptography 包才能做同样的加密 —— 手机上没有 npm，
+    // 少一个依赖就少一个装不上的可能。
+    // backup.mjs 直接 `import './office-zip.mjs'` 做 zip —— 那个文件上面
+    // 早就注册过了（造 xlsx/docx 时加的），这里**不要再写一遍**（常量 map 重复 key 会编译不过）。
+    'assets/toolbox/backup.mjs': 'toolbox/backup.mjs',
     'assets/toolbox/vendor/seek-bzip/LICENSE': 'toolbox/vendor/seek-bzip/LICENSE',
     'assets/toolbox/vendor/seek-bzip/README.md': 'toolbox/vendor/seek-bzip/README.md',
     'assets/toolbox/vendor/seek-bzip/package.json': 'toolbox/vendor/seek-bzip/package.json',

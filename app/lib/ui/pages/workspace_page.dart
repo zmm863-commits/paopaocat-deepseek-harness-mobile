@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/workspace_store.dart';
+import 'recent_changes_page.dart';
 import '../theme/dsh_tokens.dart';
 import '../widgets/common.dart';
 
@@ -93,6 +94,15 @@ class _WorkspacePageState extends State<WorkspacePage> {
                 screenH: screenH,
                 onNew: () => widget.onNewWorkspace(),
                 onRefresh: () => widget.onRefreshIndex(),
+                onRecent: () {
+                  // 扫描哪个目录？优先用户选中的工作区，没有就扫第一个。
+                  final list = store.allWorkspaces;
+                  if (list.isEmpty) return;
+                  final target = list.first;
+                  Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => RecentChangesPage(root: target.path),
+                  ));
+                },
               ),
               _StatusLine(store: store),
               SizedBox(height: screenH * 0.012),
@@ -146,11 +156,15 @@ class _TopBar extends StatelessWidget {
     required this.screenH,
     required this.onNew,
     required this.onRefresh,
+    required this.onRecent,
   });
 
   final double screenH;
   final VoidCallback onNew;
   final VoidCallback onRefresh;
+
+  /// 「最近的改动」入口：agent 改了哪些文件，一眼能看到（2026-10-31）。
+  final VoidCallback onRecent;
 
   @override
   Widget build(BuildContext context) {
@@ -191,6 +205,22 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              // 「最近的改动」入口（2026-10-31）：agent 一口气改了十几个文件之后，
+              // 用户最想知道的就是"改了哪些"，而不用自己去目录里按时间猜。
+              Semantics(
+                button: true,
+                label: context.tr('最近的改动'),
+                child: InkWell(
+                  onTap: onRecent,
+                  borderRadius: BorderRadius.circular(DshMetrics.radius(9)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(Icons.history,
+                        size: 18, color: DshColors.textDim),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
               Semantics(
                 button: true,
                 label: context.tr('刷新会话索引'),

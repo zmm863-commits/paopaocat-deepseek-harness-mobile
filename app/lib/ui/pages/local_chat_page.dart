@@ -185,9 +185,9 @@ class _LocalChatPageState extends State<LocalChatPage> {
   bool _runnable(InstalledModel m) {
     final dir = widget.runtime.nativeLibDir;
     if (dir.isEmpty) return false;
+    // 只认 MNN（2026-11-03）。
     return switch (m.engine) {
-      'llama.cpp' => File('$dir/libllamaserver.so').existsSync(),
-      'litert-lm' => File('$dir/liblitertlm_jni.so').existsSync(),
+      'mnn' => File('$dir/libmnn_mini_server.so').existsSync(),
       _ => false,
     };
   }

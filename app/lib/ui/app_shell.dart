@@ -12,7 +12,9 @@ import '../local/diagnostics_log.dart';
 import 'first_run_guide.dart';
 import '../local/dsh_runtime.dart';
 import '../local/local_model_server.dart';
+import '../local/port_forwarder.dart';
 import '../local/rotation_proxy.dart';
+import '../local/web_bridge.dart';
 import '../local/schedule_runner.dart';
 import '../local/session_index.dart';
 import '../local/system_calendar.dart';
@@ -373,6 +375,10 @@ class _AppShellState extends State<AppShell> {
     // 导航恢复（上次的 Tab / 取图回来该落哪页）**每个进程只做一次**。
     // 以前它挂在 `_onSchedulesChanged` 上（定时任务一变就响），会把页反复推回来 ——
     // 用户 2026-10-12 报的"跳转到本地会话"就是这么来的。
+    // 「后台运行」默认开（2026-11-02）：装完就有效，不用用户先去设置里找开关。
+    // 放在第一帧之后 —— 起前台服务会碰通知栏，别和首帧渲染抢。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncBackgroundKeepAlive());
+
     WidgetsBinding.instance.addPostFrameCallback((_) => _restoreNavOnce());
     // 首装引导（0.78）：只弹一次，三条「能做什么」，不挡任何操作。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -425,6 +431,33 @@ class _AppShellState extends State<AppShell> {
     } else {
       await DshHost.stopSchedulerService();
       debugPrint('[dsh-nav] 保活服务已停止（没有已启用任务）');
+    }
+  }
+
+  /// 按「后台运行」开关启停前台保活服务。
+  ///
+  /// ## 和另外两个服务的关系（别搞混）
+  ///
+  ///   * `DshSchedulerService` —— 只管**定时任务**，有已启用任务才起；
+  ///   * `WebBridgeService`   —— 通用保活，**这两个开关共用**：
+  ///       - 「后台运行」（默认开）→ 通知写「后台运行中」；
+  ///       - 「移动桌面平台」     → 通知写「电脑正在访问」（信息量更大，优先）。
+  ///
+  /// 所以这里的逻辑是：**只有"电脑访问没开"时**才由本方法接管启停；
+  /// 电脑访问开着时它自己会 `start(mode: webaccess)`，本方法不去抢。
+  Future<void> _syncBackgroundKeepAlive() async {
+    final on = widget.appSettings.backgroundKeepAlive;
+    // 电脑访问开着 → 让那边管（它会把通知改成「电脑正在访问」）。
+    if (PortForwarder.instance.running) {
+      debugPrint('[dsh-nav] 后台运行：电脑访问开着，交给它管保活');
+      return;
+    }
+    if (on) {
+      await WebBridge.start('DSH 在后台保持运行', mode: WebBridge.modeKeepAlive);
+      debugPrint('[dsh-nav] 后台运行：已启动保活服务');
+    } else {
+      await WebBridge.stop();
+      debugPrint('[dsh-nav] 后台运行：已停止保活服务');
     }
   }
 

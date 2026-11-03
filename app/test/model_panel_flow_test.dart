@@ -478,6 +478,46 @@ void main() {
       expect(agnes, <String>[AgnesBuiltin.textModel]);
       expect(s.calls.length, 1);
     });
+    testWidgets('**自己添加的厂家也在设置里**（以前只列内置预设，加完就再也找不到）',
+        (tester) async {
+      // 2026-10-31 用户报：「自己添加的模型无法在设置里看到，只能在会话模型选择
+      // 里和轮换池里看到」。根因是「我的模型」那一段只遍历内置预设
+      // （myModelProviders），而自定义厂家只存在于 models.json —— 于是它可用、
+      // 可被轮换池引用，却在设置里既看不到也删不掉。
+      await setSurface(tester);
+      final s = seedPanel(cfg: <String, dynamic>{
+        'providers': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'myown',
+            'label': '我的自建',
+            'baseUrl': 'https://api.example.com/v1',
+            'api': 'openai-completions',
+            'apiKeyEnv': 'MYOWN_API_KEY',
+          },
+        ],
+        'models': <Map<String, dynamic>>[
+          <String, dynamic>{'provider': 'myown', 'id': 'gpt-x', 'name': 'GPT-X'},
+        ],
+        'selected': 'myown/gpt-x',
+      }, keys: <String, String>{'myown': 'sk-test'});
+      await tester.pumpWidget(panelApp(s.dir, s.calls));
+      await settleAsync(tester);
+
+      // 1) 厂家名必须出现 —— 这就是用户报的"看不到"
+      expect(find.text('我的自建'), findsOneWidget,
+          reason: '自己添加的厂家必须出现在「我的模型」里');
+      // 2) 收起态不铺开模型
+      expect(find.text('GPT-X'), findsNothing);
+      // 3) 展开后能看到模型，也能看到当时填的端点
+      await tester.tap(find.text('我的自建'));
+      await settleAsync(tester);
+      expect(find.text('GPT-X'), findsOneWidget,
+          reason: '展开后要能看到这家下面的模型');
+      expect(find.textContaining('api.example.com'), findsWidgets,
+          reason: '地址要显示出来，用户才能确认自己填的是哪个端点');
+      // 4) 认得出"这是自定义的"，且不冒充内置卡（内置卡才有"获取模型"）
+      expect(find.text('自定义'), findsWidgets);
+    });
     testWidgets('「轮换池」默认收起；展开后讲清它是什么、列出所有已注册模型、点一下进池子', (tester) async {
       await setSurface(tester);
       final s = seedPanel(cfg: <String, dynamic>{

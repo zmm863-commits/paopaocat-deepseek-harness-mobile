@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 
 import '../i18n/dsh_i18n.dart';
 import '../local/dsh_runtime.dart';
@@ -32,21 +32,55 @@ class ZenChannel {
   /// 写进模型配置里的厂家 id（`providers.zen`，也是 route 前缀）。
   static const String providerId = 'zen';
 
+  /// **第二条免密上游**（Kilo AI 公共网关）的厂家 id。
+  ///
+  /// 为什么单独建一个厂家而不是塞进 zen：两条上游的模型 id 会撞（都有
+  /// `xxx:free` 这种形状），分厂家走就是两条独立的 baseUrl，天然不冲突；
+  /// 用户也能一眼看出某个模型来自哪条通道。
+  static const String kiloProviderId = 'kilo';
+
+  /// **第三条免密上游**（OVHcloud AI Endpoints）的厂家 id。
+  ///
+  /// 它和 Kilo 一样是纯免 Key、免伪装的 OpenAI 兼容公共端点；区别只在
+  /// OVHcloud 的 `/models` 没有 `isFree` 标记，整表即免费池（2026-11-01 实测 22 个）。
+  static const String ovhProviderId = 'ovh';
+
+  /// Kilo 那条在界面上显示的名字。
+  ///
+  /// 用户 2026-11-01：改名为「第三方免key通道」—— 因为会话选择器里 zen 与 polli
+  /// 都叫「免费模型」，用户分不清哪个是哪个。zen 是**第三方社区通道**（随时可能
+  /// 失效），polli 是**默认承诺的那条**，名字必须区分开。
+  /// ⚠️ 2026-11-03 起**三条上游合并成一个厂家**（用户：「会话页面模型选择会出现
+  /// 三个第三方免key通道，把他们合并」），所以这两个"· Kilo / · OVHcloud"后缀
+  /// 不再出现在界面上 —— 保留常量只是为了兼容旧配置的迁移判断。
+  static String get kiloLabel => tr('免Key通道');
+
+  /// 同上（合并后不再单独显示）。
+  static String get ovhLabel => tr('免Key通道');
+
   /// 这个厂家用的环境变量名（占位值由 `ProviderKeys.envFor` 注入）。
   static const String apiKeyEnv = 'ZEN_API_KEY';
 
-  /// 界面上显示的名字 —— 直接说清它的卖点：**不用写 Key**。
+  /// 界面上显示的名字。
   ///
-  /// 名字里不再带"实验/社区"：这条通道确实随时可能失效（设置页那个开关旁边
-  /// 写明了风险），但"实验"两个字会让用户以为"要用得先做点什么"——比如去配一个
-  /// Key —— 而它恰恰**不用配 Key**（2026-10-11 用户纠正：
-  /// "这个项目的特点就是不用写key"）。
-  static String get label => tr('免费模型（无需 Key）');
+  /// 沿革：2026-10-31 从「免费模型」改成「第三方免key通道」（要和 polli 区分开）；
+  /// 2026-11-03 用户反馈「文本表述太乱了，简明扼要」→ 精简成 **「免Key通道」**。
+  ///
+  /// 四条命名规则（一次说清，别再改乱）：
+  ///   * `免Key通道` —— 这个（Zen/Kilo/OVH 三条上游，合并成一个厂家）
+  ///   * `免费模型（无需 Key）` —— polli（默认承诺那条，必须能开箱即用）
+  ///   * 会话选择器里只出现**一个**「免Key通道」，不再有 ·Kilo/·OVHcloud 后缀
+  static String get label => tr('免Key通道');
 
-  /// 开启（或在启动时刷新）：起代理、取模型、写配置。
+  /// 开启（或在启动时刷新）：起代理、取模型、**逐个测哪些此刻真能用**、写配置。
   ///
-  /// 返回 `models` = 写进去的模型数；失败时 `error` 是给用户看的中文。
-  static Future<({bool ok, String? error, int models})> enable({
+  /// 返回 `models` = 写进去的（能用的）模型数；`tested` = 一共测了几个；
+  /// `alive` = 其中能用的几个。失败时 `error` 是给用户看的中文。
+  ///
+  /// 为什么要测（用户 2026-10-31）：上游 `/models` 列表里常有**已退役/被限流**的
+  /// 模型 —— 列表有它、真发对话却报错。所以只留 ping 通的，别给用户一个选了就坏的。
+  static Future<({bool ok, String? error, int models, int tested, int alive})>
+      enable({
     required DshRuntime runtime,
   }) async {
     final port = await ZenProxy.instance.ensureRunning(runtime: runtime);
@@ -55,27 +89,84 @@ class ZenChannel {
         ok: false,
         error: tr('本地代理没能启动起来（详见运行日志）。'),
         models: 0,
+        tested: 0,
+        alive: 0,
       );
     }
+    // 三条上游逐条取模型：**一条挂了不能拖垮别的** ——
+    // 拿不到就当空列表，这次不写那个厂家，下一轮刷新再试。
     final models = await ZenProxy.instance.fetchFreeModels(port);
-    if (models.isEmpty) {
+    final kiloModels =
+        await ZenProxy.instance.fetchFreeModels(port, lane: ZenLane.kilo);
+    final ovhModels =
+        await ZenProxy.instance.fetchFreeModels(port, lane: ZenLane.ovh);
+    if (models.isEmpty && kiloModels.isEmpty && ovhModels.isEmpty) {
       return (
         ok: false,
-        error: tr('连上了代理，但没取到任何免费模型 —— 上游那条通道可能暂时不可用。'),
+        error: tr('连上了代理，但三条通道都没取到免费模型 —— 上游可能暂时不可用。'),
         models: 0,
+        tested: 0,
+        alive: 0,
       );
     }
+
+    // ── 逐个测：只留此刻真能对话的（用户 2026-10-31「ping 不通不列」）──
+    final zenPing = await ZenProxy.instance.pingModels(port, models);
+    final kiloPing =
+        await ZenProxy.instance.pingModels(port, kiloModels, lane: ZenLane.kilo);
+    final ovhPing =
+        await ZenProxy.instance.pingModels(port, ovhModels, lane: ZenLane.ovh);
+    final aliveZen = zenPing.alive;
+    final aliveKilo = kiloPing.alive;
+    final aliveOvh = ovhPing.alive;
+    final tested = zenPing.tested + kiloPing.tested + ovhPing.tested;
+    final alive = aliveZen.length + aliveKilo.length + aliveOvh.length;
+
+    if (alive == 0) {
+      // 一个都测不通 —— 不写配置（写了也是选了就报错），如实告诉用户。
+      return (
+        ok: false,
+        error: tested > 0
+            ? tr('测了 {0} 个模型，这会儿一个都连不上 —— 上游可能暂时限流或不可用。',
+                <Object?>['$tested'])
+            : tr('连上了代理，但三条通道都没取到免费模型 —— 上游可能暂时不可用。'),
+        models: 0,
+        tested: tested,
+        alive: 0,
+      );
+    }
+
     try {
       final cfg = ConfiguredModels.readConfig(runtime.filesDir);
       await ConfiguredModels.saveConfig(
         filesDir: runtime.filesDir,
-        config: _withZen(cfg, port: port, models: models),
+        config: _withZen(
+          cfg,
+          port: port,
+          models: aliveZen,
+          kiloModels: aliveKilo,
+          ovhModels: aliveOvh,
+        ),
       );
-      debugPrint('[dsh-zen] 已写入 ${models.length} 个免费模型（端口 $port）');
-      return (ok: true, error: null, models: models.length);
+      debugPrint('[dsh-zen] ping $tested 个 → $alive 个可用，已写入'
+          '（zen ${aliveZen.length} / kilo ${aliveKilo.length} / ovh ${aliveOvh.length}，'
+          '端口 $port）');
+      return (
+        ok: true,
+        error: null,
+        models: alive,
+        tested: tested,
+        alive: alive,
+      );
     } catch (e) {
       debugPrint('[dsh-zen] 写配置失败：$e');
-      return (ok: false, error: tr('写模型配置失败：{0}', <Object?>['$e']), models: 0);
+      return (
+        ok: false,
+        error: tr('写模型配置失败：{0}', <Object?>['$e']),
+        models: 0,
+        tested: tested,
+        alive: alive,
+      );
     }
   }
 
@@ -85,24 +176,33 @@ class ZenChannel {
   static Future<void> disable({required DshRuntime runtime}) async {
     try {
       final cfg = ConfiguredModels.readConfig(runtime.filesDir);
-      if (cfg.providers.any((p) => p.id == providerId) ||
-          cfg.models.any((m) => m.provider == providerId)) {
+      bool mineProvider(ProviderSpec p) =>
+          p.id == providerId ||
+          p.id == kiloProviderId ||
+          p.id == ovhProviderId;
+      bool mineModel(ModelSpec m) =>
+          m.provider == providerId ||
+          m.provider == kiloProviderId ||
+          m.provider == ovhProviderId;
+      if (cfg.providers.any(mineProvider) || cfg.models.any(mineModel)) {
         await ConfiguredModels.saveConfig(
           filesDir: runtime.filesDir,
           config: ConfiguredConfig(
             version: cfg.version,
             providers: <ProviderSpec>[
               for (final p in cfg.providers)
-                if (p.id != providerId) p,
+                if (!mineProvider(p)) p,
             ],
             models: <ModelSpec>[
               for (final m in cfg.models)
-                if (m.provider != providerId) m,
+                if (!mineModel(m)) m,
             ],
             groups: cfg.groups,
             // 选中的如果正好是免费通道的模型，退回"没选"（让界面自己挑一个），
             // 而不是留一个已经不存在的 route。
-            selected: (cfg.selected ?? '').startsWith('$providerId/')
+            selected: ((cfg.selected ?? '').startsWith('$providerId/') ||
+                    (cfg.selected ?? '').startsWith('$kiloProviderId/') ||
+                    (cfg.selected ?? '').startsWith('$ovhProviderId/'))
                 ? null
                 : cfg.selected,
           ),
@@ -162,25 +262,47 @@ class ZenChannel {
     ConfiguredConfig cfg, {
     required int port,
     required List<String> models,
+    /// 第二条上游（Kilo）的免费模型。空 = 那条当前不可用，**不写这个厂家**
+    /// —— 写一个空厂家只会让用户在选择器里看到一条点不开的分组。
+    List<String> kiloModels = const <String>[],
+    /// 第三条上游（OVHcloud）的免费模型。同样空 = 不写这个厂家。
+    List<String> ovhModels = const <String>[],
   }) {
     return ConfiguredConfig(
       version: cfg.version,
       providers: <ProviderSpec>[
-        // 先摘掉旧的自己（端口变了要覆盖），再追加一份新的
+        // 先摘掉旧的自己（三条都要摘：端口变了要覆盖），再追加新的
         for (final p in cfg.providers)
-          if (p.id != providerId) p,
+          if (p.id != providerId &&
+              p.id != kiloProviderId &&
+              p.id != ovhProviderId)
+            p,
         ProviderSpec(
           id: providerId,
           label: label,
           baseUrl: 'http://127.0.0.1:$port/v1',
           apiKeyEnv: apiKeyEnv,
         ),
+        // 2026-11-03：**三条上游合并成一个厂家**（用户：「会话页面模型选择会出现
+        // 三个第三方免key通道，把他们合并」）。
+        //
+        // 合并后只剩上面这一个 provider（baseURL 挂 `/v1`）。请求该发去哪条上游
+        // 由代理**按模型名自动判断**（zen-proxy.mjs 的 laneOfModel），
+        // 所以不再需要 /kilo/v1、/ovh/v1 这两条路径。
       ],
       models: <ModelSpec>[
         for (final m in cfg.models)
-          if (m.provider != providerId) m,
-        for (final id in models)
-          ModelSpec(provider: providerId, id: id, name: id),
+          if (m.provider != providerId &&
+              m.provider != kiloProviderId &&
+              m.provider != ovhProviderId)
+            m,
+        // 三批模型全挂在**同一个** provider 下（去重、保序 Zen→Kilo→OVH，
+        // 与代理 laneOfModel 的判断顺序一致）。
+        ...mergedModelSpecs(providerId, <String>[
+          ...models,
+          ...kiloModels,
+          ...ovhModels,
+        ]),
       ],
       groups: cfg.groups,
       selected: cfg.selected,
@@ -188,18 +310,49 @@ class ZenChannel {
   }
 }
 
+/// 把多条上游的模型名合并成一串 ModelSpec（**去重、保序**）。
+///
+/// 为什么单独拎出来：这段有"顺序即优先级"的含义（先出现的赢），
+/// 写在 `_withZen` 里没法测。独立出来就能用测试钉死"重名只出现一次"。
+///
+/// 去重是必需的：同一模型名可能两条上游都有（都是同类开源模型），
+/// 重复会让会话选择器里出现两条一模一样的条目。
+@visibleForTesting
+List<ModelSpec> mergedModelSpecs(String provider, List<String> ids) {
+  final seen = <String>{};
+  final out = <ModelSpec>[];
+  for (final id in ids) {
+    if (id.isEmpty || !seen.add(id)) continue;
+    out.add(ModelSpec(provider: provider, id: id, name: id));
+  }
+  return out;
+}
+
 /// 让"是否已写入配置"这类判断可以离线测试（不碰进程/网络）。
 bool zenConfiguredIn(ConfiguredConfig cfg) =>
-    cfg.providers.any((p) => p.id == ZenChannel.providerId);
+    cfg.providers.any((p) =>
+        p.id == ZenChannel.providerId ||
+        p.id == ZenChannel.kiloProviderId ||
+        p.id == ZenChannel.ovhProviderId);
 
 /// 仅供测试：暴露"把 zen 写进配置"的纯函数（不启动任何进程）。
 ConfiguredConfig zenConfigForTest(
   ConfiguredConfig cfg, {
   required int port,
   required List<String> models,
+  List<String> kiloModels = const <String>[],
+  List<String> ovhModels = const <String>[],
 }) =>
-    ZenChannel._withZen(cfg, port: port, models: models);
+    ZenChannel._withZen(
+      cfg,
+      port: port,
+      models: models,
+      kiloModels: kiloModels,
+      ovhModels: ovhModels,
+    );
 
 /// 某条 route 是不是"社区免费通道"的（界面据此加标注）。
 bool isZenRoute(String? route) =>
-    (route ?? '').startsWith('${ZenChannel.providerId}/');
+    (route ?? '').startsWith('${ZenChannel.providerId}/') ||
+    (route ?? '').startsWith('${ZenChannel.kiloProviderId}/') ||
+    (route ?? '').startsWith('${ZenChannel.ovhProviderId}/');

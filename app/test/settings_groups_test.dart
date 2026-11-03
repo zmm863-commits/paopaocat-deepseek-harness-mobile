@@ -135,14 +135,17 @@ void main() {
     await tester.tap(find.text('模型'));
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.textContaining('OpenCode Zen'), findsNothing,
-        reason: '彩蛋没藏住 —— 设置页默认就能看到 Zen 那条实验通道');
+    // 2026-11-02：这条通道的对外名字已从「实验通道 · OpenCode Zen（第三方通道）」
+    // 改成「免Key通道」（用户 2026-11-03 又要求精简，原名太长；用户要求 —— 会话选择器里 zen 与 polli 两条都叫
+    // "免费模型"时分不清）。所以断言跟着改名走，不再找旧文案。
+    expect(find.textContaining('免Key通道'), findsNothing,
+        reason: '彩蛋没藏住 —— 设置页默认就能看到那条第三方通道');
 
     await EasterEggStore.instance.unlockZen();
     await tester.pump();
 
-    expect(find.textContaining('OpenCode Zen'), findsOneWidget,
-        reason: '解锁彩蛋之后「实验通道」还是没有出现');
+    expect(find.textContaining('免Key通道'), findsOneWidget,
+        reason: '解锁彩蛋之后那条第三方通道还是没有出现');
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

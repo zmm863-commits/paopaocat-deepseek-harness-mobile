@@ -297,40 +297,11 @@ void main() {
     expect(m.models[1].kvTokens, 0, reason: '没写就是未知，不能擅自当成 0 格缓存');
   });
 
-  group('清单里的随包数据：ekv 后缀的模型必须写明 kvTokens（防 Status 9 回归）', () {
-    // 真机 2026-10-09：`Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm`
-    // 的 KV 只有 4096 格，而 App 一律按用户档位（默认 16384）启动并把 16384 写进
-    // overlay → 两轮就把缓存吃到 3920/4096，第三轮报
-    //   Status Code: 9 · Prefill input length exceeds available state entries
-    //   (remaining capacity: 176)
-    //
-    // 修法是清单里写明 kvTokens，启动时取 min(用户档位, kvTokens)。
-    // 这条测试盯住**数据侧**：只要文件名里带 ekv<数字>，清单就必须有 kvTokens，
-    // 否则那个模型会重新变成"对外说 16384、实际 4096"。
-
-    test('仓库里的模型清单：带 ekv 后缀的都有 kvTokens，且与文件名一致', () async {
-      final f = File('assets/models/model_manifest.json');
-      expect(f.existsSync(), isTrue, reason: '模型清单不在仓库里');
-      final m = OnDeviceManifest.parse(await f.readAsString());
-      expect(m.models, isNotEmpty);
-
-      final ekv = RegExp(r'ekv(\d+)', caseSensitive: false);
-      var checked = 0;
-      for (final model in m.models) {
-        final match = ekv.firstMatch(model.fileName);
-        if (match == null) continue;
-        checked++;
-        final declared = int.parse(match.group(1)!);
-        expect(model.kvTokens, declared,
-            reason: '${model.id} 的文件名写着 ekv$declared，'
-                '清单里的 kvTokens 却是 ${model.kvTokens} —— '
-                '差一位就会让长对话在手机上以 Status 9 失败');
-      }
-      expect(checked, greaterThan(0),
-          reason: '一个 ekv 模型都没找到：要么清单换了模型，'
-              '要么这条守卫已经空转（那就该改成别的判据）');
-    });
-  });
+  // （2026-11-03）上面这组「ekv 后缀必须写 kvTokens」的守卫**已随引擎收敛删除**：
+  // 它盯的是 litert-lm 的 `.litertlm` 文件（文件名带 ekv4096 这类后缀），
+  // 而 litert-lm 已按用户口径从清单下线 —— 现在清单里 100% 是 MNN 模型，
+  // 一个 ekv 文件名都没有，这条守卫会永远空转。它防的那个 Status 9 回归
+  // 也只发生在 litert-lm 上，MNN 侧不适用。
 
   group('随包清单自洽（审计 P1-10）', () {
     test('requireHash 打开时，每个模型都必须有 sha256', () async {

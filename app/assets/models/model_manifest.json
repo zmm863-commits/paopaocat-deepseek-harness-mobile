@@ -1,109 +1,1086 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-09",
+  "updatedAt": "2026-11-02",
   "requireHash": false,
-  "note": "端侧模型清单。**2026-10-08 起收敛为 LiteRT-LM 一条路**（用户选定）。**2026-10-09 按用户口径收成三个**：「多模态」1 个 = Gemma 4 E2B（通用版）；「文本」2 个 = Gemma 3 1B（通用版）、Qwen3 0.6B。**Qwen2.5 1.5B 已删除** —— 上游该仓库只有 `multi-prefill-seq` 两个变体（f32 5.76 GiB / q8 1.49 GiB），没有标准构建；而本仓真机实测正好是它测不了速、另一个同类构建（Gemma 3 1B multi-prefill-seq）答乱话。**清单一律只收通用版**（用户 2026-10-08：App 要适配很多机型，专属版只在一颗芯片上有意义）。原先 llama.cpp 的 GGUF 与出图/出视频已全部下线（那个引擎在骁龙 8 Elite 上长请求必段错误 code=-11）。注：note 里标了「格式未验证」的条目，是本机取文件头未能确证含 `tf_lite_prefill_decode` 的那些 —— 该法只能证实「含」、不能证实「不含」，所以得真机实试。 **2026-10-09 审计 P1-10**：三个模型目前**都还没有 sha256**（只有体积校验），所以 `requireHash` 必须保持 false —— 一旦打开，缺哈希的条目会被**拒绝安装**，而报错看起来像\"清单坏了\"而不是\"哈希没填\"。填真值要用 `install/models/sha256-fill.py`（它要求文件大小与清单逐字节相等，防止把别的版本的哈希填进来）；**先填哈希、再打开 requireHash**。本机算不出真值：三个模型是 584 MB~2.58 GB，而本机只有 4 MiB 的测试残留，不是同一份文件 —— 拿它算会得出错哈希，比不填更糟。另外 `requireHash` 以前**根本没被下载器读过**（开关静默失效），现已接线并有测试钉住。",
+  "note": "端侧模型清单。**2026-11-02 接入 MNN**：llama.cpp 在骁龙 8 Elite / Armv9.2 上长请求必 SIGSEGV（code=-11），MNN 在同机同场景实测不崩（1.5B：加载<45s、内存约963MB稳定、约50 tok/s）。MNN 那 12 个由 `install/models/gen-mnn-manifest.mjs` 从 ModelScope API **自动生成**（含每个文件的真实 sha256）—— 因为不同模型的文件构成不一样（有的用 tokenizer.txt、有的用 tokenizer.mtok；有的有 embeddings_bf16.bin、有的没有），写死会错。下载走 ModelScope 国内主源（比 HuggingFace 直连快且稳）。**litert-lm 那三个保留**（引擎还在包里）。⚠️ `requireHash` 仍为 false：MNN 那批有哈希，但 litert-lm 三个没有 —— 一打开会把它们拒装。 **2026-11-03 引擎收敛**：只保留 MNN —— 按用户口径「调用本地大模型只认 mnn 引擎」。litert-lm 那三个条目已下线（该引擎本就不随包，界面上只会显示\"缺引擎\"）；llama.cpp 更早就不随包了。清单里现在100% 是 MNN 模型。",
   "models": [
     {
-      "id": "gemma-4-e2b",
-      "family": "gemma-4-e2b",
-      "name": "Gemma 4 E2B（通用版・推荐）",
-      "kind": "vision",
-      "engine": "litert-lm",
-      "format": "litertlm",
-      "quant": "int4",
-      "fileName": "gemma-4-E2B-it.litertlm",
-      "bytes": 2588147712,
-      "sha256": null,
+      "id": "minimind2",
+      "family": "minimind2",
+      "name": "MiniMind2（最小・秒下）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 67666598,
+      "sha256": "356c765582e2a222c7af0ffe26bb1cbee67b233eb92f6d91263c58251bc7badb",
+      "license": "Apache-2.0",
+      "minRamGb": 2,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "最小的一个（约 65MB），用来先试通链路。中文能力弱，只适合验证。 合计 0.06GB，6 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/MiniMind2-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 539209,
+          "sha256": "a7fcc771fb7355a402c30055c89c6a6a23138873164e841026a4c63818c1caf0",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/MiniMind2-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 255968,
+          "sha256": "bc3e204f8fdba199408ab5393c33ef97101580fa89e4359d448de20155d50cff",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/MiniMind2-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 53126,
+          "sha256": "ad8ec5f35938f1ea8716c589c644daa50c4433711599efe765cc0681a7039669",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/MiniMind2-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 1082,
+          "sha256": "c97b26e9156a5363a8c091c74f77c4ecdb16ae25e259e12f28c5ac1c6db02126",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/MiniMind2-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/MiniMind2-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smollm2-135m",
+      "family": "smollm2",
+      "name": "SmolLM2 135M（超小）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 84054562,
+      "sha256": "81aa7c9477d62db641acb066dfd02d42d395914d2422e39c0aa8932c211fd105",
+      "license": "Apache-2.0",
+      "minRamGb": 2,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "135M 参数，英文为主。适合先跑通，别指望中文。 合计 0.14GB，7 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/SmolLM2-135M-Instruct-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "embeddings_bf16.bin",
+          "bytes": 56623104,
+          "sha256": "4af1341b29fe1dc67f81c951a4d4e84d99213e5fce7c853f18cd710f9bf95445",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/SmolLM2-135M-Instruct-MNN/resolve/master/embeddings_bf16.bin",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 2935715,
+          "sha256": "188edb49c0e64bc019dfd84ee52f96141f6260122c83f04962c2b9a8ee7d38b3",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/SmolLM2-135M-Instruct-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 884782,
+          "sha256": "3a2d9a485e1f1369f88b5907ecbcb5f6036efc36863166a76fe034ce1a261470",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/SmolLM2-135M-Instruct-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 626688,
+          "sha256": "cf53d62bf747a09e7c7364e26b2439c428f7a04813d8938ed9f2b94854e471db",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/SmolLM2-135M-Instruct-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 372,
+          "sha256": "746353eceea26e6fd220958f201cc02880f9d39ee104a17e457a9a0525e3951e",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/SmolLM2-135M-Instruct-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/SmolLM2-135M-Instruct-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwen2.5-0.5b-mnn",
+      "family": "qwen2.5",
+      "name": "Qwen2.5 0.5B（小・快）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 277967498,
+      "sha256": "7ed0f4dcdd31dca15fcb548d2fc8b63b0014031fbd5f627508435726f90c75da",
+      "license": "Apache-2.0",
+      "minRamGb": 3,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "0.5B 中文可用。真机实测约 130 tok/s，质量一般但够快。 合计 0.52GB，7 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/Qwen2.5-0.5B-Instruct-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "embeddings_bf16.bin",
+          "bytes": 272269312,
+          "sha256": "4e96b0df6d274768cbb7e72404011853d23349999b658dc2f4dfb3c431ea223f",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-0.5B-Instruct-MNN/resolve/master/embeddings_bf16.bin",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 3193477,
+          "sha256": "b86f1298a0d6a1b2f312946c2f674f883f1d134ccabc79c42dd4c6b5beadf37b",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-0.5B-Instruct-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 2808932,
+          "sha256": "245ce4289f456dcb371a8f8deabf75c3c4ee75f34b19e0d9723ba09b2fbacf8c",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-0.5B-Instruct-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 566264,
+          "sha256": "480da511e603bd82f8d4af4e1f778ad72baadf8307f3585465ad9a94daca1a88",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-0.5B-Instruct-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 272,
+          "sha256": "ec05709b4261d59b510a0b7a636c6dcb6c5635c08fee7eb3c4f04188b509694b",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-0.5B-Instruct-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-0.5B-Instruct-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwen3-0.6b-mnn",
+      "family": "qwen3",
+      "name": "Qwen3 0.6B（新一代・带思考）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 450810338,
+      "sha256": "953afb7e0165818add34a7a6caf0af5d0ed9428da102eb22c9b98ee9da292e9f",
+      "license": "Apache-2.0",
+      "minRamGb": 3,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "Qwen3 系列，支持 thinking 模式。比 Qwen2.5 同尺寸更强。 合计 0.42GB，5 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/Qwen3-0.6B-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 3193569,
+          "sha256": "77009625db0b18e74315dd89557c76feaab57e1d54e3240b442649a3c16ec4fb",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3-0.6B-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 461520,
+          "sha256": "d426c65a5159c938ccc237cdfbd982137f276804f27b414ca0ecf3fc0a660f8c",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3-0.6B-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 4880,
+          "sha256": "63f9a2f67ec2ae98b4c2363b46355040c34ca5c87a740ab3c94e08288a53225a",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3-0.6B-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3-0.6B-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwen3.5-0.8b-mnn",
+      "family": "qwen3.5",
+      "name": "Qwen3.5 0.8B（新・推荐）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 470382614,
+      "sha256": "4e25ef4cbfb49a33013d17300c2f68cd9c9ce8f2e3f7b947fd2c574ec297ca5e",
+      "license": "Apache-2.0",
+      "minRamGb": 4,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "Qwen3.5 世代，0.8B。同尺寸里较新，中文表现好。 合计 0.51GB，8 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/Qwen3.5-0.8B-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "visual.mnn.weight",
+          "bytes": 63043212,
+          "sha256": "4c03fcac0d164d014e5cd1a1d7ab4fc95babbec724a268f3ba486c5db3511161",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3.5-0.8B-MNN/resolve/master/visual.mnn.weight",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 6465727,
+          "sha256": "7e75de1f279a10b65bd9dc1a5207205cb8993823861c4c42bbbd74e48e1c23a4",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3.5-0.8B-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 5343877,
+          "sha256": "fe58a15987b391b443ade62a92221956349e11628fa36b1bfb9503af32923a1a",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3.5-0.8B-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 2148136,
+          "sha256": "94e0459e10584487a3bda77dc3c3322c0c01cfc9d223a7284e8d07345bf877d5",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3.5-0.8B-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "visual.mnn",
+          "bytes": 251528,
+          "sha256": "05e92b95a1295ee747b0436061b7ae7b1d1d3c7903306fe99e4af13e5aca3de3",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3.5-0.8B-MNN/resolve/master/visual.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 8691,
+          "sha256": "33f2c15bda1911ed666418437f45900e78185b57b883545e5d02c14f92a0907b",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3.5-0.8B-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3.5-0.8B-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lfm2.5-1.2b",
+      "family": "lfm2.5",
+      "name": "LFM2.5 1.2B（Liquid AI）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 731930626,
+      "sha256": "ad6b751255b0b6b41c19154d9d3bfa96a923c6ca86d5d92ff91551f5987eff9f",
+      "license": "Apache-2.0",
+      "minRamGb": 4,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "Liquid AI 的端侧模型，主打低内存高速度。 合计 0.68GB，6 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/LFM2.5-1.2B-Instruct-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 1052311,
+          "sha256": "3eaff72d73773cf847ec32c222c03db84d31439bad603cdbf3aa063cdb33441c",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/LFM2.5-1.2B-Instruct-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 671491,
+          "sha256": "1ef8abb7e99d62714bca621f1d3e796f58398b52e98da28391508c76fe48298b",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/LFM2.5-1.2B-Instruct-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 452176,
+          "sha256": "574beba9da070d7f74d0e17dcd38d557c5741b0e67ceb11c7f61b4d33cf08c7a",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/LFM2.5-1.2B-Instruct-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 2238,
+          "sha256": "322a1d6d98aafcfd85276a1cbccc925fdaf6051e42dcd14c8dda40a5aa189fd7",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/LFM2.5-1.2B-Instruct-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/LFM2.5-1.2B-Instruct-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwen2.5-1.5b-mnn",
+      "family": "qwen2.5",
+      "name": "Qwen2.5 1.5B（主力・推荐）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 868491506,
+      "sha256": "94a73a713aed33d6356c2f050d431d94c14711a75e6b500869b21b3b720aa5fb",
+      "license": "Apache-2.0",
+      "minRamGb": 4,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "**主力档**。真机实测：加载<45s、内存约 963MB（稳定无泄漏）、约 50 tok/s，长请求不崩。 合计 0.82GB，6 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/Qwen2.5-1.5B-Instruct-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 6650652,
+          "sha256": "3d34e0f4957cf408a59a1965ffeaa58bdcb456195ea0fe39e0bcd6aad5554ee4",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-1.5B-Instruct-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 3193477,
+          "sha256": "b86f1298a0d6a1b2f312946c2f674f883f1d134ccabc79c42dd4c6b5beadf37b",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-1.5B-Instruct-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 1145128,
+          "sha256": "5a57a643ad6dbb38d36660e6ce0968d82725929311d455934768280b939863d5",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-1.5B-Instruct-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 384,
+          "sha256": "9c877345bb9a88a6ff81c31f28c9c8680898bb2593f00cff9fac9e85a2681554",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-1.5B-Instruct-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-1.5B-Instruct-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwen3-1.7b-mnn",
+      "family": "qwen3",
+      "name": "Qwen3 1.7B（带思考）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 1231860194,
+      "sha256": "d53dfdb7b826e4103e58a30236312978ff98ee89a2e1b9d66dd6bf227afce823",
+      "license": "Apache-2.0",
+      "minRamGb": 5,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "比 Qwen2.5-1.5B 新一代，支持 thinking。 合计 1.15GB，5 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 3193569,
+          "sha256": "77009625db0b18e74315dd89557c76feaab57e1d54e3240b442649a3c16ec4fb",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 461520,
+          "sha256": "a6352fda4a2063a73126d2b552e35603564545ae3ed9b1547f58736d00f880fc",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 4881,
+          "sha256": "dea06be377d9be7f6617fd421153032aee5ae75b16f53ebc3ef84417c5206aaf",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "llama-3.2-1b-mnn",
+      "family": "llama",
+      "name": "Llama 3.2 1B",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 695110074,
+      "sha256": "8707bc88361804f088151e84896430a798ae1bc322d420727924068d3e94281f",
+      "license": "Apache-2.0",
+      "minRamGb": 4,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "Meta 的端侧 1B，英文强、中文弱。 合计 1.14GB，7 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/Llama-3.2-1B-Instruct-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "embeddings_bf16.bin",
+          "bytes": 525336576,
+          "sha256": "b111063841df6851fa28395ca43f6570c81486a16d4830d0026cb62cf14a7b5d",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Llama-3.2-1B-Instruct-MNN/resolve/master/embeddings_bf16.bin",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 4786584,
+          "sha256": "fb0b4413cbeb4ae13574feb3d80809c337b959ccde0cb5b488efc94cd8096594",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Llama-3.2-1B-Instruct-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "tokenizer.txt",
+          "bytes": 1407771,
+          "sha256": "14fb9cbd31e982e92c332ed59d3cc6c300996c796838c20311f70488b4c9b235",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Llama-3.2-1B-Instruct-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 797968,
+          "sha256": "0c5dd8cf84cc7f8847ee89c3cb79994d472f18b101d878105331ef760a3f8395",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Llama-3.2-1B-Instruct-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 340,
+          "sha256": "5c194a45f43b093a02863937c372ee185bd5148d4b229d23c1362761f0cefb47",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Llama-3.2-1B-Instruct-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Llama-3.2-1B-Instruct-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwen2.5-coder-1.5b-mnn",
+      "family": "qwen2.5",
+      "name": "Qwen2.5 Coder 1.5B（代码）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 965665010,
+      "sha256": "a82f193548dbe8aeb18354aa2bf243a564394614ad4380ab005a937271127bcb",
+      "license": "Apache-2.0",
+      "minRamGb": 5,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "代码专用，写/改脚本用它。 合计 0.90GB，6 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/Qwen2.5-Coder-1.5B-Instruct-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "tokenizer.mtok",
+          "bytes": 4109674,
+          "sha256": "2ff1dbb5e4d4efa432f57c24af428270ae46769e7cde96fbb46a16a48e8364eb",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-Coder-1.5B-Instruct-MNN/resolve/master/tokenizer.mtok",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 983826,
+          "sha256": "f352e91b794dd8fce727df02440225656be8d29ac1bb16bcf02eab92c6359df4",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-Coder-1.5B-Instruct-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 488760,
+          "sha256": "bd8b5426d7cf40ea5dd4447ed440a43baa50c4c31d60445033ba0adb3dcb3077",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-Coder-1.5B-Instruct-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 3014,
+          "sha256": "264a878e7069229ff38a46851a4b27201b41191dec1051be5721243fd6574b9c",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-Coder-1.5B-Instruct-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Qwen2.5-Coder-1.5B-Instruct-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deepseek-r1-1.5b-mnn",
+      "family": "deepseek",
+      "name": "DeepSeek R1 1.5B（推理）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 869191922,
+      "sha256": "dc47450d617a5c61d7d3dc098b7c658acde7477b82f3b55cf768f35ca28c2950",
+      "license": "Apache-2.0",
+      "minRamGb": 5,
+      "socMatch": [],
+      "abi": "arm64-v8a",
+      "note": "R1 蒸馏版，擅长推理链。会先输出思考过程。 合计 0.95GB，7 个文件。",
+      "sources": [
+        {
+          "label": "ModelScope（国内主源）",
+          "url": "https://modelscope.cn/models/MNN/DeepSeek-R1-1.5B-Qwen-MNN/resolve/master/llm.mnn.weight",
+          "priority": 0
+        }
+      ],
+      "companions": [
+        {
+          "fileName": "embeddings_int4.bin",
+          "bytes": 145858560,
+          "sha256": "7140db05c487985565550336f4c35343114d14cbde2af31b80de601e8c7eced6",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/DeepSeek-R1-1.5B-Qwen-MNN/resolve/master/embeddings_int4.bin",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "tokenizer.mtok",
+          "bytes": 4109433,
+          "sha256": "05dd841854431464f3d87a079db1b38cf5e0da94a46d82ece792e6c2dd3716e3",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/DeepSeek-R1-1.5B-Qwen-MNN/resolve/master/tokenizer.mtok",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn.json",
+          "bytes": 988460,
+          "sha256": "4990cdd5f095b2e33f791160a37fddb869bb6126047c7b9a9cde0adc531c668a",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/DeepSeek-R1-1.5B-Qwen-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm.mnn",
+          "bytes": 488760,
+          "sha256": "aaa176bd6d7d049ddce7b78feff182d69c19422bd4586d7a4c8a7a6a5296762a",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/DeepSeek-R1-1.5B-Qwen-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "llm_config.json",
+          "bytes": 2805,
+          "sha256": "989f6d29b816f38e3b3d650019681fb6a57efdad4de8f3473d7708bd324a27d0",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/DeepSeek-R1-1.5B-Qwen-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
+        },
+        {
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/DeepSeek-R1-1.5B-Qwen-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hunyuan-1.8b-mnn",
+      "family": "hunyuan",
+      "name": "Hunyuan 1.8B（腾讯）",
+      "kind": "text",
+      "engine": "mnn",
+      "format": "mnn",
+      "quant": "fp16",
+      "fileName": "llm.mnn.weight",
+      "bytes": 1244190282,
+      "sha256": "3b72722f38cc99d731a460f7f550bf26f765712bfeecfd0096afd4720cc951ec",
       "license": "Apache-2.0",
       "minRamGb": 6,
       "socMatch": [],
       "abi": "arm64-v8a",
-      "note": "**多模态那一档就用它**（Gemma 4 本身能看图/听音；App 目前只发纯文本，看图链路还没接）。本机取文件头验证：容器魔数 LITERTLM，且**含** `tf_lite_prefill_decode` 子图 ✅（这正是 -gpu 版缺的那个）。 2.41 GiB。",
+      "note": "腾讯混元端侧版，中文能力强，体积偏大。 合计 1.16GB，6 个文件。",
       "sources": [
         {
           "label": "ModelScope（国内主源）",
-          "url": "https://modelscope.cn/models/litert-community/gemma-4-E2B-it-litert-lm/resolve/master/gemma-4-E2B-it.litertlm",
+          "url": "https://modelscope.cn/models/MNN/Hunyuan-1.8B-Instruct-MNN/resolve/master/llm.mnn.weight",
           "priority": 0
-        },
-        {
-          "label": "hf-mirror（HF 国内镜像）",
-          "url": "https://hf-mirror.com/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-          "priority": 1
-        },
-        {
-          "label": "HuggingFace 官方",
-          "url": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-          "priority": 2
         }
-      ]
-    },
-    {
-      "id": "gemma-3-1b-it",
-      "family": "gemma-3-1b-it",
-      "name": "Gemma 3 1B（通用版・0.54G）",
-      "kind": "text",
-      "engine": "litert-lm",
-      "format": "litertlm",
-      "quant": "int4",
-      "fileName": "Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
-      "bytes": 584417280,
-      "sha256": null,
-      "license": "Apache-2.0",
-      "kvTokens": 4096,
-      "minRamGb": 4,
-      "socMatch": [],
-      "abi": "arm64-v8a",
-      "note": "通用版（非机型专属）。**为什么不用 sm8850 专属版**：App 要适配很多机型，专属版只在一颗芯片上有意义，所以一律只收通用版 —— （代价：那个专属版是本仓唯一被本机验出**含** `tf_lite_prefill_decode` 的 Gemma3-1B，通用版没能验出，故标「未验证」。）0.54 GiB。",
-      "sources": [
+      ],
+      "companions": [
         {
-          "label": "ModelScope（国内主源）",
-          "url": "https://modelscope.cn/models/litert-community/Gemma3-1B-IT/resolve/master/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
-          "priority": 0
+          "fileName": "tokenizer.txt",
+          "bytes": 1354705,
+          "sha256": "152f87c05c609199c1e24cc29cd79e5b582b4a1ce81eea1f9d8693eca55c4a4d",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Hunyuan-1.8B-Instruct-MNN/resolve/master/tokenizer.txt",
+              "priority": 0
+            }
+          ]
         },
         {
-          "label": "hf-mirror（HF 国内镜像）",
-          "url": "https://hf-mirror.com/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
-          "priority": 1
+          "fileName": "llm.mnn.json",
+          "bytes": 1107444,
+          "sha256": "8381a28a0cbaf6da6eb90ed8960a509826c50675b6f95add61f90bf8a637a85d",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Hunyuan-1.8B-Instruct-MNN/resolve/master/llm.mnn.json",
+              "priority": 0
+            }
+          ]
         },
         {
-          "label": "HuggingFace 官方",
-          "url": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
-          "priority": 2
-        }
-      ]
-    },
-    {
-      "id": "qwen3-0.6b",
-      "family": "qwen3-0.6b",
-      "name": "Qwen3 0.6B（0.57G）",
-      "kind": "text",
-      "engine": "litert-lm",
-      "format": "litertlm",
-      "quant": "mixed",
-      "fileName": "Qwen3-0.6B.litertlm",
-      "bytes": 614236160,
-      "sha256": null,
-      "license": "Apache-2.0",
-      "minRamGb": 4,
-      "socMatch": [],
-      "abi": "arm64-v8a",
-      "note": "本机取文件头验证：容器魔数 LITERTLM，且**含** `tf_lite_prefill_decode` 子图 ✅（这正是 -gpu 版缺的那个）。 0.57 GiB —— 最小且确证可用的一个。",
-      "sources": [
-        {
-          "label": "ModelScope（国内主源）",
-          "url": "https://modelscope.cn/models/litert-community/Qwen3-0.6B/resolve/master/Qwen3-0.6B.litertlm",
-          "priority": 0
+          "fileName": "llm.mnn",
+          "bytes": 528568,
+          "sha256": "f9399232f6c428b2f39136c39787249cb7feb3e3202fbc3ff76151149d973b03",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Hunyuan-1.8B-Instruct-MNN/resolve/master/llm.mnn",
+              "priority": 0
+            }
+          ]
         },
         {
-          "label": "hf-mirror（HF 国内镜像）",
-          "url": "https://hf-mirror.com/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-          "priority": 1
+          "fileName": "llm_config.json",
+          "bytes": 5538,
+          "sha256": "538cac5b9db669d31f047ef361c496246dde4d884fdd7548cbbdc976a22b5d76",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Hunyuan-1.8B-Instruct-MNN/resolve/master/llm_config.json",
+              "priority": 0
+            }
+          ]
         },
         {
-          "label": "HuggingFace 官方",
-          "url": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-          "priority": 2
+          "fileName": "configuration.json",
+          "bytes": 46,
+          "sha256": "56c362f108bb9f17fc0e7b490b7e8927c03dc4478631b4f771c37728019beaa2",
+          "sources": [
+            {
+              "label": "ModelScope（国内主源）",
+              "url": "https://modelscope.cn/models/MNN/Hunyuan-1.8B-Instruct-MNN/resolve/master/configuration.json",
+              "priority": 0
+            }
+          ]
         }
       ]
     }

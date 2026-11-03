@@ -63,13 +63,14 @@ async function withUpstream(handler, fn) {
 }
 
 /** 起代理（指向给定上游），返回 { port, proc, stop }。 */
-async function startProxy(upstream) {
+async function startProxy(upstream, extraArgs = []) {
   // ⚠️ 每次给**自己的** state 目录：模型列表会缓存到 state 里（ttl 12h），
   //    共用一个目录时，前一条测试的假列表会被后一条读到 —— 那样"静态兜底"
   //    那条测试其实什么都没验到（2026-10-16 自测当场踩到）。
   const state = mkdtempSync(join(tmpdir(), 'zen-proxy-state-'));
   const proc = spawn(process.execPath, [
     SCRIPT, '--port', '0', '--upstream', upstream, '--state', state, '--ttl-hours', '12',
+    ...extraArgs,
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   let err = '';
@@ -142,6 +143,144 @@ function sseReply(res) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+
+section('按模型名自动选上游（2026-11-03 三通道合并后必需）');
+
+// 三条上游合并成一个厂家后，App 只走 `/v1`；请求该发给谁**只能靠模型名**判断。
+// 这组测试钉住的正是那条链路：起三个假上游，各自回一个可辨认的名字，
+// 然后从 `/v1` 发对话，看它落到了谁手里。
+await test('模型名属于 Kilo → 转发到 Kilo 上游（不是 Zen）', async () => {
+  let zenHits = 0;
+  await withUpstream(
+    (req, res) => {
+      if (String(req.url).includes('/models')) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ object: 'list', data: [{ id: 'zen-model-a' }] }));
+        return;
+      }
+      zenHits++;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: 'z', choices: [{ message: { content: 'from-zen' } }] }));
+    },
+    async ({ upstream }) => {
+      await withUpstream(
+        (req, res) => {
+          if (String(req.url).includes('/models')) {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ object: 'list', data: [{ id: 'kilo-model-b', isFree: true }] }));
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ id: 'k', choices: [{ message: { content: 'from-kilo' } }] }));
+        },
+        async ({ upstream: kiloUp }) => {
+          const px = await startProxy(upstream, ['--kilo-upstream', kiloUp]);
+          try {
+            // 先让代理把两条上游的列表都预热一遍（laneOfModel 靠它判断）
+            await proxyFetch(px.port, '/v1/models', { method: 'GET' });
+            await proxyFetch(px.port, '/kilo/v1/models', { method: 'GET' });
+            zenHits = 0;
+            const r = await proxyFetch(px.port, '/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                model: 'kilo-model-b',
+                messages: [{ role: 'user', content: 'hi' }],
+                stream: false,
+              }),
+            });
+            if (r.status !== 200) throw new Error(`期望 200，实际 ${r.status}：${r.text.slice(0, 120)}`);
+            if (!r.text.includes('from-kilo')) {
+              throw new Error(`没落到 Kilo 上游（zenHits=${zenHits}）`);
+            }
+            if (zenHits !== 0) throw new Error(`不该打到 Zen，打了 ${zenHits} 次`);
+          } finally {
+            await px.stop();
+          }
+        },
+      );
+    },
+  );
+});
+
+await test('模型名属于 Zen → 仍然走 Zen（不能被误认成别的）', async () => {
+  await withUpstream(
+    (req, res) => {
+      if (String(req.url).includes('/models')) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ object: 'list', data: [{ id: 'zen-model-a' }] }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: 'z', choices: [{ message: { content: 'from-zen' } }] }));
+    },
+    async ({ upstream }) => {
+      const px = await startProxy(upstream);
+      try {
+        await proxyFetch(px.port, '/v1/models', { method: 'GET' });
+        const r = await proxyFetch(px.port, '/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'zen-model-a',
+            messages: [{ role: 'user', content: 'hi' }],
+            stream: false,
+          }),
+        });
+        if (!r.text.includes('from-zen')) throw new Error(`落错地方了：${r.text.slice(0, 120)}`);
+      } finally {
+        await px.stop();
+      }
+    },
+  );
+});
+
+await test('路径前缀仍然优先（/kilo/v1 明确指定时，模型名不参与判断）', async () => {
+  await withUpstream(
+    (req, res) => {
+      if (String(req.url).includes('/models')) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ object: 'list', data: [{ id: 'zen-model-a' }] }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: 'z', choices: [{ message: { content: 'from-zen' } }] }));
+    },
+    async ({ upstream }) => {
+      await withUpstream(
+        (req, res) => {
+          if (String(req.url).includes('/models')) {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ object: 'list', data: [{ id: 'kilo-model-b', isFree: true }] }));
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ id: 'k', choices: [{ message: { content: 'from-kilo' } }] }));
+        },
+        async ({ upstream: kiloUp }) => {
+          const px = await startProxy(upstream, ['--kilo-upstream', kiloUp]);
+          try {
+            // 故意用 zen 的模型名 + kilo 的路径：路径说了算
+            const r = await proxyFetch(px.port, '/kilo/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                model: 'zen-model-a',
+                messages: [{ role: 'user', content: 'hi' }],
+                stream: false,
+              }),
+            });
+            if (!r.text.includes('from-kilo')) {
+              throw new Error(`前缀没优先：${r.text.slice(0, 120)}`);
+            }
+          } finally {
+            await px.stop();
+          }
+        },
+      );
+    },
+  );
+});
 
 section('门禁形状：会话 id / stream / 四个工具 / 请求 id');
 {

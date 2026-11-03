@@ -402,8 +402,283 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
         ),
         const SizedBox(height: 10),
         for (final p in myModelProviders()) _providerCard(p),
+        // ⚠️ 用户自己「添加模型」建的厂家也必须在这里露面。
+        //
+        // 以前这里**只遍历内置预设**（[myModelProviders]），于是自定义厂家在
+        // 设置页彻底不可见：它存在于 models.json，会话的模型选择器和轮换池
+        // 都能用，但用户回到设置里既看不到、也删不掉、还改不了 Key
+        // （2026-10-31 用户报）。
+        for (final p in _customProviders()) _customProviderCard(p),
       ],
     );
+  }
+
+  /// `models.json` 里**不属于内置清单**的厂家 = 用户自己添加的。
+  ///
+  /// 排除两类，它们不是"用户添加的"：
+  ///   * 内置预设（[myModelProviders]）—— 由上面那圈渲染；
+  ///   * App 自己提供凭据的虚拟厂家（`zen` / `local` / `polli`）—— 它们各自
+  ///     有开关（免费通道 / 本机模型），列在这里会让用户误以为要填 Key。
+  List<ProviderSpec> _customProviders() {
+    final builtin = myModelProviders().map((p) => p.id).toSet();
+    return <ProviderSpec>[
+      for (final p in _cfg.providers)
+        if (!builtin.contains(p.id) &&
+            !ConfiguredModels.appProvidedCredentialIds.contains(p.id))
+          p,
+    ];
+  }
+
+  /// 把自定义厂家包成 [ModelProvider] —— **只为复用那条模型行**
+  /// （[_registeredModelRow] 只读 id/name，落盘时 `_specFor` 会按 id 回配置里
+  /// 取**原始记录**，所以 `api` 等字段不会被这个包装丢掉）。
+  ModelProvider _asModelProvider(ProviderSpec p) => ModelProvider(
+        id: p.id,
+        name: p.label,
+        baseUrl: p.baseUrl,
+        keyHint: '',
+        modelsPath: '/models',
+      );
+
+  /// 自定义厂家卡：**只做三件事** —— 看它在、改它的 Key、删它或它下面的模型。
+  ///
+  /// 为什么不直接复用内置卡 [_providerCard]：那张卡的展开态是"介绍 → 去注册 →
+  /// 获取模型 → 填 Key → 测试并保存"，其中保存那一步会按**内置预设**重写
+  /// provider 记录。而自定义厂家的 `api`（`openai-completions` / `anthropic`）
+  /// 是用户当初选的 —— 走那条路会把协议改回默认值，静默弄坏别人正在用的配置。
+  /// 这里宁可能力少一点，也不碰那份记录。
+  Widget _customProviderCard(ProviderSpec p) {
+    final cardKey = 'custom:${p.id}';
+    final open = _openProvider == cardKey;
+    final mine = _modelsOf(p.id);
+    final ready = _keyReady[p.id] ?? false;
+    final badge = ready ? context.tr('已配 Key') : context.tr('未配 Key');
+    final badgeColor = ready ? DshColors.ok : DshColors.err;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: DshColors.panel(
+        radius: 11,
+        color: DshColors.surfaceHigh,
+        borderColor: open ? DshColors.accent : DshColors.line,
+        glow: false,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _openProvider = open ? null : cardKey),
+            borderRadius: BorderRadius.circular(DshMetrics.radius(11)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(11, 10, 6, 10),
+              child: Row(
+                children: [
+                  Icon(
+                    open ? Icons.expand_more : Icons.chevron_right,
+                    size: 16,
+                    color: open ? DshColors.accent : DshColors.textDim,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: open ? DshColors.accent : DshColors.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          p.baseUrl,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: DshFonts.code(
+                              color: DshColors.textFaint, fontSize: 9.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                      context.tr('{0} 个模型', [mine.length]),
+                      style:
+                          TextStyle(color: DshColors.textFaint, fontSize: 10.5),
+                    ),
+                  ),
+                  _pill(context.tr('自定义'), color: DshColors.textDim),
+                  const SizedBox(width: 6),
+                  _pill(badge, color: badgeColor),
+                  const SizedBox(width: 8),
+                ],
+              ),
+            ),
+          ),
+          if (open)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(11, 0, 11, 11),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (mine.isEmpty)
+                    Text(
+                      context.tr('这家下面还没有模型。到「添加模型」里重新填一次就能补上。'),
+                      style: TextStyle(color: DshColors.textDim, fontSize: 11),
+                    )
+                  else
+                    for (final m in mine) _registeredModelRow(_asModelProvider(p), m),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: _anyBusy ? null : () => _editCustomKey(p),
+                        icon: const Icon(Icons.key_outlined, size: 16),
+                        label: Text(context.tr('改 Key'),
+                            style: const TextStyle(fontSize: 11.5)),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: _anyBusy ? null : () => _deleteCustomProvider(p),
+                        icon: Icon(Icons.delete_outline,
+                            size: 16, color: DshColors.err),
+                        label: Text(
+                          context.tr('删除这个厂家'),
+                          style: TextStyle(fontSize: 11.5, color: DshColors.err),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 改自定义厂家的 Key。
+  ///
+  /// 只写安全区（[ProviderKeys]），**不碰** `models.json` 里那条 provider 记录 ——
+  /// 地址、协议、标签都保持原样。
+  Future<void> _editCustomKey(ProviderSpec p) async {
+    if (_anyBusy) return;
+    final current = await ProviderKeys.read(p.id) ?? '';
+    if (!mounted) return;
+    final ctl = TextEditingController(text: current);
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.tr('改「{0}」的 Key', [p.label])),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          obscureText: true,
+          decoration: InputDecoration(
+            hintText: context.tr('粘贴这个厂家的 API Key'),
+            helperText: p.baseUrl,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(context.tr('取消')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(context.tr('保存')),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    final v = ctl.text.trim();
+    try {
+      if (v.isEmpty) {
+        await ProviderKeys.delete(p.id);
+      } else {
+        await ProviderKeys.write(p.id, v);
+      }
+      if (!mounted) return;
+      setState(() => _keyReady[p.id] = v.isNotEmpty);
+      _toast(v.isEmpty
+          ? context.tr('已清空 {0} 的 Key', [p.label])
+          : context.tr('已保存 {0} 的 Key', [p.label]));
+      debugPrint('[dsh-model-panel] 自定义厂家 Key 已${v.isEmpty ? '清空' : '更新'}：provider=${p.id}');
+    } catch (e) {
+      if (!mounted) return;
+      _toast(context.tr('保存失败：{0}', ['$e']));
+    }
+  }
+
+  /// 删掉一个自定义厂家：它的模型、它的 Key、以及**池子里引用它们的成员**。
+  Future<void> _deleteCustomProvider(ProviderSpec p) async {
+    if (_anyBusy) return;
+    final mine = _modelsOf(p.id);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.tr('删除「{0}」？', [p.label])),
+        content: Text(context.tr(
+            '它下面的 {0} 个模型会一起删掉；用到它们的轮换池会把这几条剔除。'
+            '这一步不能撤销。', [mine.length])),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(context.tr('取消')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(context.tr('删除'),
+                style: TextStyle(color: DshColors.err)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _deleting = true);
+    try {
+      final old = ConfiguredModels.readConfig(widget.filesDir);
+      final routes = mine.map((m) => m.route).toSet();
+      final models = <ModelSpec>[
+        for (final x in old.models)
+          if (!routes.contains(x.route)) x,
+      ];
+      final providers = <ProviderSpec>[
+        for (final x in old.providers)
+          if (x.id != p.id) x,
+      ];
+      final pruned = _pruneGroups(old.groups, (r) => routes.contains(r));
+      final next = _withSelection(
+        providers: providers,
+        models: models,
+        groups: pruned.groups,
+        keep: old.selected,
+      );
+      await ProviderKeys.delete(p.id);
+      await ConfiguredModels.saveConfig(filesDir: widget.filesDir, config: next);
+      debugPrint('[dsh-model-panel] 已删除自定义厂家 ${p.id}'
+          '（${mine.length} 个模型；'
+          '${pruned.touched.isEmpty ? '池子未受影响' : '受影响的池子：${pruned.touched.join('、')}'}）');
+      if (mounted) setState(() => _openProvider = null);
+      await widget.onModelChanged();
+      messenger.showSnackBar(SnackBar(
+        content: Text(tr('已删除「{0}」和它下面的 {1} 个模型',
+            [p.label, '${mine.length}'])),
+      ));
+    } catch (e) {
+      debugPrint('[dsh-model-panel] 删除自定义厂家失败：$e');
+      messenger.showSnackBar(
+          SnackBar(content: Text(tr('删除失败：{0}', ['$e']))));
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
   }
 
   /// 一张内置厂家卡：收起态一行，展开态是整段配置流程。

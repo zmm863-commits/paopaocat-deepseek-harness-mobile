@@ -43,6 +43,15 @@ class RotationProxy {
   /// 不含凭据的状态文件（只放 lastGood）。stdin 模式下这是唯一落盘的东西。
   String? _statePath;
 
+  /// 最近一次组装配置时，**因为没有可用成员而被剔掉**的组（含原因）。
+  ///
+  /// 存在的意义只有一个：让"池子不好使"这件事**可被解释**。用户看到的往往是
+  /// 整个轮换组消失/连不上，而原因可能是组里唯一的那个免费模型已经被上游收回。
+  List<String> _skippedGroups = const [];
+
+  /// 给诊断日志/界面用：上次被剔掉的组（空 = 全部组都正常）。
+  List<String> get skippedGroups => _skippedGroups;
+
   int? get port => _port;
   bool get running => _proc != null;
 
@@ -92,7 +101,19 @@ class RotationProxy {
       debugPrint('[dsh-rotate] 建 toolbox 目录失败：$e');
     }
 
-    final configJson = jsonEncode(await _buildConfig(cfg: cfg, runtime: runtime));
+    final built = await _buildConfig(cfg: cfg, runtime: runtime);
+    // 有组配置、但每一组都凑不出可用成员（模型被删 / 免费通道收回 / 本机服务
+    // 没在跑）。**这时一个代理都不该起**：代理拿到空 groups 会直接拒绝退出，
+    // 而调用方还会以为"轮换能用"。如实停掉、返回 null，并留下可解释的原因。
+    if ((built['groups'] as Map).isEmpty) {
+      debugPrint('[dsh-rotate] 所有轮换组都没有可用成员，代理不启动：'
+          '${_skippedGroups.join('；')}');
+      DiagnosticsLog.add(
+          '[dsh-rotate]', '所有轮换组都没有可用成员，轮换不可用：${_skippedGroups.join('；')}');
+      await stop();
+      return null;
+    }
+    final configJson = jsonEncode(built);
 
     // 已经在跑且配置没变：直接复用（端口是系统挑的，不能自己猜）。
     if (_proc != null && _port != null && _configJson == configJson) {
@@ -177,8 +198,11 @@ class RotationProxy {
     required ConfiguredConfig cfg,
   }) async {
     final groups = <String, dynamic>{};
+    // 没有任何可用成员、被剔掉的组（及原因）。空组绝不能下发 —— 见下方注释。
+    final skipped = <String>[];
     for (final g in cfg.groups) {
       final members = <Map<String, dynamic>>[];
+      final missing = <String>[];
       for (final route in g.members) {
         // **本机模型（`local/<id>`）也能当池子成员**（用户 2026-10-07 要求）。
         // 它不在 models.json 里（是运行时才出现的虚拟厂家），所以不能走
@@ -205,9 +229,17 @@ class RotationProxy {
           continue;
         }
         final m = cfg.modelOfRoute(route);
-        if (m == null) continue;
+        if (m == null) {
+          // 模型不在清单里了（被删 / 免费通道收回）→ 这个成员是"幽灵"。
+          // 以前这里是**静默** continue，用户只会看到"池子不好使"却不知道为什么。
+          missing.add('$route（模型已不在清单）');
+          continue;
+        }
         final prov = cfg.providerOf(m.provider);
-        if (prov == null) continue;
+        if (prov == null) {
+          missing.add('$route（厂家已删除）');
+          continue;
+        }
         // Key 由 ProviderKeys（系统安全区）读出来，只进内存/管道。
         final key = await ProviderKeys.read(prov.id) ?? '';
         members.add(<String, dynamic>{
@@ -217,8 +249,26 @@ class RotationProxy {
           'model': m.id,
         });
       }
+      // ⚠️ **空组绝不能下发给代理**（2026-10-31 用户报：
+      //    「轮换池中间如果有无法使用的模型会造成整个轮换池无法使用」）。
+      //    代理启动时校验配置，遇到 members 为空会拒绝**整份**配置并退出 →
+      //    一个组没可用成员，其它组陪着一起挂。所以这里先把空组剔掉，
+      //    只报一句日志；真的一个组都不剩，才由 ensureRunning 返回 null。
+      if (members.isEmpty) {
+        skipped.add(missing.isEmpty
+            ? '${g.name}（组里没有成员）'
+            : '${g.name}（${missing.join('、')}）');
+        DiagnosticsLog.add('[dsh-rotate]',
+            '池子 ${g.name} 没有任何可用成员，已跳过：${missing.join('、')}');
+        continue;
+      }
+      if (missing.isNotEmpty) {
+        DiagnosticsLog.add('[dsh-rotate]',
+            '池子 ${g.name} 跳过了 ${missing.length} 个成员：${missing.join('、')}');
+      }
       groups[g.name] = <String, dynamic>{'members': members};
     }
+    _skippedGroups = skipped;
     return groups;
   }
 

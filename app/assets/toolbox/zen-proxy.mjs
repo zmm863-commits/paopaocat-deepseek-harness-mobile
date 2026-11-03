@@ -119,10 +119,16 @@ import http from 'node:http';
 import https from 'node:https';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 // ⚠️ 2026-10-15：免费车道从 `/zen` 搬到了 `/inference`（老路径无条件 403）。
 const DEFAULT_UPSTREAM = 'https://opencode.ai/inference';
+// 第二条免密上游（Kilo AI 公共网关）。它**不需要任何 Key / 伪装头**，
+// 免费池由上游用 `isFree: true` 明确标注（见 listKiloFreeModels）。
+const DEFAULT_KILO_UPSTREAM = 'https://api.kilo.ai/api/gateway';
+// 第三条免密上游（OVHcloud AI Endpoints）。纯免 Key、无需伪装的 OpenAI 兼容端点，
+// `/v1/models` 列出的就都是可用模型（没有 isFree 标记，整表即免费池）。
+const DEFAULT_OVH_UPSTREAM = 'https://oai.endpoints.kepler.ai.cloud.ovh.net';
 const DEFAULT_TTL_HOURS = 12;
 
 /**
@@ -159,6 +165,8 @@ function parseArgs(argv) {
     port: 0,
     state: '',
     upstream: DEFAULT_UPSTREAM,
+    kiloUpstream: DEFAULT_KILO_UPSTREAM,
+    ovhUpstream: DEFAULT_OVH_UPSTREAM,
     ttlHours: DEFAULT_TTL_HOURS,
     logRequests: false,
   };
@@ -175,6 +183,8 @@ function parseArgs(argv) {
     if (a === '--port') out.port = Number(need());
     else if (a === '--state') out.state = need();
     else if (a === '--upstream') out.upstream = need();
+    else if (a === '--kilo-upstream') out.kiloUpstream = need();
+    else if (a === '--ovh-upstream') out.ovhUpstream = need();
     else if (a === '--ttl-hours') out.ttlHours = Number(need());
     else if (a === '--log-requests') out.logRequests = true;
     else if (a === '--help') {
@@ -229,6 +239,69 @@ function base62Fixed(value, width) {
 const SESSION_CACHE = new Map();
 const SESSION_CACHE_MAX = 256;
 
+/**
+ * 会话映射的落盘路径（`main()` 里设置；空 = 不落盘）。
+ *
+ * ## 为什么要落盘
+ *
+ * 免费额度是**按会话**计的，不是按 token。代理一重启（App 冷启动、被系统回收后
+ * 拉回来），内存里的映射就空了 → 同一个对话被当成新会话 → 额度白花。
+ *
+ * ## 为什么不能直接存 seed
+ *
+ * 这里的 seed 是**用户的第一条提问原文**。把它写到磁盘上，等于把用户说过的话
+ * 留在手机里 —— 这条通道本来就是"免费但不保证私密"，更不该自己多存一份。
+ * 所以落盘的是 `sha256(seed)`，只能用来做映射，反查不出原文。
+ */
+let sessionStatePath = '';
+
+/** seed → 缓存键（哈希后落盘，不留原文）。 */
+function sessionKey(seed) {
+  return createHash('sha256').update(`zen-session\u0000${seed}`).digest('hex').slice(0, 32);
+}
+
+function loadSessionCache() {
+  if (!sessionStatePath) return;
+  try {
+    if (!existsSync(sessionStatePath)) return;
+    const raw = JSON.parse(readFileSync(sessionStatePath, 'utf8'));
+    const map = raw && typeof raw === 'object' && raw.map && typeof raw.map === 'object'
+      ? raw.map
+      : null;
+    if (!map) return;
+    for (const [k, v] of Object.entries(map)) {
+      if (typeof k === 'string' && typeof v === 'string' && CANONICAL_SESSION.test(v)) {
+        SESSION_CACHE.set(k, v);
+      }
+    }
+    if (SESSION_CACHE.size > 0) {
+      process.stderr.write(`[zen-proxy] 已恢复 ${SESSION_CACHE.size} 条会话映射\n`);
+    }
+  } catch {
+    // 读坏了就当没恢复：最多重新铸一批 id（多花一点额度），绝不能因此起不来。
+  }
+}
+
+let sessionSaveTimer = null;
+
+/** 防抖落盘：一次对话可能连续铸几个 id，没必要每个都写一次文件。 */
+function scheduleSaveSessions() {
+  if (!sessionStatePath || sessionSaveTimer) return;
+  sessionSaveTimer = setTimeout(() => {
+    sessionSaveTimer = null;
+    try {
+      const map = Object.create(null);
+      for (const [k, v] of SESSION_CACHE) map[k] = v;
+      mkdirSync(dirname(sessionStatePath), { recursive: true });
+      writeFileSync(sessionStatePath, JSON.stringify({ v: 1, map }), 'utf8');
+    } catch {
+      /* 写不进去不影响本次对话，下次再试 */
+    }
+  }, 800);
+  // 别为了一个后台写文件把进程拖住不退出
+  if (typeof sessionSaveTimer.unref === 'function') sessionSaveTimer.unref();
+}
+
 /** 按官方 tA() 公式铸造一个**当场**的会话 id（低 12 位固定 `0xFFE`）。 */
 function mintSessionId(nowMs) {
   const A = (27n << 36n) - 1n - BigInt(nowMs);
@@ -242,7 +315,8 @@ function mintSessionId(nowMs) {
 function canonicalSessionId(seed) {
   const s = String(seed || '');
   if (CANONICAL_SESSION.test(s)) return s;
-  const hit = SESSION_CACHE.get(s);
+  const key = sessionKey(s);
+  const hit = SESSION_CACHE.get(key);
   if (hit) return hit;
   const minted = mintSessionId(Date.now());
   if (SESSION_CACHE.size >= SESSION_CACHE_MAX) {
@@ -250,7 +324,8 @@ function canonicalSessionId(seed) {
     const oldest = SESSION_CACHE.keys().next().value;
     SESSION_CACHE.delete(oldest);
   }
-  SESSION_CACHE.set(s, minted);
+  SESSION_CACHE.set(key, minted);
+  scheduleSaveSessions();
   return minted;
 }
 
@@ -550,6 +625,51 @@ function upstreamStream({ method, url, headers, body, timeoutMs = 300000, onResp
   });
 }
 
+/**
+ * 抢先读第一块数据 —— 用来**按响应体的形状**判定上游给的到底是 SSE 还是 JSON。
+ *
+ * ## 为什么不能信 `content-type`
+ *
+ * 上游在高负载时会把**完整的 SSE 帧序列**用 `application/json` 的 header 发回来。
+ * 直接沿用这个 header 就等于告诉下游"这是 JSON" → 下游按 JSON 解析 → 整轮失败，
+ * 而且失败得太早、太像"模型坏了"，还可能把这个本来好好的模型标成不可用。
+ *
+ * 所以判据只能是**响应体的形状**，不能是 header 说的那句话。
+ *
+ * ## 两个必须遵守的约束
+ *
+ *  * 用 `readable` + `read()` 而不是 `data` 事件：一旦进入 flowing 模式，
+ *    在我们注册新的 `data` 监听之前到达的数据会**直接丢掉**。
+ *  * 超时/立刻结束都返回 null：嗅探只是为了把 header 说对，
+ *    绝不能因为它把一条本来正常的转发拖死。
+ */
+function sniffFirst(res, ms = 1200) {
+  return new Promise((resolvePromise) => {
+    let settled = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      res.removeListener('readable', onReadable);
+      res.pause();
+      resolvePromise(v);
+    };
+    const onReadable = () => {
+      let chunk = null;
+      try {
+        chunk = res.read();
+      } catch {
+        chunk = null;
+      }
+      if (chunk) finish(chunk);
+    };
+    const timer = setTimeout(() => finish(null), ms);
+    res.on('readable', onReadable);
+    res.once('end', () => finish(null));
+    res.once('error', () => finish(null));
+  });
+}
+
 // ─────────────────────────────────────────────────────────── 模型列表（带缓存）
 
 function cachePath(state) {
@@ -585,8 +705,17 @@ function writeCache(state, models) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  // 会话映射落盘（不存明文 seed，见 sessionStatePath 的说明）
+  if (args.state) {
+    sessionStatePath = join(args.state, 'zen-sessions.json');
+    loadSessionCache();
+  }
   let lastError = null;
   let modelCache = null;
+  // Kilo 那条的模型缓存（同样只在内存里，不落盘 —— 上游清单随时变，缓存旧了更糟）
+  let kiloCache = null;
+  // OVHcloud 那条的模型缓存（同上）
+  let ovhCache = null;
 
   /**
    * 取"免费模型"列表：优先上游实时列表（过滤出免费的），失败则用缓存，
@@ -631,6 +760,89 @@ async function main() {
     }
     modelCache = STATIC_FREE_MODELS.slice();
     return modelCache;
+  }
+
+  /**
+   * Kilo AI 公共网关的免费池（2026-10-31 接入）。
+   *
+   * 与 Zen 那条的三个差别：
+   *   * **完全不需要鉴权**，也不需要伪装头（它本来就是给公众用的池子）；
+   *   * 上游用 `isFree: true` 明确标注哪些模型免费 —— 直接按这个挑，不去猜价格字段；
+   *   * 它的模型 id 自带斜杠和 `:free` 后缀（例如
+   *     `dots-studio/dots-3-note-preview:free`），**原样使用、不加前缀**：
+   *     两条上游靠「厂家」区分，不靠 id 前缀，这样模型名对用户也是最可读的。
+   *
+   * 拿不到就返回空数组（而不是抛错）：第二条上游挂了不该影响第一条。
+   */
+  async function listKiloFreeModels() {
+    if (kiloCache) return kiloCache;
+    try {
+      const r = await upstreamRequest({
+        method: 'GET',
+        url: String(args.kiloUpstream).replace(/\/+$/, '') + '/models',
+        headers: { accept: 'application/json' },
+        timeoutMs: 20000,
+      });
+      if (r.status >= 200 && r.status < 300) {
+        const json = JSON.parse(r.body.toString('utf8'));
+        const ids = (Array.isArray(json?.data) ? json.data : [])
+          .filter((m) => m && typeof m.id === 'string' && m.isFree === true)
+          .map((m) => m.id);
+        if (ids.length > 0) {
+          kiloCache = ids;
+          return ids;
+        }
+        lastError = 'Kilo 的免费池是空的（上游可能改了策略）';
+      } else {
+        lastError = `Kilo 取模型列表失败：HTTP ${r.status}`;
+      }
+    } catch (e) {
+      lastError = `Kilo 取模型列表失败：${e.message}`;
+    }
+    // ⚠️ 不写进 modelCache，也不互相覆盖 lastError 之外的任何东西 ——
+    //    两条上游必须互不牵连（一条挂了另一条照常服务）。
+    kiloCache = [];
+    return kiloCache;
+  }
+
+  /**
+   * 第三条免密上游：OVHcloud AI Endpoints 的免费模型。
+   *
+   * 它和 Kilo 一样是**纯免 Key、无需伪装**的 OpenAI 兼容端点 —— 但有个区别：
+   * OVHcloud 的 `/models` **没有 `isFree` 标记**，整张表列出来的就都是可用模型
+   * （2026-11-01 实测 22 个，含 gpt-oss / Qwen3 / Mistral / Llama 等）。
+   * 所以这里不做过滤，整表即免费池。
+   *
+   * 拿不到就返回空数组（不抛错）：第三条挂了不该影响前两条。
+   */
+  async function listOvhFreeModels() {
+    if (ovhCache) return ovhCache;
+    try {
+      const r = await upstreamRequest({
+        method: 'GET',
+        url: String(args.ovhUpstream).replace(/\/+$/, '') + '/v1/models',
+        headers: { accept: 'application/json' },
+        timeoutMs: 20000,
+      });
+      if (r.status >= 200 && r.status < 300) {
+        const json = JSON.parse(r.body.toString('utf8'));
+        const ids = (Array.isArray(json?.data) ? json.data : [])
+          .filter((m) => m && typeof m.id === 'string')
+          .map((m) => m.id);
+        if (ids.length > 0) {
+          ovhCache = ids;
+          return ids;
+        }
+        lastError = 'OVHcloud 的模型表是空的（上游可能改了策略）';
+      } else {
+        lastError = `OVHcloud 取模型列表失败：HTTP ${r.status}`;
+      }
+    } catch (e) {
+      lastError = `OVHcloud 取模型列表失败：${e.message}`;
+    }
+    // 三条上游互不牵连：失败只记 lastError，不碰别人的缓存。
+    ovhCache = [];
+    return ovhCache;
   }
 
   /** 把上游的错误转成 OpenAI 形状，并附上**能看懂**的中文说明。 */
@@ -695,10 +907,52 @@ async function main() {
     );
   }
 
+  /**
+   * 这个模型名属于哪条上游。
+   *
+   * 为什么需要：App 现在只注册**一个**厂家（`zen`，baseURL 挂在 `/v1`），
+   * 但三条上游的模型混在同一个列表里。请求进来时只有模型名，
+   * 所以必须能反查出它该发给谁。
+   *
+   * 顺序：Zen → Kilo → OVH（Zen 是自己那批，重名时优先它）。
+   * 三个 cache 都查不到 = 退回 Zen（保持旧行为，不至于把人话请求丢掉）。
+   */
+  async function laneOfModel(modelId) {
+    if (!modelId) return 'zen';
+    try {
+      if ((await listFreeModels()).includes(modelId)) return 'zen';
+    } catch (_) {}
+    try {
+      if ((await listKiloFreeModels()).includes(modelId)) return 'kilo';
+    } catch (_) {}
+    try {
+      if ((await listOvhFreeModels()).includes(modelId)) return 'ovh';
+    } catch (_) {}
+    return 'zen';
+  }
+
   const server = createServer(async (req, res) => {
     const started = Date.now();
     const url = new URL(req.url || '/', 'http://127.0.0.1');
-    const path = url.pathname;
+    const rawPath = url.pathname;
+
+    // 三条上游共用一个本地端口，用**路径前缀**分流（2026-10-31 接 Kilo，11-01 接 OVHcloud）：
+    //   /v1/*        → Zen（OpenCode，必须伪装成官方 CLI，否则 403）
+    //   /kilo/v1/*   → Kilo AI 公共网关（免 Key，也不需要伪装）
+    //   /ovh/v1/*    → OVHcloud AI Endpoints（免 Key，也不需要伪装）
+    // DSH 那边注册成三个「厂家」，各自的模型 id 原样使用，天然不冲突。
+    // 2026-11-03：三条上游**合并成一个厂家**给 App 看，所以 `/v1/*` 这条路
+    // 也要能路由到 Kilo / OVH —— 靠**模型名**判断（见下面的 laneOfModel）。
+    // 因此这两个改成 let：路径前缀是"显式指定"，模型名是"自动判断"，
+    // 两者都支持（老的 /kilo/v1、/ovh/v1 继续可用，不必改回去）。
+    let isKilo = rawPath === '/kilo' || rawPath.startsWith('/kilo/');
+    let isOvh = rawPath === '/ovh' || rawPath.startsWith('/ovh/');
+    const stripPrefix = (p, prefix) => (p.slice(prefix.length) || '/');
+    const path = isKilo
+        ? stripPrefix(rawPath, '/kilo')
+        : isOvh
+            ? stripPrefix(rawPath, '/ovh')
+            : rawPath;
 
     // ── 健康检查：给 App 显示状态用（是否在跑、模型数、上次错误）
     if (path === '/healthz') {
@@ -714,13 +968,25 @@ async function main() {
 
     // ── 模型列表
     if (path === '/v1/models' && req.method === 'GET') {
-      const models = await listFreeModels();
+      const models = isOvh
+          ? await listOvhFreeModels()
+          : isKilo
+              ? await listKiloFreeModels()
+              : await listFreeModels();
+      const owner = isOvh ? 'ovhcloud' : isKilo ? 'kilo' : 'opencode-zen';
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({
         object: 'list',
-        data: models.map((id) => ({ id, object: 'model', owned_by: 'opencode-zen' })),
+        data: models.map((id) => ({
+          id,
+          object: 'model',
+          owned_by: owner,
+        })),
       }));
-      if (args.logRequests) process.stderr.write(`[zen-proxy] GET /v1/models → ${models.length} 个\n`);
+      if (args.logRequests) {
+        process.stderr.write(
+          `[zen-proxy] GET /v1/models(${owner}) → ${models.length} 个\n`);
+      }
       return;
     }
 
@@ -738,6 +1004,16 @@ async function main() {
           return;
         }
 
+        // ── 按模型名自动选上游（2026-11-03 三通道合并后必需）─────────────
+        //
+        // 路径前缀（/kilo/v1、/ovh/v1）仍然有效，但 App 现在统一走 `/v1`，
+        // 所以这里靠模型名判断。只在**没带前缀**时才做（前缀是显式指定，优先）。
+        if (!isKilo && !isOvh) {
+          const lane = await laneOfModel(payload.model);
+          if (lane === 'kilo') isKilo = true;
+          else if (lane === 'ovh') isOvh = true;
+        }
+
         // 会话种子：优先用调用方给的（这样同一会话 id 稳定），否则按第一条用户消息派生
         const clientSeed =
           String(req.headers['x-zen-seed'] || '').trim() ||
@@ -751,85 +1027,147 @@ async function main() {
           })();
         const session = canonicalSessionId(clientSeed);
 
-        const { body, restore } = applyGate(payload);
-        const headers = {
-          ...disguiseHeaders(session),
+        // Zen 那条要把请求改造成"官方 CLI 的形状"（强制 stream、注入门禁工具、
+        // 工具名大小写归一）；Kilo / OVHcloud 是**公共网关**，不要动它的请求体 ——
+        // 改造反而可能被当成异常客户端。
+        const { body, restore } = (isKilo || isOvh)
+          ? { body: payload, restore: { size: 0 } }
+          : applyGate(payload);
+        const baseHeaders = {
           'content-type': 'application/json',
           // 上游可能按 Accept 分流，明确要 SSE
           accept: body.stream ? 'text/event-stream' : 'application/json',
         };
+        // 只有 Zen 需要伪装（它校验"是不是自家 CLI"）；Kilo/OVH 不需要，别多此一举。
+        const headers = (isKilo || isOvh)
+            ? baseHeaders
+            : { ...disguiseHeaders(session), ...baseHeaders };
 
         try {
           await upstreamStream({
             method: 'POST',
-            url: upstreamUrl(args.upstream, '/v1/chat/completions'),
+            url: isOvh
+              ? String(args.ovhUpstream).replace(/\/+$/, '') + '/v1/chat/completions'
+              : isKilo
+                  ? String(args.kiloUpstream).replace(/\/+$/, '') + '/chat/completions'
+                  : upstreamUrl(args.upstream, '/v1/chat/completions'),
             headers,
             body: Buffer.from(JSON.stringify(body), 'utf8'),
-            onResponse: (r) =>
-              new Promise((done) => {
+            onResponse: (r) => (async () => {
                 const status = r.statusCode || 0;
                 if (status < 200 || status >= 300) {
                   const chunks = [];
                   r.on('data', (c) => chunks.push(c));
-                  r.on('end', () => {
-                    const text = Buffer.concat(chunks).toString('utf8');
-                    lastError = `HTTP ${status}`;
-                    process.stderr.write(`[zen-proxy] 上游 HTTP ${status}：${text.slice(0, 200)}\n`);
-                    res.writeHead(status, { 'content-type': 'application/json' });
-                    res.end(errorBody(status, text));
-                    done();
+                  await new Promise((ok) => {
+                    r.on('end', ok);
+                    r.on('error', ok);
                   });
-                  r.on('error', () => done());
+                  const text = Buffer.concat(chunks).toString('utf8');
+                  lastError = `HTTP ${status}`;
+                  process.stderr.write(`[zen-proxy] 上游 HTTP ${status}：${text.slice(0, 200)}\n`);
+                  res.writeHead(status, { 'content-type': 'application/json' });
+                  res.end(errorBody(status, text));
                   return;
                 }
                 lastError = null;
+
+                // ⚠️ **按响应体的形状判流式，不信 header**（2026-10-31）。
+                //
+                //    上游高负载时会把**完整的 SSE 帧序列**用 `application/json` 的
+                //    header 发回来。直接沿用这个 header 就等于告诉下游"这是 JSON" →
+                //    下游按 JSON 解析 → 整轮失败；而且失败得极像"模型坏了"，还可能
+                //    把这个本来好好的模型标成不可用。判据只能是响应体的形状。
+                const upstreamType = String(r.headers['content-type'] || '');
+                const first = await sniffFirst(r);
+                const head = first
+                  ? first.toString('utf8', 0, Math.min(first.length, 64))
+                  : '';
+                // SSE 帧一定以 `data:` / `event:` / `id:` / 注释行 `:` 开头。
+                const looksSse = /^\s*(?:data:|event:|id:|:)/.test(head);
+                const isSse = looksSse || /event-stream/i.test(upstreamType);
+                if (looksSse && !/event-stream/i.test(upstreamType)) {
+                  process.stderr.write(
+                    `[zen-proxy] 上游 header 写的是 ${upstreamType || '(无)'}，但 body 是 SSE 帧 → 按 SSE 转发\n`);
+                }
                 res.writeHead(200, {
-                  'content-type': r.headers['content-type'] || 'text/event-stream',
+                  'content-type': isSse
+                    ? 'text/event-stream'
+                    : (upstreamType || 'application/json'),
                   'cache-control': 'no-cache',
                   connection: 'keep-alive',
                   'transfer-encoding': 'chunked',
                 });
+
                 let bytes = 0;
                 if (restore.size === 0) {
-                  // 绝大多数情况：一个字节都不改，边收边发（首字延迟 = 上游首字延迟）
-                  r.on('data', (c) => {
-                    bytes += c.length;
-                    res.write(c);
-                  });
-                  r.on('end', () => {
+                  // 绝大多数情况：一个字节都不改，边收边发（首字延迟 = 上游首字延迟）。
+                  // 注意先把嗅探到的那块补发出去 —— 否则每轮都会**丢掉开头一小段**。
+                  if (first) {
+                    bytes += first.length;
+                    res.write(first);
+                  }
+                  // ⚠️ 嗅探可能已经把**整个响应**读走了（2026-11-01）：非流式响应
+                  //    （OVHcloud 这类）整块 JSON 一次到齐，`sniffFirst` 的 read() 把它
+                  //    全读走、流随即 end。这时再挂 `end` 监听**永远等不到**（事件已在
+                  //    嗅探期间 fire 过）→ 下游卡死、curl 拿到 0 字节。Zen/Kilo 是流式、
+                  //    数据分批来才没踩到。
+                  //    所以嗅探后先看流是不是已经结束：结束了就直接收尾，别再等 end。
+                  if (r.readableEnded) {
                     res.end();
                     logChat(payload.model, bytes, started);
-                    done();
-                  });
-                  r.on('error', () => {
-                    res.end();
-                    done();
+                    return;
+                  }
+                  // 没结束（流式/还有后续块）→ 显式 resume 后继续边收边发。
+                  // resume() 对已在流动的流是无害 no-op；对嗅探超时 pause 过的空流则
+                  // 是必需的（Node 里显式 pause 过的流挂 data 监听不会自动 resume）。
+                  r.resume();
+                  await new Promise((ok) => {
+                    r.on('data', (c) => {
+                      bytes += c.length;
+                      res.write(c);
+                    });
+                    r.on('end', () => {
+                      res.end();
+                      logChat(payload.model, bytes, started);
+                      ok();
+                    });
+                    r.on('error', () => {
+                      res.end();
+                      ok();
+                    });
                   });
                 } else {
                   // 罕见路径：调用方用了 `Bash`/`READ` 这类大小写变体 → 缓冲后改名再发
-                  const chunks = [];
-                  r.on('data', (c) => chunks.push(c));
-                  r.on('end', () => {
-                    const text = restoreToolNames(Buffer.concat(chunks).toString('utf8'), restore);
-                    bytes = Buffer.byteLength(text, 'utf8');
-                    res.end(text);
-                    logChat(payload.model, bytes, started);
-                    done();
+                  const chunks = first ? [first] : [];
+                  await new Promise((ok) => {
+                    r.on('data', (c) => chunks.push(c));
+                    r.on('end', ok);
+                    r.on('error', ok);
                   });
-                  r.on('error', () => {
-                    res.end();
-                    done();
-                  });
+                  const text = restoreToolNames(Buffer.concat(chunks).toString('utf8'), restore);
+                  bytes = Buffer.byteLength(text, 'utf8');
+                  res.end(text);
+                  logChat(payload.model, bytes, started);
                 }
-              }),
+              })(),
           });
         } catch (e) {
           lastError = e.message;
           process.stderr.write(`[zen-proxy] 转发失败：${e.message}\n`);
-          res.writeHead(502, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({
-            error: { message: `连接社区免费通道失败：${e.message}` },
-          }));
+          // ⚠️ 已经发过 200 头了就不能再改状态码（会抛 ERR_HTTP_HEADERS_SENT，
+          //    一个 client 端的意外断流能把整个代理进程带崩）。
+          if (!res.headersSent) {
+            res.writeHead(502, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({
+              error: { message: `连接社区免费通道失败：${e.message}` },
+            }));
+          } else {
+            try {
+              res.end();
+            } catch {
+              /* 客户端可能已经走了 */
+            }
+          }
         }
       });
       return;

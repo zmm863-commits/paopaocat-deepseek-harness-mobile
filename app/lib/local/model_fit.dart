@@ -81,7 +81,13 @@ ModelFitResult estimateFit({
           '　${tr('需要内存 ≥ {0} GB', ['${model.minRamGb}'])}',
     );
   }
-  if (model.companions.isNotEmpty && !companionsInstalled) {
+  // ⚠️ MNN 不走这条判断（2026-11-02）。它的 companions 不是"可选的外部解码器"，
+  // 而是**引擎本身必须读的配置文件**（llm_config.json / tokenizer.txt / llm.mnn.json）。
+  // 下载器本来就会把它们和权重**一起下**，不存在"先下主文件、伴生文件后补"这种状态 ——
+  // 用 mmproj 那套"缺件就红"的规则套上去，会让每个 MNN 模型都误报「无法运行」。
+  final needsCompanionCheck =
+      model.companions.isNotEmpty && model.engine != 'mnn';
+  if (needsCompanionCheck && !companionsInstalled) {
     final compGb =
         ((model.totalBytes - model.bytes) / 1073741824).toStringAsFixed(1);
     return ModelFitResult(

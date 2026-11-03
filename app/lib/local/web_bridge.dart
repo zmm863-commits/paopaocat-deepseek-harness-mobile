@@ -22,11 +22,29 @@ class WebBridge {
 
   static const MethodChannel _ch = MethodChannel('dsh/native');
 
+  /// 这条保活服务**为谁活着**（与 `WebBridgeService.kt` 的常量一一对应）。
+  ///
+  /// 为什么要有区分（2026-11-02）：同一个服务被两个开关共用 ——
+  /// 「后台运行」（默认开）和「移动桌面平台」。但通知栏文案必须对得上
+  /// 用户做的事：没开电脑访问却写"电脑正在访问"就是撒谎。
+  static const String modeKeepAlive = 'keepalive';
+  static const String modeWebAccess = 'webaccess';
+
   /// 起前台服务。[detail] 显示在通知栏正文（例如两个访问地址）。
-  static Future<bool> start(String detail) async {
+  ///
+  /// [mode] 决定通知标题：`keepalive` → 「后台运行中」；`webaccess` → 「电脑正在访问」。
+  static Future<bool> start(
+    String detail, {
+    String mode = modeWebAccess,
+  }) async {
     try {
-      final ok = await _ch.invokeMethod<bool>('webBridgeStart', {'detail': detail});
-      DiagnosticsLog.add('bridge', '前台服务已启动（通知栏「电脑正在访问」）');
+      final ok = await _ch.invokeMethod<bool>(
+        'webBridgeStart',
+        {'detail': detail, 'mode': mode},
+      );
+      DiagnosticsLog.add(
+          'bridge',
+          '前台服务已启动（通知栏「${mode == modeKeepAlive ? '后台运行中' : '电脑正在访问'}」）');
       return ok ?? false;
     } on MissingPluginException {
       // 桌面/iOS 上没有这个通道：不影响功能，只少了保活。

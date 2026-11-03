@@ -210,10 +210,21 @@ function validateConfig(raw, label) {
   const names = Object.keys(cfg.groups);
   if (names.length === 0) die('groups 是空的，至少要有一组', 2);
 
+  const skipped = [];
+
   for (const name of names) {
     const group = cfg.groups[name];
     if (!group || typeof group !== 'object') die(`组 ${name} 不是对象`, 2);
-    if (!Array.isArray(group.members) || group.members.length === 0) die(`组 ${name} 的 members 必须是非空数组`, 2);
+    if (!Array.isArray(group.members)) die(`组 ${name} 的 members 必须是数组`, 2);
+    // ⚠️ 空组**不是配置错误**，而是"这一组此刻没有可用成员"（成员模型被删掉、
+    //    本机模型服务没在跑…）。以前这里直接 die → process.exit，于是
+    //    **一个空组连坐整份配置**：用户报的「轮换池中间有一个用不了的模型，
+    //    整个轮换池都不能用」正是这个形状。现在只跳过这一组，其它组照常服务。
+    if (group.members.length === 0) {
+      delete cfg.groups[name];
+      skipped.push(name);
+      continue;
+    }
     group.members.forEach((m, i) => {
       if (!m || typeof m !== 'object') die(`组 ${name} 的第 ${i + 1} 个成员不是对象`, 2);
       if (typeof m.baseUrl !== 'string' || !/^https?:\/\//i.test(m.baseUrl)) {
@@ -227,6 +238,22 @@ function validateConfig(raw, label) {
       }
       if (!m.name) m.name = `member${i + 1}`;
     });
+  }
+
+  // 空组全部跳过之后，一组都不剩才是真错误 —— 这时没有服务可提供，
+  // 报一句能看懂的话，而不是让调用方对着 502 猜。
+  if (Object.keys(cfg.groups).length === 0) {
+    die(
+      `所有轮换组都没有可用成员（已跳过：${skipped.join('、')}）。` +
+        '请到「模型 → 轮换组」里补一个成员，或把这一组删掉。',
+      2,
+    );
+  }
+  if (skipped.length) {
+    logLine(
+      `已跳过 ${skipped.length} 个没有可用成员的组：${skipped.join('、')}` +
+        '（其它组不受影响）',
+    );
   }
 
   return {

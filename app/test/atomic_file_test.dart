@@ -162,6 +162,74 @@ void main() {
       expect(moved.readAsStringSync(), '{"providers":[{"id":"deep');
     });
 
+    // ── 三条免 Key 通道的旧数据迁移（2026-11-03）──────────────────────
+    //
+    // `pm install -r` 不清数据，升级后 models.json 里还留着 kilo/ovh 两个厂家。
+    // 不迁移的话会话选择器里还是三个同名分组 —— 真机第一次启动就是这样。
+    test('旧数据迁移：kilo/ovh 并进 zen，只剩一个免Key厂家', () {
+      final f = ConfiguredModels.fileOf(tmp.path);
+      f.writeAsStringSync('''
+{
+ "version": 2,
+ "providers": [
+   {"id": "zen", "label": "免Key通道", "baseUrl": "http://127.0.0.1:1/v1", "apiKeyEnv": "Z"},
+   {"id": "kilo", "label": "旧的 Kilo", "baseUrl": "http://127.0.0.1:1/kilo/v1", "apiKeyEnv": "Z"},
+   {"id": "ovh", "label": "旧的 OVH", "baseUrl": "http://127.0.0.1:1/ovh/v1", "apiKeyEnv": "Z"}
+ ],
+ "models": [
+   {"provider": "zen", "id": "zen-a"},
+   {"provider": "kilo", "id": "kilo-b"},
+   {"provider": "ovh", "id": "ovh-c"}
+ ]
+}
+''');
+      final cfg = ConfiguredModels.readConfig(tmp.path);
+      expect(cfg.providers.map((p) => p.id).toList(), <String>['zen'],
+          reason: 'kilo/ovh 必须被摘掉（否则选择器里还是三个分组）');
+      expect(cfg.models.map((m) => m.id).toList(),
+          <String>['zen-a', 'kilo-b', 'ovh-c'],
+          reason: '三条的模型都要保住');
+      expect(cfg.models.every((m) => m.provider == 'zen'), isTrue,
+          reason: '全部归到 zen 下 —— 转发靠模型名判断，不靠 provider');
+    });
+
+    test('旧数据迁移：重名模型只留一条', () {
+      final f = ConfiguredModels.fileOf(tmp.path);
+      f.writeAsStringSync('''
+{
+ "version": 2,
+ "providers": [
+   {"id": "zen", "label": "免Key通道", "baseUrl": "http://127.0.0.1:1/v1", "apiKeyEnv": "Z"},
+   {"id": "kilo", "label": "旧的 Kilo", "baseUrl": "http://127.0.0.1:1/kilo/v1", "apiKeyEnv": "Z"}
+ ],
+ "models": [
+   {"provider": "zen", "id": "same"},
+   {"provider": "kilo", "id": "same"},
+   {"provider": "kilo", "id": "kilo-only"}
+ ]
+}
+''');
+      final cfg = ConfiguredModels.readConfig(tmp.path);
+      final ids = cfg.models.map((m) => m.id).toList();
+      expect(ids, <String>['same', 'kilo-only']);
+      expect(ids.where((x) => x == 'same').length, 1);
+    });
+
+    test('没有 zen 时不动（不能凭空造一个厂家出来）', () {
+      final f = ConfiguredModels.fileOf(tmp.path);
+      f.writeAsStringSync('''
+{
+ "version": 2,
+ "providers": [
+   {"id": "kilo", "label": "Kilo", "baseUrl": "http://127.0.0.1:1/kilo/v1", "apiKeyEnv": "Z"}
+ ],
+ "models": [{"provider": "kilo", "id": "kilo-b"}]
+}
+''');
+      final cfg = ConfiguredModels.readConfig(tmp.path);
+      expect(cfg.providers.map((p) => p.id).toList(), <String>['kilo']);
+    });
+
     test('顶层不是对象（比如是数组/数字）= 同样按损坏处理', () {
       ConfiguredModels.fileOf(tmp.path).writeAsStringSync('[1,2,3]');
       ConfiguredModels.readConfig(tmp.path);

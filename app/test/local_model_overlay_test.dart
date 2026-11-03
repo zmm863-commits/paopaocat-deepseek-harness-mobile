@@ -348,6 +348,9 @@ void main() {
       await runtime.writeOverlayFromConfig(
         config: cfgWithPool('001'),
         activeRoute: 'rotate/001',
+        // 2026-10-31 起：**代理端口是写 rotate 厂家的前提**（没有端口 = 代理没
+        // 起来 = 不该注册一个指向死端口的厂家）。这条测试只管"引号"，所以给个端口。
+        rotatePort: 39321,
       );
       final text = File(runtime.overlayPath).readAsStringSync();
 
@@ -363,6 +366,7 @@ void main() {
       await runtime.writeOverlayFromConfig(
         config: cfgWithPool('cat'),
         activeRoute: 'rotate/cat',
+        rotatePort: 39321,
       );
       final text = File(runtime.overlayPath).readAsStringSync();
       expect(text, contains('- id: "cat"'));
@@ -376,6 +380,7 @@ void main() {
         config: cfgWithPool('001'),
         activeRoute: 'rotate/001',
         localModel: spec,
+        rotatePort: 39321,
       );
       final lines = File(runtime.overlayPath).readAsLinesSync();
 
@@ -417,6 +422,28 @@ void main() {
         }
       }
       expect(bad, isEmpty, reason: '这些行会让 YAML 把标识符当数字/布尔：\n${bad.join('\n')}');
+    });
+
+    test('**没有代理端口时不写 rotate 厂家**（否则选择器里有个指向死端口的组）', () async {
+      // 2026-10-31 用户报「轮换池中间有无法使用的模型会造成整个轮换池无法使用」。
+      // 修掉"空组连坐"之后还剩这一半：**配置里有组 ≠ 代理起来了** —— 当所有组的
+      // 成员都不可用时代理根本不会启动（它会拒绝空配置）。以前这里仍会把 rotate
+      // 厂家写进 overlay、端口兜底到 rotateBasePort；用户在会话里选中那个组，
+      // 只会收到一句 connection refused，看不出任何原因。
+      await runtime.writeOverlayFromConfig(
+        config: cfgWithPool('cat'),
+        activeRoute: 'rotate/cat',
+        // rotatePort 故意不传 = 代理没起来
+      );
+      final text = File(runtime.overlayPath).readAsStringSync();
+
+      // 厂家段落的头是 6 空格缩进（`      rotate:` / `      "rotate":`）；
+      // 默认路由那行（`    provider: "rotate"`）是 4 空格，不会误伤这条断言。
+      final providerHead = RegExp(r'^ {6}"?rotate"?:', multiLine: true);
+      expect(providerHead.hasMatch(text), isFalse,
+          reason: '没有代理端口就不该注册 rotate 厂家 —— 那是个没人监听的端口');
+      expect(text, isNot(contains('127.0.0.1:39321')),
+          reason: '更不能兜底到固定的 rotateBasePort');
     });
   });
 }

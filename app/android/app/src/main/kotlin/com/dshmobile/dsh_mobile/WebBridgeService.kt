@@ -40,10 +40,21 @@ class WebBridgeService : Service() {
         const val ACTION_STOP = "com.dshmobile.dsh_mobile.bridge.STOP"
         const val EXTRA_DETAIL = "detail"
 
-        fun start(ctx: Context, detail: String) {
+        /// 这条保活服务**为谁活着**（2026-11-02 加）：
+        ///   * `keepalive` —— 「后台运行」开关（默认开），通知写「后台运行中」；
+        ///   * `webaccess` —— 「移动桌面平台」开着，通知写「电脑正在访问」。
+        ///
+        /// 为什么要有这个区分：同一个服务被两个开关共用，但用户看到的文案必须
+        /// 对得上他做的事 —— 没开电脑访问却显示"电脑正在访问"就是撒谎。
+        const val MODE_KEEPALIVE = "keepalive"
+        const val MODE_WEBACCESS = "webaccess"
+        const val EXTRA_MODE = "mode"
+
+        fun start(ctx: Context, detail: String, mode: String = MODE_WEBACCESS) {
             val i = Intent(ctx, WebBridgeService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_DETAIL, detail)
+                putExtra(EXTRA_MODE, mode)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ctx.startForegroundService(i)
@@ -67,8 +78,9 @@ class WebBridgeService : Service() {
         }
 
         val detail = intent?.getStringExtra(EXTRA_DETAIL).orEmpty()
+        val mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_WEBACCESS
         createChannel()
-        startForeground(NOTIF_ID, build(detail))
+        startForeground(NOTIF_ID, build(detail, mode))
 
         // START_STICKY：被系统杀掉后尽力拉起。**注意**：拉起来的只是一个空壳服务，
         // node 进程不会自己回来 —— 真正的恢复由 Dart 侧的健康巡检 + 下次进
@@ -87,7 +99,7 @@ class WebBridgeService : Service() {
         }
     }
 
-    private fun build(detail: String): Notification {
+    private fun build(detail: String, mode: String): Notification {
         val open = PendingIntent.getActivity(
             this,
             0,
@@ -104,7 +116,9 @@ class WebBridgeService : Service() {
         }
 
         return NotificationCompat.Builder(this, CHANNEL)
-            .setContentTitle("电脑正在访问")
+            .setContentTitle(
+                if (mode == MODE_KEEPALIVE) "后台运行中" else "电脑正在访问"
+            )
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)

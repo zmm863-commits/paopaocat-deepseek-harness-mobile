@@ -44,10 +44,37 @@ String? locateFingerprintFile() {
 
 void main() {
   final fingerprintPath = locateFingerprintFile();
+
+  /// 桥服务在不在线（2026-11-02 加）。
+  ///
+  /// 为什么要有这一步：这组测试要连**真的 wss 桥**（127.0.0.1:8790），
+  /// 但本机常常只有证书、没有跑桥（桥是桌面版起的服务）。以前只看
+  /// "指纹文件在不在"就决定跑不跑，于是证书在、服务没起 → 测试**必红**，
+  /// 而红的原因跟被测代码毫无关系。
+  ///
+  /// 现在多问一句"端口通不通"：不通就跳过并说明，别把环境问题伪装成代码问题。
+  bool bridgeOnline() {
+    // 本机 127.0.0.1 不通时 connectSync 会立刻 ECONNREFUSED，不会挂住。
+    RawSynchronousSocket? sock;
+    try {
+      sock = RawSynchronousSocket.connectSync(kHost, kPort);
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      try {
+        sock?.closeSync();
+      } catch (_) {}
+    }
+  }
+
   final skipReason = fingerprintPath == null
       ? '未找到 bridge/tls/fingerprint.txt（先运行 install/gen-tls-cert.ps1 生成 TLS 证书；'
           '或用环境变量 DSH_BRIDGE_FINGERPRINT 指定绝对路径）'
-      : null;
+      : (bridgeOnline()
+          ? null
+          : '桥服务没在本机运行（$kHost:$kPort 连不上）—— 这组测试要连真桥，'
+              '先起桥再跑；纯代码改动不需要它');
 
   late String realFingerprint;
 

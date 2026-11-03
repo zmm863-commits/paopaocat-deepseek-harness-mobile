@@ -157,15 +157,15 @@ class ChannelSelfCheck {
       ));
     }
 
-    // ② OpenCode Zen（免 Key 通道；默认关，且经本地代理）—— 见文件头：这条要
-    //    真打一次对话才算测到。
+    // ② 第三方免key通道（原 OpenCode Zen；免 Key，默认关，经本地代理）——
+    //    见文件头：这条要真打一次对话才算测到。
     if (!settings.zenEnabled) {
       out.add(ChannelCheck(
         id: 'zen',
-        title: tr('OpenCode Zen（免 Key）'),
+        title: tr('免Key通道'),
         outcome: ChannelOutcome.notConfigured,
         detail: tr('开关是关的'),
-        next: tr('要用就回「设置 → 模型」把 Zen 那条打开（它经 App 内代理转发）。'),
+        next: tr('要用就回「设置 → 模型」把「免Key通道」打开（它经 App 内代理转发）。'),
       ));
     } else {
       out.add(await _probeZen());
@@ -210,7 +210,7 @@ class ChannelSelfCheck {
   /// 免 Key 那条的自检：经**本机代理**发一句最小的对话（见文件头的"两道闸"）。
   static Future<ChannelCheck> _probeZen() async {
     const String id = 'zen';
-    final String title = tr('OpenCode Zen（免 Key）');
+    final String title = tr('免Key通道');
 
     final int? port = ZenProxy.instance.port;
     if (port == null) {
@@ -221,7 +221,7 @@ class ChannelSelfCheck {
         title: title,
         outcome: ChannelOutcome.network,
         detail: tr('本机代理没在跑'),
-        next: tr('回「设置 → 模型」把「免费模型 · OpenCode Zen」打开一次（它会起代理），然后再点自检。'),
+        next: tr('回「设置 → 模型」把「免Key通道」打开一次（它会起代理），然后再点自检。'),
       );
     }
 

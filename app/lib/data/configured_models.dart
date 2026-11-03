@@ -412,13 +412,66 @@ class ConfiguredModels {
       }
     }
 
+    // ── 旧数据迁移：三条免 Key 通道 → 一条（2026-11-03）───────────────
+    //
+    // 2026-11-03 起三条上游（zen/kilo/ovh）合并成一个厂家，但**升级安装时
+    // `models.json` 里还留着旧的三个 provider**（`pm install -r` 不清数据）。
+    // 不迁移的话用户升级后打开会话，看到的还是三个同名分组 —— 真机实测
+    // 第一次启动就是这样（App 先用旧配置渲染，enable 的重写还没生效）。
+    //
+    // 所以在这里做**读取时迁移**：只要看到 kilo/ovh 这两条遗留厂家，
+    // 就把它们的模型并进 zen、删掉它们自己。这样不管谁读配置
+    // （会话面板 / 写 overlay / 诊断报告）拿到的都是合并后的形状。
+    final merged = _mergeLegacyKeylessLanes(providers, aliveModels, selected);
+
     return ConfiguredConfig(
       version: (decoded['version'] is int) ? decoded['version'] as int : 1,
-      providers: providers,
-      models: aliveModels,
+      providers: merged.providers,
+      models: merged.models,
       groups: groups,
       selected: selected,
     );
+  }
+
+  /// 合并遗留的 kilo/ovh 厂家（2026-11-03 三通道合并的兼容层）。
+  ///
+  /// 为什么写在这里而不是 `ZenChannel`：这里不能 import 它（会循环依赖），
+  /// 而且这本来就该是"读配置"的事 —— 谁读都得看到同一个形状。
+  /// 两个 id 是**历史常量**，与 `ZenChannel.kiloProviderId/ovhProviderId` 对应。
+  static ({List<ProviderSpec> providers, List<ModelSpec> models})
+      _mergeLegacyKeylessLanes(
+    List<ProviderSpec> providers,
+    List<ModelSpec> models,
+    String? selected,
+  ) {
+    const zenId = 'zen';
+    const legacy = <String>{'kilo', 'ovh'};
+    final hasZen = providers.any((p) => p.id == zenId);
+    final hasLegacy = providers.any((p) => legacy.contains(p.id));
+    if (!hasZen || !hasLegacy) {
+      return (providers: providers, models: models);
+    }
+
+    final outProviders = <ProviderSpec>[
+      for (final p in providers)
+        if (!legacy.contains(p.id)) p,
+    ];
+    final seen = <String>{};
+    final outModels = <ModelSpec>[];
+    for (final m in models) {
+      if (legacy.contains(m.provider)) {
+        // 并进 zen，重名只留一条（顺序维持原样，等于 zen 的优先）
+        if (!seen.add(m.id)) continue;
+        outModels.add(ModelSpec(
+            provider: zenId, id: m.id, name: m.name, context: m.context));
+      } else {
+        if (m.provider == zenId) seen.add(m.id);
+        outModels.add(m);
+      }
+    }
+    debugPrint('[dsh-models] 旧数据迁移：kilo/ovh 并进 zen'
+        '（厂家 ${providers.length} → ${outProviders.length}）');
+    return (providers: outProviders, models: outModels);
   }
 
   /// v1 没有"每条模型的 provider"这个字段，只能按"唯一那个 provider"归属。

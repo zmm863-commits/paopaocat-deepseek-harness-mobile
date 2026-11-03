@@ -91,6 +91,83 @@ void main() {
     expect(isZenRoute(''), isFalse);
   });
 
+  group('三通道合并成一个厂家（2026-11-03）', () {
+    // 用户原话：「拉去模型后会话页面模型选择会出现三个第三方免key通道，
+    // 把他们合并」。
+    //
+    // 关键设计：**只注册一个 provider**，三条上游的模型全挂在它下面；
+    // 请求该发给谁由代理**按模型名**判断（zen-proxy.mjs 的 laneOfModel）。
+    // 所以 baseUrl 只有 `/v1` 一条，不再有 /kilo/v1、/ovh/v1。
+    test('三个上游的模型都在同一个厂家下，且只有这一个厂家', () {
+      final cfg = zenConfigForTest(
+        userConfig(),
+        port: 4001,
+        models: const <String>['zen-a'],
+        kiloModels: const <String>['kilo-a'],
+        ovhModels: const <String>['ovh-a'],
+      );
+      final zenProvs =
+          cfg.providers.where((p) => p.id == 'zen').toList(growable: false);
+      expect(zenProvs.length, 1, reason: '只允许一个 zen 厂家');
+      expect(zenProvs.first.baseUrl, 'http://127.0.0.1:4001/v1',
+          reason: '合并后统一走 /v1，靠模型名分流');
+      expect(cfg.providers.any((p) => p.id == 'kilo'), isFalse,
+          reason: 'kilo 不再单独注册（否则选择器里又多一个分组）');
+      expect(cfg.providers.any((p) => p.id == 'ovh'), isFalse,
+          reason: 'ovh 同理');
+
+      final ids =
+          cfg.models.where((m) => m.provider == 'zen').map((m) => m.id).toList();
+      expect(ids, <String>['zen-a', 'kilo-a', 'ovh-a'],
+          reason: '三批都要在，顺序 Zen→Kilo→OVH（与代理判断顺序一致）');
+    });
+
+    test('重名模型只出现一次（否则选择器里两条一模一样）', () {
+      final cfg = zenConfigForTest(
+        userConfig(),
+        port: 4002,
+        models: const <String>['same-model', 'zen-only'],
+        kiloModels: const <String>['same-model'],
+        ovhModels: const <String>['same-model', 'ovh-only'],
+      );
+      final ids =
+          cfg.models.where((m) => m.provider == 'zen').map((m) => m.id).toList();
+      expect(ids, <String>['same-model', 'zen-only', 'ovh-only']);
+      expect(ids.where((x) => x == 'same-model').length, 1);
+    });
+
+    test('某条上游没模型也不影响其它两条（不留空分组）', () {
+      final cfg = zenConfigForTest(
+        userConfig(),
+        port: 4003,
+        models: const <String>['zen-a'],
+        // kiloModels / ovhModels 故意留空
+      );
+      expect(cfg.providers.where((p) => p.id == 'zen').length, 1);
+      expect(cfg.models.where((m) => m.provider == 'zen').map((m) => m.id),
+          <String>['zen-a']);
+    });
+
+    test('合并函数本身：空串与重复都滤掉，保序', () {
+      final out = mergedModelSpecs(
+          'zen', <String>['a', '', 'b', 'a', 'c', 'b']);
+      expect(out.map((m) => m.id).toList(), <String>['a', 'b', 'c']);
+      expect(out.every((m) => m.provider == 'zen'), isTrue);
+    });
+  });
+
+  test('Kilo 拿不到模型时**不写**那个厂家（不能留一个点不开的分组）', () {
+    final cfg = zenConfigForTest(
+      userConfig(),
+      port: 4002,
+      models: const <String>['mimo-v2.6-flash-free'],
+      // kiloModels 故意留空
+    );
+    expect(cfg.providers.any((p) => p.id == 'kilo'), isFalse,
+        reason: '空分组只会让用户在模型选择器里看到一条打不开的通道');
+    expect(cfg.providers.any((p) => p.id == 'zen'), isTrue);
+  });
+
   test('空模型列表 → 只加厂家、不加模型（调用方另有判断，不能崩）', () {
     final cfg = zenConfigForTest(userConfig(), port: 41000, models: const <String>[]);
     expect(cfg.providers.any((p) => p.id == ZenChannel.providerId), isTrue);
