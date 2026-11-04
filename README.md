@@ -1,5 +1,7 @@
 # 泡泡猫 · DeepSeek Harness 手机版
 
+[**中文**](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
+
 > **本项目由个人开发维护，不是 DeepSeek 官方发布或背书的项目。**
 > 但它跑的确实就是 DeepSeek Harness（DSH）引擎本体——本项目做的事，是把这套引擎原封不动搬进 Android，所有智能体能力都来自上游。所谓「第三方」，指的是发布方不是官方，不是指跟上游没关系。
 > 「DeepSeek」「DeepSeek Harness」「DSH」是深度求索的商标或产品名，此处用于准确说明技术来源。
