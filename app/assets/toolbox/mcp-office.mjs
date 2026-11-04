@@ -7,9 +7,9 @@
  * 所以用 node 内置模块就能实现（`node:fs` + `node:path`）。随包进 APK、跑在手机里的
  * node 上，**离线可用**。
  *
- * ## 为什么要有它（对标 WorkBuddy）
+ * ## 为什么要有它（对标同类产品）
  *
- * WorkBuddy 的本地文档引擎（183MB Rust）起了一个 MCP 服务，暴露 **302 个工具**
+ * 同类产品的本地文档引擎（183MB Rust）起了一个 MCP 服务，暴露 **302 个工具**
  * （doc 100 / sheet 105 / slide 97），云侧 Agent 通过 `tools/call` 直接改文档。
  * 我们没有那个引擎，但 OOXML 的本质就是 **ZIP + XML**，而 `office-zip.mjs` 已经是现成的
  * zip 读写库（见它的文件头）。所以先用**三个工具**把"能改文件"这条路打通。

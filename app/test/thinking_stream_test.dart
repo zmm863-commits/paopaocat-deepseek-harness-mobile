@@ -82,7 +82,7 @@ void main() {
       await _pump(tester, <ChatMsg>[_thought(_longThought)], running: true);
 
       expect(find.byType(ShaderMask), findsOneWidget,
-          reason: '流式期间思考块底部要有渐隐遮罩（对标 WorkBuddy 的 bottom_fade）');
+          reason: '流式期间思考块底部要有渐隐遮罩（对标同类产品的 bottom_fade）');
     });
 
     testWidgets('结束之后 → 不再渐隐（否则像缺字）', (tester) async {

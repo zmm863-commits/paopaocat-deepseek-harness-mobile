@@ -148,7 +148,7 @@ class _ScheduledPageState extends State<ScheduledPage> {
   ///
   /// 为什么要它：App 内的调度器是**进程内**的（`schedule_runner.dart`）——
   /// 进程被系统回收，任务就不跑。写进系统日历之后，到点由**系统日历自己**响，
-  /// 不依赖这个 App 还开着（对标 WorkBuddy 的 `WRITE_CALENDAR` + `device_alarm`）。
+  /// 不依赖这个 App 还开着（对标同类产品的 `WRITE_CALENDAR` + `device_alarm`）。
   ///
   /// 状态一律**如实**说：没授权 / 设备上没有可写的日历 / 已同步几个，
   /// 都不写成"已同步成功"。

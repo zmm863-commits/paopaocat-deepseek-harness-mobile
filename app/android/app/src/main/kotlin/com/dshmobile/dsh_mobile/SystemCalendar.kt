@@ -12,14 +12,14 @@ import java.util.TimeZone
 /**
  * 系统日历的读写：把**定时任务**变成系统日历里的事件。
  *
- * ## 为什么做这个（对标 WorkBuddy 的 C5，见 MASTER §B.4）
+ * ## 为什么做这个（对标同类产品的 C5，见 MASTER §B.4）
  *
  * App 内的调度器是**进程内**的（见 `schedule_runner.dart`）：进程被系统回收，
  * 任务就不会跑。把任务写成**系统日历里的事件**之后：
  *   * 用户在「系统日历 / 提醒器」里**看得到**它；
  *   * 到点由**系统日历自己**响 —— 不依赖我们的进程还活着。
  *
- * 这正是 WorkBuddy 那边的 `READ/WRITE_CALENDAR` + `device_alarm` 干的事。
+ * 这正是同类产品那边的 `READ/WRITE_CALENDAR` + `device_alarm` 干的事。
  *
  * ## 能力边界（如实写在这里，不要在交付里说成"一定准"）
  *

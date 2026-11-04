@@ -45,7 +45,7 @@ class AndroidToolbox {
     'assets/toolbox/make-docx.mjs': 'toolbox/make-docx.mjs',
     // ── 本地 MCP 服务器（2026-10-20，CHG-2026-10-20-02）──────────────
     // `mcp-office.mjs` 是**我们自己的 MCP 服务**（stdio 传输，零 npm 依赖），
-    // 让会话里的模型能直接读写 xlsx / docx —— 对标 WorkBuddy 的本地文档引擎
+    // 让会话里的模型能直接读写 xlsx / docx —— 对标同类产品的本地文档引擎
     // （它 302 个工具，我们先做三个）。
     // ⚠️ 它 `import './office-zip.mjs'` 与 `./read-xlsx.mjs` → **必须同目录**
     //    （和 `agnes-retry.mjs` 同一个先例：落盘必须在同一个目录里）。

@@ -1,8 +1,8 @@
 /// 卡片协议：**一张卡片 = 一份数据**（[CardSpec]）。
 ///
-/// ## 为什么要有这一层（对标 WorkBuddy 的 C2）
+/// ## 为什么要有这一层（对标同类产品的 C2）
 ///
-/// WorkBuddy 的卡片（approval / doc / form / question / task / error）是
+/// 同类产品的卡片（approval / doc / form / question / task / error）是
 /// **服务端下发**、客户端只负责解释；我们现在是**反过来的** —— 卡片长什么样
 /// **写死在 Flutter 里**（`ToolCallCard`），于是每多一类卡片就要改一次 Dart 代码、
 /// 重新发一次包。

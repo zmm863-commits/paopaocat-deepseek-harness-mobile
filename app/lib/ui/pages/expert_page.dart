@@ -66,7 +66,7 @@ class ExpertPage extends StatefulWidget {
   State<ExpertPage> createState() => _ExpertPageState();
 }
 
-/// 只保留「专家」与「技能」——「连接器」是 WorkBuddy 的云端能力，用户明确要求去掉。
+/// 只保留「专家」与「技能」——「连接器」是同类产品的云端能力，用户明确要求去掉。
 List<String> get _topTabs => [tr('专家'), tr('技能')];
 
 class _ExpertPageState extends State<ExpertPage> {

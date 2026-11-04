@@ -429,7 +429,7 @@ class _ThoughtRowState extends State<_ThoughtRow> {
     final text = widget.msg.text;
     // 短思考（没到阈值）没什么可折的，别给一个点了没反应的「展开」。
     final needCollapse = text.length > _collapseThreshold;
-    // 回合结束后，长思考收成**一行摘要**（对标 WorkBuddy 的
+    // 回合结束后，长思考收成**一行摘要**（对标同类产品的
     // `tool_call_process_preview`：结束后只留一行，点开才看全文）。
     final canOneLine = needCollapse && !widget.streaming && widget.mode == 'collapsed';
     final oneLine = canOneLine && !_expandedHere;
@@ -544,7 +544,7 @@ class _ThoughtRowState extends State<_ThoughtRow> {
 /// 做法：`ShaderMask` + `BlendMode.dstIn` —— 让最后 [_fade] 像素的 alpha 归零，
 /// 底下透出页面背景，看上去就是"字从雾里浮出来"。
 ///
-/// 为什么不用 Lottie：WorkBuddy 那边跑的是 `deep_thinking.json`，
+/// 为什么不用 Lottie：同类产品那边跑的是 `deep_thinking.json`，
 /// 但**新增依赖要动 pubspec 的资产清单**（见 MASTER §F.1），观感差别却就在这一层——
 /// 渐隐便宜得多，也不占帧。
 class _BottomFade extends StatelessWidget {
@@ -979,7 +979,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
 /// 附件菜单（设计稿 `page-03`）：`拍照` / `照片／视频` / `添加文件`
 /// 下面是 `专家中心` / `使用技能` / `定时任务`。
 ///
-/// **本轮改动（用户要求）**：去掉 `连接器` —— 它是 WorkBuddy 的云端能力，
+/// **本轮改动（用户要求）**：去掉 `连接器` —— 它是同类产品的云端能力，
 /// 本地 DSH 没有对应实现，留着只会点出一个"暂未实现"的提示。
 class AttachMenu extends StatelessWidget {
   const AttachMenu({super.key, required this.onPick, required this.onClose});

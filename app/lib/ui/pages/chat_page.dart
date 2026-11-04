@@ -128,7 +128,7 @@ class ChatPage extends StatefulWidget {
   /// 顺路把这一项也带下来即可，不必再造一个全局镜像。
   final String thinkingMode;
 
-  /// 左侧「会话」抽屉的历史会话数据源。用户参照 WorkBuddy 的交互提的：
+  /// 左侧「会话」抽屉的历史会话数据源。用户参照同类产品的交互提的：
   /// 「左上角点击符号，左侧拉出会话列表，能看到会话，点击就能到会话页面」。
   /// 为 null 时抽屉只显示「当前运行的会话」（live），不显示历史段。
   final Future<List<DshSession>> Function()? sessionListFor;
@@ -1193,7 +1193,7 @@ class _ChatPageState extends State<ChatPage> {
   /// 把当前开着的思考块收尾（记下结束时刻）。
   ///
   /// 为什么要记：回合结束后思考块会收成一行「思考了 N 秒」
-  /// （对标 WorkBuddy 的 `tool_call_process_preview`）。
+  /// （对标同类产品的 `tool_call_process_preview`）。
   /// 时长必须来自**真实的时间戳** —— 拿回合总时长来凑是不行的，
   /// 那一段时间里混着工具执行和正式回答。
   void _closeOpenThought(DateTime at) {
@@ -1993,7 +1993,7 @@ class _ChatPageState extends State<ChatPage> {
 
   /// 附件菜单的动作分发。
   ///
-  /// 本轮按用户要求去掉了 `连接器`（它是 WorkBuddy 的云端能力，本地无实现）。
+  /// 本轮按用户要求去掉了 `连接器`（它是同类产品的云端能力，本地无实现）。
   /// 剩下三项里有两项是**真链路**：
   ///   - `专家中心` → 弹出「已开启开关的专家」（真数据，来自 `$DSH_HOME/experts.json`）；
   ///   - `使用技能` → 切到「专家 → 技能」页（真实技能目录，可增删改）。
@@ -2257,7 +2257,7 @@ class _ChatPageState extends State<ChatPage> {
       key: _scaffoldKey,
       backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: true,
-      // 左侧会话抽屉（参照 WorkBuddy 的左上角 → 左侧列表）。
+      // 左侧会话抽屉（参照同类产品的左上角 → 左侧列表）。
       drawer: _buildSessionDrawer(context),
       body: Column(
         children: [
@@ -2930,7 +2930,7 @@ class ChatTopBar extends StatelessWidget {
                 icon: const Icon(Icons.arrow_back_ios_new, size: 17),
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
-              // 左上角「会话」：拉开左侧抽屉（参照 WorkBuddy）。
+              // 左上角「会话」：拉开左侧抽屉（参照同类产品）。
               if (onOpenSessions != null)
                 IconButton(
                   tooltip: context.tr('会话列表'),
