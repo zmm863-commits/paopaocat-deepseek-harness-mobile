@@ -4,9 +4,9 @@
 > 除了调模型那一步，不依赖任何服务器。手机断网，技能、专家、记忆、工具调用全都在。
 
 <p align="center">
-  <img src="docs/doc-assets/cap-01-home.png" width="260" alt="首页">
-  <img src="docs/doc-assets/cap-02-bot.png" width="260" alt="Bot 团队">
-  <img src="docs/doc-assets/cap-03-creation.png" width="260" alt="创作台">
+  <img src="https://cdn.jsdelivr.net/gh/zmm863-commits/paopaocat-deepseek-harness-mobile@main/docs/doc-assets/cap-01-home.png" width="260" alt="首页">
+  <img src="https://cdn.jsdelivr.net/gh/zmm863-commits/paopaocat-deepseek-harness-mobile@main/docs/doc-assets/cap-02-bot.png" width="260" alt="Bot 团队">
+  <img src="https://cdn.jsdelivr.net/gh/zmm863-commits/paopaocat-deepseek-harness-mobile@main/docs/doc-assets/cap-03-creation.png" width="260" alt="创作台">
 </p>
 
 **一句话技术身份**：引擎零补丁的整机搬运。Termux 的 node 二进制伪装成 `libnode.so`，DSH 运行时打 zip 当资产塞进 APK，首启解压到私有目录，之后完全离线跑。三个 shim（合计 114 行）填平 Android 与 glibc 的沟壑——**桌面版引擎怎么演进，手机端换个 zip 就跟上，不欠上游任何维护税**。
@@ -109,9 +109,9 @@ Android 和标准 Linux 之间有几道沟，整机搬运的全部难点就在�
 ## 界面
 
 <p align="center">
-  <img src="docs/doc-assets/cap-04-library.png" width="240" alt="资料库">
-  <img src="docs/doc-assets/cap-06-settings.png" width="240" alt="设置">
-  <img src="docs/doc-assets/cap-07-easter-egg.png" width="240" alt="彩蛋">
+  <img src="https://cdn.jsdelivr.net/gh/zmm863-commits/paopaocat-deepseek-harness-mobile@main/docs/doc-assets/cap-04-library.png" width="240" alt="资料库">
+  <img src="https://cdn.jsdelivr.net/gh/zmm863-commits/paopaocat-deepseek-harness-mobile@main/docs/doc-assets/cap-06-settings.png" width="240" alt="设置">
+  <img src="https://cdn.jsdelivr.net/gh/zmm863-commits/paopaocat-deepseek-harness-mobile@main/docs/doc-assets/cap-07-easter-egg.png" width="240" alt="彩蛋">
 </p>
 
 底部 6 个 tab：**首页 / Bot / 创作台 / 资料库 / 定时任务 / 设置**。
@@ -203,7 +203,7 @@ sha256sum paopaocat-preview-0.82-*-full-arm64-v8a.apk
 这个项目是我下班之后一个人做的，更新节奏全看有没有人用。公众号里会发版本更新、踩坑实录和一些没写进文档的东西。
 
 <p align="center">
-  <img src="docs/assets/qr-wechat.png" alt="泡泡猫公众号二维码" width="200">
+  <img src="https://cdn.jsdelivr.net/gh/zmm863-commits/paopaocat-deepseek-harness-mobile@main/docs/assets/qr-wechat.png" alt="泡泡猫公众号二维码" width="200">
 </p>
 
 <p align="center"><sub>微信扫一扫 → 相册选图</sub></p>
