@@ -81,6 +81,16 @@ sha256sum paopaocat-preview-0.81-20261030-full-arm64-v8a.apk
 - 预览图文稿：`公众号-泡泡猫DSH预览版.md` / `紧急更新.html`
 - 反馈：GitHub Issues（仓库建好后）
 
+## 关注
+
+这个项目是我下班之后一个人做的，更新节奏全看有没有人用。公众号里会发版本更新、踩坑实录和一些没写进文档的东西。
+
+<p align="center">
+  <img src="docs/assets/qr-wechat.png" alt="泡泡猫公众号二维码" width="220">
+</p>
+
+<p align="center"><sub>长按识别 / 微信扫一扫 → 相册选图</sub></p>
+
 ## License
 
 MIT
