@@ -288,16 +288,42 @@ class ConfiguredModels {
     }
 
     // ── v1 迁移：整份文件只有一个 provider/baseUrl ────────────────────
-    var legacyProvider = providers.isEmpty
-        ? sanitizeProviderId('${decoded['provider'] ?? 'com'}')
+    //
+    // ⚠️⚠️ 2026-11-05 网友真机事故的**真正根因**就在这里。
+    //
+    // 老格式（v1）文件只有顶层 `provider` / `baseUrl`。迁移时如果 `baseUrl`
+    // **缺失或为空**，原来的代码照样造出一条厂家记录：
+    //     id=com（默认值）, label=com, baseUrl=""
+    // 之后每次写 overlay 都带着它 → 引擎 `llm-pi-ai` 抛
+    //     provider "com" has an empty baseURL
+    // → **整条 llm 插件激活失败** → 所有厂家都没有适配器 → 用户看到的是
+    //   「会话没能建起来」，换任何模型都不行。
+    //
+    // 这正好解释了他反馈的两件事：
+    //   ① 是**升级上来的**才出现 —— 只有读到老格式文件才会走这段；
+    //   ② **设置里看不到** —— id 是 `com`，和内置的「Command（聚合，推荐）」
+    //      撞了，`_customProviders()` 按"不在内置清单里"过滤时把它当内置的排掉；
+    //      而内置卡没有删除按钮。于是它在设置页完全隐形、也删不掉，
+    //      只在会话的模型选择器里露一个「com · 0 个模型」。
+    //
+    // 现在的规矩：**地址为空就不造厂家**。宁可让 providers 留空、交给上层
+    // 的自愈路径（`ensureModelConfig` 会用默认端点重建一份正常配置），
+    // 也绝不落一条会让全局瘫痪的记录。
+    final legacyBase = '${decoded['baseUrl'] ?? ''}'.trim();
+    final legacyId = sanitizeProviderId('${decoded['provider'] ?? 'com'}');
+    var legacyProvider = providers.isEmpty && legacyBase.isNotEmpty
+        ? legacyId
         : null;
-    if (providers.isEmpty) {
+    if (providers.isEmpty && legacyBase.isNotEmpty) {
       providers.add(provider(
         id: legacyProvider!,
         label: '${decoded['provider'] ?? legacyProvider}',
-        baseUrl: '${decoded['baseUrl'] ?? ''}',
+        baseUrl: legacyBase,
         apiKeyEnv: decoded['apiKeyEnv']?.toString(),
       ));
+    } else if (providers.isEmpty) {
+      debugPrint('[dsh-models] 老格式文件里 baseUrl 为空 → 不造厂家'
+          '（造出来会让整条 llm 插件激活失败，见 2026-11-05 事故）');
     }
 
     // ── 模型列表 ─────────────────────────────────────────────────────
@@ -333,12 +359,19 @@ class ConfiguredModels {
     }
 
     // v1 里 provider 字段可能只在顶层写了一次；补上每个模型的归属。
-    final fixed = <ModelSpec>[
-      for (final m in models)
-        providers.any((p) => p.id == m.provider)
-            ? m
-            : m.copyWith(provider: providers.first.id),
-    ];
+    //
+    // ⚠️ providers 可能为空 —— 老文件 baseUrl 也为空时，上面**故意没造厂家**。
+    // 那种情况下这些模型无处可挂，直接丢弃：留着只会在模型选择器里出现
+    // 一条指向不存在厂家的死条目（而且 `providers.first` 当场抛
+    // `Bad state: No element`，整份配置被当成损坏文件）。
+    final fixed = providers.isEmpty
+        ? <ModelSpec>[]
+        : <ModelSpec>[
+            for (final m in models)
+              providers.any((p) => p.id == m.provider)
+                  ? m
+                  : m.copyWith(provider: providers.first.id),
+          ];
 
     // ── 轮换组 ──────────────────────────────────────────────────────
     final groups = <RotationGroupSpec>[];
