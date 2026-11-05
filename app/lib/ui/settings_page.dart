@@ -100,15 +100,42 @@ class _SettingsPageState extends State<SettingsPage> {
       final key = _apiKey.text.trim();
       if (key.isEmpty) throw StateError(context.tr('API Key 不能为空'));
 
+      // ⚠️⚠️ 2026-11-05 真机事故（网友日志）：这一页**原来只校验 Key**。
+      // 用户从会话里那个「去设置」红框点进来 —— 表单预填了
+      //   Base URL = https://api.commandcode.ai/provider/v1
+      //   provider = com
+      // 他把 Base URL 那一栏清空后点保存，于是写进 models.json 一条
+      //   { id: com, label: com, baseUrl: "", models: [] }
+      // 之后每次写 overlay 都带着它 → 引擎 `llm-pi-ai` 抛
+      //   provider "com" has an empty baseURL
+      // → **整条 llm 插件激活失败** → 所有厂家都没有适配器 →
+      //   用户看到的是「会话没能建起来」，换任何模型都不行。
+      //
+      // 所以这里必须和「添加模型」那张表单一个口径：三项都不许空。
+      final base = _baseUrl.text.trim();
+      final pid = _provider.text.trim();
+      final mid = _model.text.trim();
+      if (base.isEmpty) {
+        throw StateError(context.tr(
+            'Base URL 不能为空。清空它会让整个模型服务都用不了（所有厂家都会报内部错误）。'
+            '不知道填什么的话，点下面的「恢复默认」再保存。'));
+      }
+      if (pid.isEmpty) {
+        throw StateError(context.tr('provider id 不能为空（它决定模型路由的前缀）。'));
+      }
+      if (mid.isEmpty) {
+        throw StateError(context.tr('model id 不能为空。'));
+      }
+
       await _secure.write(key: _kApiKey, value: key);
-      await _secure.write(key: _kBaseUrl, value: _baseUrl.text.trim());
-      await _secure.write(key: _kProvider, value: _provider.text.trim());
-      await _secure.write(key: _kModel, value: _model.text.trim());
+      await _secure.write(key: _kBaseUrl, value: base);
+      await _secure.write(key: _kProvider, value: pid);
+      await _secure.write(key: _kModel, value: mid);
 
       await widget.runtime.writeModelConfig(
-        baseUrl: _baseUrl.text.trim(),
-        providerId: _provider.text.trim(),
-        modelId: _model.text.trim(),
+        baseUrl: base,
+        providerId: pid,
+        modelId: mid,
         // 已配置清单里的其它模型一并注册。清单来源见 data/configured_models.dart
         // （用户真实获取/填写的模型，不再是写死的设计稿清单）。
         extraModelIds: ConfiguredModels.read(widget.runtime.filesDir)
