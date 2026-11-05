@@ -409,8 +409,117 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
         // 都能用，但用户回到设置里既看不到、也删不掉、还改不了 Key
         // （2026-10-31 用户报）。
         for (final p in _customProviders()) _customProviderCard(p),
+        if (_brokenProviders().isNotEmpty) ...[
+          const SizedBox(height: 4),
+          _brokenBanner(),
+        ],
       ],
     );
+  }
+
+  /// 「不可用」的自定义厂家：地址为空，或一个模型都没有。
+  ///
+  /// 2026-11-05 真机事故：用户留了一个 0 模型、无 Key、baseURL 为空的厂家，
+  /// 它被写进 overlay 后让**整条 llm-pi-ai 插件激活失败**，表现是所有厂家
+  /// 都报 `no adapter registered`、发什么消息都建不起会话。写 overlay 那侧
+  /// 已经不写它了（`dsh_runtime.dart` 的 emittable 过滤），但用户在设置页
+  /// 完全看不出有这么个东西在 —— 所以这里把它揪出来，标红并给一键清理。
+  List<ProviderSpec> _brokenProviders() => <ProviderSpec>[
+        for (final p in _customProviders())
+          if (p.baseUrl.trim().isEmpty || _modelsOf(p.id).isEmpty) p,
+      ];
+
+  /// 顶部横幅：发现不可用厂家时给出「一键清理」。
+  Widget _brokenBanner() {
+    final broken = _brokenProviders();
+    final names = broken.map((p) => p.label).join('、');
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+      decoration: DshColors.panel(
+        radius: 11,
+        color: DshColors.surfaceHigh,
+        borderColor: DshColors.err,
+        glow: false,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.error_outline, size: 15, color: DshColors.err),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  context.tr('发现 {0} 个不可用厂家：{1}', ['${broken.length}', names]),
+                  style: TextStyle(color: DshColors.err, fontSize: 12,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            context.tr('它们地址为空或没有模型，留着会让整个模型服务都用不了。'),
+            style: TextStyle(color: DshColors.textDim, fontSize: 11),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: _deleting ? null : () => _cleanupBroken(broken),
+                icon: Icon(Icons.auto_fix_high, size: 15, color: DshColors.err),
+                label: Text(context.tr('一键清理'),
+                    style: TextStyle(fontSize: 12, color: DshColors.err,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 一键清理：把所有不可用厂家删掉（复用单个删除的落盘逻辑）。
+  Future<void> _cleanupBroken(List<ProviderSpec> broken) async {
+    if (_deleting || broken.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.tr('清理 {0} 个不可用厂家？', ['${broken.length}'])),
+        content: Text(context.tr('{0}。它们下面没有可用模型，删掉不影响任何在用的配置。',
+            [broken.map((p) => p.label).join('、')])),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(context.tr('取消')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(context.tr('清理'),
+                style: TextStyle(color: DshColors.err)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _deleting = true);
+    try {
+      var done = 0;
+      for (final p in broken) {
+        await _deleteProviderSilently(p, confirm: false);
+        done++;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.tr('已清理 {0} 个不可用厂家',
+              ['$done']))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
   }
 
   /// `models.json` 里**不属于内置清单**的厂家 = 用户自己添加的。
@@ -452,15 +561,23 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
     final open = _openProvider == cardKey;
     final mine = _modelsOf(p.id);
     final ready = _keyReady[p.id] ?? false;
-    final badge = ready ? context.tr('已配 Key') : context.tr('未配 Key');
-    final badgeColor = ready ? DshColors.ok : DshColors.err;
+    // 「不可用」= 地址为空，或一个模型都没有。这种厂家留着会让整个模型服务
+    // 都用不了（2026-11-05 真机事故），所以边框、徽标、地址行三处一起标红。
+    final broken = p.baseUrl.trim().isEmpty || mine.isEmpty;
+    final badge = broken
+        ? context.tr('不可用')
+        : (ready ? context.tr('已配 Key') : context.tr('未配 Key'));
+    final badgeColor = broken ? DshColors.err
+        : (ready ? DshColors.ok : DshColors.err);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: DshColors.panel(
         radius: 11,
         color: DshColors.surfaceHigh,
-        borderColor: open ? DshColors.accent : DshColors.line,
+        borderColor: broken
+            ? DshColors.err
+            : (open ? DshColors.accent : DshColors.line),
         glow: false,
       ),
       child: Column(
@@ -494,11 +611,16 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
                           ),
                         ),
                         Text(
-                          p.baseUrl,
+                          p.baseUrl.trim().isEmpty
+                              ? context.tr('（地址为空 —— 必须删掉或补上地址）')
+                              : p.baseUrl,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: DshFonts.code(
-                              color: DshColors.textFaint, fontSize: 9.5),
+                              color: p.baseUrl.trim().isEmpty
+                                  ? DshColors.err
+                                  : DshColors.textFaint,
+                              fontSize: 9.5),
                         ),
                       ],
                     ),
@@ -640,8 +762,24 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
       ),
     );
     if (ok != true) return;
+
+    await _deleteProviderSilently(p, confirm: true);
+  }
+
+  /// 真正的落盘删除：**不弹确认框、不碰 busy 守卫**，由调用方负责这两件事。
+  ///
+  /// 为什么拆出来（2026-11-05）：「一键清理」要在一次确认后连删多个厂家。
+  /// 如果复用 [_deleteCustomProvider]，会连弹 N 个确认框；而且它开头的
+  /// `if (_anyBusy) return;` 配合内部 `_deleting=true`，会让循环里第二次
+  /// 调用被守卫直接吃掉 —— 删了第一个，后面的全静默跳过。
+  ///
+  /// [confirm] = true 时成功后弹「已删除」提示（单个删除走这条）；
+  /// 一键清理在外层统一弹一条汇总，所以传 false。
+  Future<void> _deleteProviderSilently(ProviderSpec p,
+      {required bool confirm}) async {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final mine = _modelsOf(p.id);
     setState(() => _deleting = true);
     try {
       final old = ConfiguredModels.readConfig(widget.filesDir);
@@ -668,14 +806,16 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
           '${pruned.touched.isEmpty ? '池子未受影响' : '受影响的池子：${pruned.touched.join('、')}'}）');
       if (mounted) setState(() => _openProvider = null);
       await widget.onModelChanged();
-      messenger.showSnackBar(SnackBar(
-        content: Text(tr('已删除「{0}」和它下面的 {1} 个模型',
-            [p.label, '${mine.length}'])),
-      ));
+      if (confirm) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(tr('已删除「{0}」和它下面的 {1} 个模型',
+              [p.label, '${mine.length}'])),
+        ));
+      }
     } catch (e) {
       debugPrint('[dsh-model-panel] 删除自定义厂家失败：$e');
       messenger.showSnackBar(
-          SnackBar(content: Text(tr('删除失败：{0}', ['$e']))));
+          SnackBar(content: Text(tr('删除失败：{0}',['$e']))));
     } finally {
       if (mounted) setState(() => _deleting = false);
     }

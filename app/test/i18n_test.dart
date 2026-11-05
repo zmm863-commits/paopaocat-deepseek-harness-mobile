@@ -31,7 +31,7 @@ class _ConstProbe extends StatelessWidget {
 
 void main() {
   group('三张表', () {
-    test('条目数一致，且规模对得上（2133 条界面文案）', () {
+    test('条目数一致，且规模对得上（2141 条界面文案）', () {
       // 994 这个数不是随手写的：2026-10-09 按审计 P0-11/P1-5 清过一轮漂移
       // （补 48 条漏翻 / 删 77 条陈旧 / 修 17 条换行错，三张表各自）。
       // 清理的依据是 `install/i18n/check-tables.mjs` —— 那个脚本以前**不存在**，
@@ -200,7 +200,10 @@ void main() {
       // ⚠️ 2026-11-01 2105 → 2110：第三方免key通道改名 + ping 提示 + OVHcloud + 备份与恢复。
       // ⚠️ 2026-11-03 2110 → 2132：三通道合并（旧名 3 条并成 1 条，-2）
       //    + 「保存到手机」等 4 条（备份页），净 +4 → 2132；2132 → 2133：备份旧位置分享失败的提示 +1。
-      expect(kEnTable.length, 2133);
+      //    ⚠️ 2133 → 2141：模型设置页给「不可用厂家」（地址为空 / 0 模型）标红并
+      //      一键清理（2026-11-05 真机事故：空厂家写进 overlay 毒死整条 llm 插件）。
+      //      +8 = 横幅标题/说明/按钮 + 确认框标题/内容 + toast + 卡片徽标 + 空地址行。
+      expect(kEnTable.length, 2141);
       expect(kJaTable.length, kEnTable.length);
       expect(kKoTable.length, kEnTable.length);
     });
