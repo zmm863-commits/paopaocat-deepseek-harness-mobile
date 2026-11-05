@@ -18,8 +18,15 @@
  *   ① **体积 < 50MB** —— slim 是 32MB，桌面包 151MB，一比就露馅；
  *   ② **0 条 win32 libreoffice** —— Android 包里塞 Windows 办公软件毫无意义；
  *   ③ **必须含 anysearch 插件** —— 裸 slim 包没有它，App 的联网搜索会失效。
+ *   ④ **必须含 Bot 种子** —— `app/profiles-seed/bottest/`。
  *
- * 三条里任一不过就 `exit 1`，并打印"正确的是哪个包、怎么修"。
+ * 四条里任一不过就 `exit 1`，并打印"正确的是哪个包、怎么修"。
+ *
+ * ⚠️ 第④条是 2026-11-05 网友真机事故后加的：v0.82 那次**正式发布**的 APK
+ * 里打的 runtime 是 32.1MB 的 anysearch 版，**没有 Bot 种子**（前三条全过）。
+ * 结果全新安装的用户一点 Bot 页就报「这个 App 的运行环境不含 Bot 功能」。
+ * 教训：前三条只证明"这是个 Android 的 slim 包"，不证明"这个包功能齐全"。
+ * 任何 App 侧依赖运行时内某个目录的功能，都得在这里有一条自己的判据。
  *
  * ## 用法
  *
@@ -104,6 +111,16 @@ if (any === 0) {
   );
 }
 
+// ── ④ Bot 种子 ───────────────────────────────────────────────────
+const seed = countEntries(zipPath, 'profiles-seed/bottest/package.json');
+if (seed === 0) {
+  die(
+    'runtime.zip 里没有 Bot 种子（app/profiles-seed/bottest/）—— Bot 页会报「这个 App 的运行环境不含 Bot 功能」。',
+    '这是 2026-11-05 v0.82 正式包的真实事故：anysearch 版 runtime 少了这个目录。' +
+      '要用**带 bottest 种子**的那份（32.9MB，见 install/build-runtime-with-bottest.sh）。',
+  );
+}
+
 process.stdout.write(
-  `✓ runtime 体检通过：${mb}MB · 0 条 win32 · anysearch 在位（${any} 条）\n`,
+  `✓ runtime 体检通过：${mb}MB · 0 条 win32 · anysearch 在位（${any} 条）· Bot 种子在位\n`,
 );

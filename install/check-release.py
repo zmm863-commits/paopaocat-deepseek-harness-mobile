@@ -398,6 +398,46 @@ def check_assets(apk: str, repo: str, results: list) -> None:
             info = z.getinfo(runtime[0])
             results.append(("ok", "运行时包", f"{norm(runtime[0])}  {info.file_size / 1048576:.1f} MB"))
 
+            # ── 2026-11-05 事故：v0.82 **正式发布**的包里，runtime 是 32.1MB 的
+            #    anysearch 版，**没有 Bot 种子**。全新安装的用户一点 Bot 页就报
+            #    「这个 App 的运行环境不含 Bot 功能」。前几道闸（体积/win32/
+            #    anysearch）全都过了 —— 它们只证明"这是个 Android slim 包"，
+            #    不证明"功能齐全"。所以要**直接拆开 runtime 看看关键目录在不在**。
+            #
+            #    判据：App 侧真的会去读的路径，缺一个就是功能坏掉。
+            #    以后再加类似"运行时里某个目录"的依赖，都要在这里补一条。
+            try:
+                import io as _io
+                with z.open(runtime[0]) as fh:
+                    inner = _io.BytesIO(fh.read())
+                with zipfile.ZipFile(inner) as rz:
+                    seed = sum(1 for n in rz.namelist()
+                               if n.startswith("app/profiles-seed/bottest/"))
+                    anysearch = sum(1 for n in rz.namelist()
+                                    if "dsh-web-search-anysearch" in n)
+                if seed == 0:
+                    results.append((
+                        "fail",
+                        "运行时内容：Bot 种子",
+                        "runtime.zip 里没有 app/profiles-seed/bottest/ —— "
+                        "Bot 页会报「这个 App 的运行环境不含 Bot 功能」"
+                        "（2026-11-05 v0.82 正式包就是这个错）。"
+                        "请用带 bottest 种子的 runtime 重新构建"))
+                else:
+                    results.append(("ok", "运行时内容：Bot 种子", f"{seed} 条"))
+                if anysearch == 0:
+                    results.append((
+                        "fail",
+                        "运行时内容：anysearch",
+                        "runtime.zip 里没有 anysearch 插件 —— 联网搜索会失效"))
+                else:
+                    results.append(("ok", "运行时内容：anysearch", f"{anysearch} 条"))
+            except Exception as e:  # noqa: BLE001
+                results.append((
+                    "fail",
+                    "运行时内容",
+                    f"拆不开 runtime.zip：{e} —— 无法确认 Bot 种子 / anysearch 是否在位"))
+
 
 # ------------------------------------------------------------------ 引擎检查
 #
