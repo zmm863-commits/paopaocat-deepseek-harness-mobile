@@ -91,7 +91,17 @@ class MainActivity : FlutterActivity() {
          * ds-bot + dsh-client-ui-mobile）。手机上的「Bot 团队」页靠它把
          * dsh web 与 ds-bot 在本机跑起来（见 `lib/local/bot_server.dart`）。
          */
-        private const val RUNTIME_VERSION = "5"
+        // ⚠️ 2026-11-05 从 "5" 升到 "6"（网友真机：Bot 一点就报「运行环境不含 Bot 功能」）。
+        //
+        // 为什么必须升：这个常量就是解包标记 `.dsh-runtime-<版本>` 的一部分，
+        // 标记存在就**不再解包**。而 Bot 种子（`app/profiles-seed/bottest/`）是
+        // 2026-10-17（0.77）才加进运行时压缩包的 —— 那时 RUNTIME_VERSION 还是 "5"，
+        // 从 0.73 起就没动过。于是 0.73~0.76 装过的用户标记早就存在，
+        // 后面升多少版都不会重新解包，`files/dsh/` 里永远没有这个目录。
+        //
+        // 规矩：**只要随包运行时的内容变了（新增/删除文件），这个号就必须 +1**，
+        // 否则只有全新安装的人能拿到新内容，老用户永远停在旧树上。
+        private const val RUNTIME_VERSION = "6"
 
         // **完整包**里带着运行环境（`build.gradle.kts` 的 `DSH_ANDROID_INCLUDE_RUNTIME=1`
         // 时把 `app-assets` 加进 assets），**精简包**里没有 —— 所以下面每一处都要

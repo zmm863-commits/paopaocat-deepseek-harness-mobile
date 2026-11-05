@@ -1,23 +1,19 @@
 {
- "version": "0.83",
- "versionCode": 251,
- "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.83/paopaocat-preview-0.83-20261105-full-arm64-v8a.apk",
- "size": 120727901,
- "sha256": "f743e00e03190ec4fd923bdf0363785d97d46efe1b5fbe0db4315b763ba4510d",
- "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.83/paopaocat-preview-0.83-20261105-full-arm64-v8a.apk",
- "sizeFull": 120727901,
- "sha256Full": "f743e00e03190ec4fd923bdf0363785d97d46efe1b5fbe0db4315b763ba4510d",
+ "version": "0.83.1",
+ "versionCode": 252,
+ "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.83.1/paopaocat-preview-0.83.1-20261105-full-arm64-v8a.apk",
+ "size": 120729933,
+ "sha256": "1e26b28532a53e950f15161c3769c40f825b7dbeb2542784956cabb51d13565d",
+ "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.83.1/paopaocat-preview-0.83.1-20261105-full-arm64-v8a.apk",
+ "sizeFull": 120729933,
+ "sha256Full": "1e26b28532a53e950f15161c3769c40f825b7dbeb2542784956cabb51d13565d",
  "minVersionCode": 0,
  "publishedAt": "2026-11-05",
- "highlight": "修掉「一个空厂家让所有模型都用不了」，设置页会标红并一键清理",
+ "highlight": "修好 Bot 页打不开 —— 老用户升级后运行环境不会重新解包",
  "notes": [
-  "**修好：一个空厂家让全部模型都不可用**。从老版本升级时，老格式配置迁移会造出一条地址为空的厂家记录；它让引擎的整条模型插件在激活阶段就失败，于是**一个适配器都没有** —— 换任何厂家都建不起会话，报的是「会话没能建起来」。现在地址为空就不造厂家。",
-  "**新增：模型设置页把「不可用厂家」标红并给一键清理**。地址为空或一个模型都没有的厂家，边框变红、徽标写「不可用」，页面顶上一条横幅 + 一键清理。以前这类脏数据用户既看不见也删不掉。",
-  "**修好：设置里删不掉的隐形厂家**。坏厂家的 id 如果和内置厂家撞了，会被当成内置条目隐藏、又没有删除按钮。现在撞 id 的也能被横幅抓到并清理。",
-  "**修好：旧版模型设置页的保存不校验地址**。会话报错红框里那个「去设置」打开的老表单，把 Base URL 清空再保存会写出空地址厂家。现在地址 / 厂家 / 模型三项都不许空。",
-  "**修好：选中的模型被探活裁掉后仍被当成默认**。现在会回落到该厂家第一个可用模型，不再写一个自己清单里都不存在的型号。",
-  "**优化：免 Key 通道探活不再拿非对话模型去测**。向量、语音识别、语音合成、文生图这些模型拿去 ping 必然失败，一次能刷出几十条无用报错。",
-  "**修好：老配置迁移在厂家为空时会崩**（`Bad state: No element`），整份配置会被当成损坏文件。"
+  "**修好：Bot 一点就弹「这个 App 的运行环境不含 Bot 功能」**。真相不是不含 —— 是手机上那份解包出来的运行环境**是旧版本留下的**。Bot 需要的种子目录（`profiles-seed/bottest/`）是 0.77 才加进运行时压缩包的，而决定「要不要重新解包」的那个版本号从 0.73 起一直是 5、再没升过：老用户的解包标记早就存在，所以后面升多少版都不会重新解包，那个目录永远补不上。现在升到 6，升级后第一次启动会在启动画面里静默重新解包一次（约半分钟，不用你点任何按钮）。",
+  "**新增：Bot 页自己会修一次**。万一种子还是缺（比如解包没跑完就点了 Bot），它会当场重新解包再试，而不是直接报错让你去猜。",
+  "**报错也改清楚了**：真的修不好时，会说明是\"旧版本解包留下的\"并给出下一步，而不是一句容易误会的\"运行环境不含 Bot 功能\"。"
  ],
  "patches": []
 }

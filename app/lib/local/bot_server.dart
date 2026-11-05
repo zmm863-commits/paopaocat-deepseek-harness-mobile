@@ -338,8 +338,28 @@ class BotServer {
     final seed = Directory('${runtime.runtimeRoot}/profiles-seed/$profileName');
     if (File('${target.path}/package.json').existsSync()) return;
     if (!File('${seed.path}/package.json').existsSync()) {
+      // ⚠️ 2026-11-05 网友真机：Bot 页一点就报「这个 App 的运行环境不含 Bot 功能」。
+      //
+      // 真相不是"不含"，而是**手机上那份解包树是旧版本留下的**：
+      // Bot 种子（`app/profiles-seed/bottest/`）是 2026-10-17（0.77）才加进
+      // 运行时压缩包的，而解包标记 `RUNTIME_VERSION` 从 0.73 起一直是 "5"、
+      // 没跟着升 —— 老用户标记早就存在，升级时**永远不会重新解包**，
+      // 于是 `files/dsh/` 里永远没有这个目录。（已把 RUNTIME_VERSION 升到 6。）
+      //
+      // 这里再补一次自愈：种子不在但安装包里有 → 当场重新解包一次，
+      // 别让用户去猜、也别让他重装。
+      if (await _tryRepairRuntime(runtime)) {
+        if (File('${seed.path}/package.json').existsSync()) {
+          await _copyTree(seed, target);
+          DiagnosticsLog.add('dsh-bot',
+              '运行时缺 Bot 种子 → 已自动重新解包并布置 profile：${target.path}');
+          return;
+        }
+      }
       throw StateError(
-          '运行时里没有 Bot 种子（${seed.path}）—— 这个 App 的运行环境不含 Bot 功能。');
+          '运行时里没有 Bot 种子（${seed.path}）—— 手机上这份运行环境是旧版本解包的，'
+          '缺少 Bot 需要的目录。已尝试自动修复但没成功，请到「设置 → 应用 → 重新解包运行环境」'
+          '再试一次，或重新安装本 App。');
     }
     debugPrint('[dsh-bot] 布置 profile：${seed.path} → ${target.path}');
     await _copyTree(seed, target);
@@ -1126,6 +1146,26 @@ class BotServer {
   }
 
   /// 递归拷目录（种子里有 node_modules，必须连子目录一起搬）。
+  /// 试着重新解包一次随包运行环境（只解包 `profiles-seed` 需要的那棵树）。
+  ///
+  /// 返回 true = 解包调用成功（不代表种子一定出现了，调用方还要再查一次）。
+  /// 失败一律返回 false —— 自愈是尽力而为，不能把 Bot 页的报错变成另一个异常。
+  static Future<bool> _tryRepairRuntime(DshRuntime runtime) async {
+    try {
+      if (!await DshHost.hasRuntimeAsset()) {
+        debugPrint('[dsh-bot] 安装包里没有随包运行环境（精简包），无法自愈');
+        return false;
+      }
+      debugPrint('[dsh-bot] 运行时缺 Bot 种子 → 重新解包');
+      final ok = await DshHost.unpackRuntime();
+      debugPrint('[dsh-bot] 重新解包返回：$ok');
+      return ok;
+    } catch (e) {
+      debugPrint('[dsh-bot] 重新解包失败：$e');
+      return false;
+    }
+  }
+
   static Future<void> _copyTree(Directory from, Directory to) async {
     await to.create(recursive: true);
     await for (final entity in from.list(followLinks: false)) {
