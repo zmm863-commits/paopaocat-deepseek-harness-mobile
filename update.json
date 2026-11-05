@@ -1,20 +1,23 @@
 {
- "version": "0.83.1",
- "versionCode": 252,
- "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.83.1/paopaocat-preview-0.83.1-20261105-full-arm64-v8a.apk",
- "size": 120729933,
- "sha256": "1e26b28532a53e950f15161c3769c40f825b7dbeb2542784956cabb51d13565d",
- "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.83.1/paopaocat-preview-0.83.1-20261105-full-arm64-v8a.apk",
- "sizeFull": 120729933,
- "sha256Full": "1e26b28532a53e950f15161c3769c40f825b7dbeb2542784956cabb51d13565d",
+ "version": "0.83",
+ "versionCode": 253,
+ "url": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.83/paopaocat-preview-0.83-20261105-final-arm64-v8a.apk",
+ "size": 120729197,
+ "sha256": "e48a41c147bcb0238803b40c40c440b608a6b8198ed0b6eee08cd0b3c99e1128",
+ "urlFull": "https://github.com/zmm863-commits/paopaocat-deepseek-harness-mobile/releases/download/v0.83/paopaocat-preview-0.83-20261105-final-arm64-v8a.apk",
+ "sizeFull": 120729197,
+ "sha256Full": "e48a41c147bcb0238803b40c40c440b608a6b8198ed0b6eee08cd0b3c99e1128",
  "minVersionCode": 0,
  "publishedAt": "2026-11-05",
- "highlight": "修好 Bot 页打不开 —— 老用户升级后运行环境不会重新解包",
+ "highlight": "0.83 正式版：修掉「空厂家让所有模型都不可用」和「Bot 打不开」",
  "notes": [
-  "**修好：Bot 一点就报「这个 App 的运行环境不含 Bot 功能」**。真因是 **v0.82 那个正式发布的安装包，包里打的运行时没有 Bot 种子**（`profiles-seed/bottest/`）—— 线上那份和本地验证过的不是同一个文件：线上 32.1MB 没有种子，本地那份 32.9MB 有 64 个条目。全新安装的用户装完就是没有。本版换了带种子的那份，装完 Bot 就能用。",
-  "**新增两道出包门禁，这类错包再也发不出去**：①出包前检查运行时里有 `profiles-seed/bottest/package.json`，没有当场失败；②`check-release.py` 会**拆开成品 APK 里的运行时再查一遍**（Bot 种子、联网搜索各一条独立结论），对的是真正要发的那个文件。拿线上那个坏包验证过：直接判「不要发这个包」。",
-  "**Bot 页补了自愈**：万一种子还是缺，会当场重新解包再试一次，而不是直接报错让人去猜。",
-  "**顺带**：运行时解包版本号从 5 升到 6 —— 0.73~0.76 装过的用户，解包标记早就存在，0.77 才加进去的 Bot 种子确实永远不会被解出来。升级后第一次启动会在启动画面里静默重新解包一次（约半分钟，不用点任何按钮，也不会被踢回欢迎页）。"
+  "**修好：一个空厂家让全部模型都不可用**。从老版本升级时，老格式配置迁移会照着顶层字段造一条厂家记录，老文件里没有地址就写成空串 —— 它让引擎的整条模型插件在激活阶段就失败，于是**一个适配器都没有**，换任何厂家、任何模型都建不起会话，报的是「会话没能建起来」。现在地址为空就不造厂家。",
+  "**修好：Bot 一点就报「这个 App 的运行环境不含 Bot 功能」**。真因是 v0.82 那次发布打错了运行时（32.1MB 的老包，没有 Bot 种子）。本版用带种子的那份（32.9MB / 64 条目），并把解包版本号从 5 升到 6 —— 0.73~0.76 装过的用户升级后第一次启动会在启动画面里静默重新解包一次（约半分钟，不用点按钮，也不会被踢回欢迎页）。",
+  "**新增：模型设置页把「不可用厂家」标红 + 一键清理**。地址为空或一个模型都没有的厂家，边框变红、徽标写「不可用」，页面顶上一条横幅 + 一键清理。以前这类脏数据用户既看不见也删不掉（坏厂家 id 和内置厂家撞了的话，会被当内置条目隐藏）。",
+  "**修好：旧版模型设置页的保存不校验地址**。会话报错红框里那个「去设置」打开的老表单，把 Base URL 清空再保存会写出空地址厂家。现在地址 / 厂家 / 模型三项都不许空。",
+  "**修好：选中的模型被探活裁掉后仍被当成默认**。现在会回落到该厂家第一个可用模型。",
+  "**优化：免 Key 通道探活不再拿非对话模型去测**（向量 / 语音识别 / 语音合成 / 文生图），一次能少刷几十条无用报错。",
+  "**出包流程加了两道门禁**：出包前检查运行时里有没有 Bot 种子，出包后再拆开成品 APK 里的运行时查一遍 —— 这类错包以后发不出去。"
  ],
  "patches": []
 }
