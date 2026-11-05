@@ -424,8 +424,15 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
   /// 都报 `no adapter registered`、发什么消息都建不起会话。写 overlay 那侧
   /// 已经不写它了（`dsh_runtime.dart` 的 emittable 过滤），但用户在设置页
   /// 完全看不出有这么个东西在 —— 所以这里把它揪出来，标红并给一键清理。
+  /// ⚠️ 必须扫 **`_cfg.providers` 全量**，不能只看 `_customProviders()`。
+  ///
+  /// 2026-11-05 真机复现：用户那个坏厂家 id 正好是 `com` —— 和内置的
+  /// 「Command（聚合，推荐）」撞了 id。于是它被 `_customProviders()` 当作
+  /// 内置条目排除，**卡片不显示、内置卡又没有删除按钮**，用户在界面上
+  /// 既看不见也删不掉，只能干看着整个模型服务是坏的。
+  /// 所以这里按"配置里真实存在的记录"扫，撞 id 的也照抓。
   List<ProviderSpec> _brokenProviders() => <ProviderSpec>[
-        for (final p in _customProviders())
+        for (final p in _cfg.providers)
           if (p.baseUrl.trim().isEmpty || _modelsOf(p.id).isEmpty) p,
       ];
 
@@ -461,7 +468,7 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
           ),
           const SizedBox(height: 4),
           Text(
-            context.tr('它们地址为空或没有模型，留着会让整个模型服务都用不了。'),
+            context.tr('它们地址为空或没有模型，留着会让整个模型服务都用不了。清理后，内置厂家会回到默认设置。'),
             style: TextStyle(color: DshColors.textDim, fontSize: 11),
           ),
           const SizedBox(height: 6),
@@ -827,18 +834,27 @@ class _ModelSettingsPanelState extends State<ModelSettingsPanel> {
     final open = _openProvider == p.id;
     final ready = _keyReady[p.id] ?? false;
     final mine = _modelsOf(p.id);
-    final (String badge, Color badgeColor) = rt.testedOk
-        ? (context.tr('已测试通过'), DshColors.ok)
-        : ready
-            ? (context.tr('已配 Key'), DshColors.ok)
-            : (context.tr('未配 Key'), DshColors.err);
+    // 内置厂家也可能被一条坏记录拖垮（地址被清空 / 0 模型）—— 2026-11-05
+    // 用户那个撞 id 的 `com` 就是这种：卡片上看着是内置预设，配置里却是空的。
+    final saved = _cfg.providerOf(p.id);
+    final broken = saved != null &&
+        (saved.baseUrl.trim().isEmpty || mine.isEmpty);
+    final (String badge, Color badgeColor) = broken
+        ? (context.tr('不可用'), DshColors.err)
+        : rt.testedOk
+            ? (context.tr('已测试通过'), DshColors.ok)
+            : ready
+                ? (context.tr('已配 Key'), DshColors.ok)
+                : (context.tr('未配 Key'), DshColors.err);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: DshColors.panel(
         radius: 11,
         color: DshColors.surfaceHigh,
-        borderColor: open ? DshColors.accent : DshColors.line,
+        borderColor: broken
+            ? DshColors.err
+            : (open ? DshColors.accent : DshColors.line),
         glow: false,
       ),
       child: Column(

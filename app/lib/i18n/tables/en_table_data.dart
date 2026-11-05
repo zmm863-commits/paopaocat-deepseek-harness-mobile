@@ -478,7 +478,7 @@ const Map<String, String> kEnTable = <String, String>{
   '删除这个作品？': 'Delete this work?',
   '删除这个厂家': 'Delete this provider',
   '发现 {0} 个不可用厂家：{1}': 'Found {0} unusable providers: {1}',
-  '它们地址为空或没有模型，留着会让整个模型服务都用不了。': 'Their address is empty or they have no models. Leaving them breaks the whole model service.',
+  '它们地址为空或没有模型，留着会让整个模型服务都用不了。清理后，内置厂家会回到默认设置。': 'Their address is empty or they have no models. Leaving them breaks the whole model service. Cleaning up restores built-in providers to their defaults.',
   '一键清理': 'Clean up all',
   '清理 {0} 个不可用厂家？': 'Clean up {0} unusable providers?',
   '{0}。它们下面没有可用模型，删掉不影响任何在用的配置。': '{0}. They have no usable models, so deleting them will not affect anything in use.',
