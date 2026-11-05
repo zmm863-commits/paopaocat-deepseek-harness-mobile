@@ -848,7 +848,15 @@ class DshRuntime {
     // 表现是"对话突然完全不能用"。宁可少写一个空厂家，也不能写坏整份配置。
     final emittable = <ProviderSpec>[
       for (final p in providers)
-        if (config.models.any((m) => m.provider == p.id)) p,
+        // 两个条件缺一不可：
+        //  1. 必须真挂了模型 —— 空 `models:` 在 YAML 里是 null，校验会否掉整份 overlay；
+        //  2. baseURL 不能为空 —— 引擎的 `resolveProfiles` 会直接抛
+        //     `provider "x" has an empty baseURL`，**整条 llm-pi-ai 插件激活失败**，
+        //     表现为所有厂家都没有适配器（`no adapter registered for provider`）。
+        //     2026-11-05 真机日志：用户留了一个 0 模型的空厂家，全套模型全挂。
+        if (config.models.any((m) => m.provider == p.id) &&
+            p.baseUrl.trim().isNotEmpty)
+          p,
     ];
     if (emittable.isEmpty && groups.isEmpty && localModel == null) {
       debugPrint(
@@ -927,6 +935,32 @@ class DshRuntime {
       }
     }
 
+    // ── 模型级回落（2026-11-05 补）──
+    //
+    // 真机事故：用户选中的是 `zen/cohere/north-mini-code:free`，但 zen 通道探活
+    // 结果里这条**已经被裁掉**（zen 上游 0 个可用，只剩 kilo/ovh 那 22 个）。
+    // 前面的回落只检查「**厂家**还在不在」——`zen` 厂家活着，所以直接放行，
+    // 于是 overlay 里写进一个自己 models 列表里根本不存在的主模型。
+    //
+    // 后果：adapter 注册成功了，但默认路由指向不存在的模型，用户发消息照样失败，
+    // 而且错误信息是上游的（model_not_found / FreeUsageLimit），看不出是本地选错了。
+    //
+    // 这里补一道：厂家在、但**型号不在该厂家的清单里** → 落到该厂家第一个模型。
+    if (!isRotate &&
+        !isLocal &&
+        activeProvider.isNotEmpty &&
+        emittable.any((p) => p.id == activeProvider)) {
+      final mine =
+          config.models.where((m) => m.provider == activeProvider).toList();
+      final exists = mine.any((m) => m.id == activeModel.trim());
+      if (!exists && mine.isNotEmpty) {
+        debugPrint(
+            '[dsh-runtime] 选中的模型 "$activeModel" 不在厂家 "$activeProvider" 的清单里'
+            '（多半是探活后被裁掉），回落到 "${mine.first.id}"');
+        activeModel = mine.first.id;
+      }
+    }
+
     final buf = StringBuffer();
     // ⚠️ 这一段里**所有字符串值都必须过 `_yamlStr`（加双引号）**，一个都不能少。
     //
@@ -949,13 +983,13 @@ class DshRuntime {
     // 兜底断言见 `test/local_model_overlay_test.dart` 的"数字名"那组。
     buf.writeln('# 由 App 生成：把 DSH 的模型路由指向用户配置的端点。');
     buf.writeln('# 覆盖两处是必须的 —— profile 自己的 config 会盖掉 agent-default-model。');
-    buf.writeln('# 这里会把**所有**厂家一起写进来，切厂家不会丢配置。');
+    buf.writeln('# 这里只写「真的挂了模型、且 baseURL 非空」的厂家（空厂家会毒死整条 llm 插件）。');
     buf.writeln('- id: llm-pi-ai');
     buf.writeln('  name: "@deepseek-ai/dsh-llm-pi-ai"');
     buf.writeln('  config:');
     buf.writeln('    providers:');
 
-    for (final p in providers) {
+    for (final p in emittable) {
       buf.writeln('      ${_yamlStr(p.id)}:');
       buf.writeln('        apiKeyEnv: ${p.apiKeyEnv}');
       // ⚠️⚠️ 2026-10-17 订正：**不能再走"内置 provider"那条路**。
@@ -1104,8 +1138,12 @@ class DshRuntime {
 
     writeStringAtomicSync(File(overlayPath), buf.toString());
     debugPrint(
-      '[dsh-runtime] overlay 已重写：${providers.length} 个厂家 / '
-      '${config.models.length} 个模型 / ${groups.length} 个轮换组，'
+      // 这里报的是**实际写进去的**厂家数（emittable），不是 config.providers.length
+      // —— 2026-11-05 之前报的是全量，排查那个"空厂家毒死插件"的 bug 时，
+      // 日志显示 2 个厂家、overlay 里其实只有 1 个，差点看错方向。
+      '[dsh-runtime] overlay 已重写：${emittable.length} 个厂家 / '
+      '${config.models.where((m) => emittable.any((p) => p.id == m.provider)).length} 个模型 / '
+      '${groups.length} 个轮换组，'
       '默认=$activeProvider/$activeModel',
     );
   }

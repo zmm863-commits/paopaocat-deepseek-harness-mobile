@@ -445,5 +445,102 @@ void main() {
       expect(text, isNot(contains('127.0.0.1:39321')),
           reason: '更不能兜底到固定的 rotateBasePort');
     });
+
+    test('★★ 空 baseURL 的厂家绝不能写进 overlay（会毒死整条 llm 插件）', () async {
+      // 2026-11-05 用户真机日志（v0.82，981 行，14 分 6 秒里 0 次成功建会话）：
+      //
+      //   llm-pi-ai (@deepseek-ai/dsh-llm-pi-ai): Error:
+      //     provider "com" has an empty baseURL
+      //   dsh: warning: 1 entry did not activate
+      //   [acp] session/new 失败：{"code":-32603,"message":"Internal error",
+      //         "data":{"details":"no adapter registered for provider \"zen\""}}
+      //
+      // 成因：用户在设置里留了一个 **0 个模型 / 没 Key / baseURL 为空** 的厂家 `com`。
+      // 写 overlay 的循环当时用的是**未过滤**的 `providers`，于是这个空厂家进了 YAML，
+      // 引擎 `resolveProfiles` 当场抛错 → **整条 llm-pi-ai 插件激活失败** →
+      // 所有厂家都没有适配器 → 换任何模型都建不起会话。
+      //
+      // 这不是"某个模型坏了"，是"整张 provider 注册表废了"。所以必须钉死：
+      // 空 baseURL 的厂家一个都不许出现在 overlay 里。
+      const empty = ProviderSpec(
+        id: 'com',
+        label: 'com',
+        baseUrl: '', // ← 就是这一位为空
+        apiKeyEnv: 'COM_API_KEY',
+      );
+      const good = ProviderSpec(
+        id: 'deepseek',
+        label: 'DeepSeek 官方',
+        baseUrl: 'https://api.deepseek.com',
+        apiKeyEnv: 'DEEPSEEK_API_KEY',
+      );
+      const cfg = ConfiguredConfig(
+        version: 1,
+        providers: <ProviderSpec>[empty, good],
+        models: <ModelSpec>[
+          ModelSpec(
+            provider: 'deepseek',
+            id: 'deepseek-v4.1-flash',
+            name: 'DeepSeek V4.1 Flash',
+          ),
+        ],
+        groups: <RotationGroupSpec>[],
+        selected: 'deepseek/deepseek-v4.1-flash',
+      );
+
+      await runtime.writeOverlayFromConfig(
+        config: cfg,
+        activeRoute: 'deepseek/deepseek-v4.1-flash',
+      );
+      final text = File(runtime.overlayPath).readAsStringSync();
+
+      expect(text, isNot(contains('"com"')),
+          reason: '空 baseURL 的厂家写进去会让整条 llm-pi-ai 插件激活失败');
+      expect(text, isNot(contains('baseURL: ""')),
+          reason: '空 baseURL 是引擎的硬错误（provider "x" has an empty baseURL）');
+      expect(text, contains('"deepseek"'),
+          reason: '有 baseURL 且有模型的厂家必须照常写出');
+      expect(text, contains('https://api.deepseek.com'));
+    });
+
+    test('★ 选中的模型被裁掉时要回落到该厂家第一个（不要写不存在的型号）', () async {
+      // 2026-11-05 同一条真机日志的另一半：
+      //   选中 route = zen/cohere/north-mini-code:free
+      //   探活结果   = ping 42 个 → 22 个可用（zen 0 / kilo 11 / ovh 11）
+      // 也就是说 `north-mini-code:free` 已经被**裁掉**了，但 selected 还指着它。
+      // 旧逻辑只检查「厂家还在不在」——`zen` 厂家活着（下面还有 kilo/ovh 的 22 个），
+      // 于是直接放行，overlay 里写进一个自己 models 列表里都不存在的主模型。
+      const zen = ProviderSpec(
+        id: 'zen',
+        label: '免Key通道',
+        baseUrl: 'http://127.0.0.1:43111/v1',
+        apiKeyEnv: 'ZEN_API_KEY',
+      );
+      const cfg = ConfiguredConfig(
+        version: 1,
+        providers: <ProviderSpec>[zen],
+        models: <ModelSpec>[
+          ModelSpec(
+            provider: 'zen',
+            id: 'kilo/llama-3.3-70b:free',
+            name: 'Llama 3.3 70B',
+          ),
+        ],
+        groups: <RotationGroupSpec>[],
+        selected: 'zen/cohere/north-mini-code:free',
+      );
+
+      await runtime.writeOverlayFromConfig(
+        config: cfg,
+        // ← 这个型号不在上面的 models 里（模拟"探活后被裁掉"）
+        activeRoute: 'zen/cohere/north-mini-code:free',
+      );
+      final text = File(runtime.overlayPath).readAsStringSync();
+
+      expect(text, isNot(contains('north-mini-code')),
+          reason: '选中的型号已经不在清单里，不能再写进默认路由');
+      expect(text, contains('kilo/llama-3.3-70b:free'),
+          reason: '应回落到该厂家第一个可用模型');
+    });
   });
 }

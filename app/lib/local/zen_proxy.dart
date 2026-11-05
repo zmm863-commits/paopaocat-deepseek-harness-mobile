@@ -153,6 +153,35 @@ class ZenProxy {
   /// 各条互不牵连：一条挂了，另一条照常返回自己的列表。
   ///
   /// 失败返回空列表并打日志 —— **绝不编造模型名**（编了等于给用户一个选了就报错的模型）。
+  /// 上游 `/v1/models` 里混着**非对话**模型：向量（bge / embedding）、语音识别
+  /// （whisper）、语音合成（nvr-tts / *-tts-*）、文生图（stable-diffusion）。
+  ///
+  /// 它们拿去 ping 必然 `model_not_found` —— 2026-11-05 真机日志里，一次探活就
+  /// 刷出 50 条这种错误，把真正有用的信息全淹了。所以取列表时先滤掉。
+  ///
+  /// 判据用「看起来很确定不是对话模型」的黑名单，**宁可多留也不误杀**：
+  /// 万一把一个真能用的漏在上面，它 ping 不通会被自动裁掉，不会造成坏结果。
+  static bool _looksLikeChatModel(String id) {
+    final s = id.toLowerCase();
+    const nonChat = <String>[
+      'bge', // BAAI 向量模型 bge-m3 / bge-multilingual-gemma
+      'embedding',
+      'embed',
+      'rerank',
+      'whisper', // 语音识别
+      'tts', // 语音合成（nvr-tts-*, *-tts-*）
+      'nvr-', // NVIDIA Riva 系列
+      'stable-diffusion',
+      'sdxl',
+      'flux', // 文生图
+      'moderation',
+    ];
+    for (final k in nonChat) {
+      if (s.contains(k)) return false;
+    }
+    return true;
+  }
+
   Future<List<String>> fetchFreeModels(int port, {ZenLane lane = ZenLane.zen}) async {
     final path = '${lane.prefix}/v1/models';
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
@@ -171,7 +200,8 @@ class ZenProxy {
       if (data is! List) return const <String>[];
       return <String>[
         for (final m in data)
-          if (m is Map && m['id'] is String) m['id'] as String,
+          if (m is Map && m['id'] is String && _looksLikeChatModel(m['id'] as String))
+            m['id'] as String,
       ];
     } catch (e) {
       debugPrint('[dsh-zen] 取模型列表失败（${lane.name}）：$e');
