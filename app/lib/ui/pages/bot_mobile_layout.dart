@@ -386,11 +386,31 @@ body {
    ⑪ 去掉"看起来能点、点了没反应"的按钮语义
    ═══════════════════════════════════════════════════════════════════
    底部三块统计（22 轮 55 步 / 1.9M tok / 上下文已用 5%）都是 <button>，
-   点下去任何状态都不变 —— 按钮形态是在骗人。去语义、恢复成纯文字。 */
+   点下去任何状态都不变 —— 按钮形态是在骗人。去语义、恢复成纯文字。
+
+   ⚠️⚠️ 2026-11-05 用户真机报「Bot 页第一次安装让选模型，模型列出来但点不动」。
+
+   根因是这里原来那条 `[class*="dock"] button` —— **通配符太宽**。查 ds-bot 的
+   client.js，`dock` 这个子串一共命中 4 个类，全都装着实用的按钮：
+
+     bt-model-dock   → .bt-model-chip（选模型 / 首次引导的「选择模型」）
+     bt-mw-dock      → .bt-mw-pill（Bot 的工作状态胶囊，点开详情）
+     bt-secret-dock  → 密钥审批卡片的「批准 / 拒绝」
+     bt-q-dock       → 问答区（含上面的卡片）
+
+   加一条 `pointer-events: none` 就等于把这四处全废掉 —— 模型点不动只是最显眼的一处，
+   审批按钮点不动更致命。所以**这一条整个删掉**，只保留 `stat` / `usage` 两个精确到
+   统计区的通配（`bt-us-stats` 那几块确实是纯文字，不是按钮）。
+
+   教训：**注入 CSS 的 `[class*=...]` 是通配，不是精确匹配**。写之前先在 ds-bot 的
+   client.js 里 grep 一遍这个子串还命中哪些类。本文件已经因为这种写法翻过三次车：
+   `panel` 盖住消息区、`card` 误伤 bcard、`dock` 这次把选模型和审批按钮一起废了。 */
 @media (max-width: 720px) {
-  [class*="dock"] button,
-  [class*="usage"] button,
-  [class*="stat"] button {
+  /* 用**精确类名**，不用通配。`[class*="stat"]` 那种写法还会命中
+     `bt-member-state` / `bt-mem-status` / `bt-connector-status` 这些状态位，
+     其中有的就是按钮（成员状态点开看详情）—— 通配一次就废一片。 */
+  .bt-us-stat,
+  .bt-us-stats {
     pointer-events: none !important;
     cursor: default !important;
     background: transparent !important;
