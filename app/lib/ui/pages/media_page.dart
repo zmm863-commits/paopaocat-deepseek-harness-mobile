@@ -19,6 +19,9 @@ import '../../local/media_service.dart';
 import '../../state/app_settings.dart';
 import 'ai_role_page.dart';
 import 'clip_page.dart';
+import 'drawnix_page.dart';
+import 'read_pdf_page.dart';
+import 'stem_sep_page.dart';
 import 'studio_page.dart';
 import 'creation_guide_page.dart';
 import '../../state/model_store.dart';
@@ -1316,6 +1319,51 @@ class _MediaPageState extends State<MediaPage> {
               title: context.tr('做 PPT / 幻灯片'),
               hint: context.tr('生成真正的 .pptx：12 种版式 + 自动排版（封面 / 卡片 / 时间线 / 对比 / 数据图…）'),
               onTap: () => _showSlidesSheet(),
+            ),
+            // 2026-11-14（三梯队之三「读 PDF」）：PDF → 结构化文字。
+            //
+            // 走 pdf.js（纯 JS）而不是 PDFium：后者的预编译**没有 Android 版本**，
+            // 自己编要 depot_tools + 几 GB。pdf.js 跟着包里的 node 直接跑。
+            // 会话里的模型也能直接调：node "$DSH_ANDROID_TOOLBOX/parse-pdf.mjs" x.pdf
+            _workbenchEntry(
+              icon: Icons.picture_as_pdf_outlined,
+              title: context.tr('读 PDF'),
+              hint: context.tr('把 PDF 读成文字（带版面顺序），可复制给任何模型；扫描件读不出（没有 OCR）'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ReadPdfPage(runtime: widget.runtime),
+                ),
+              ),
+            ),
+            // 2026-11-14（三梯队之二「人声分离」）：把一首歌拆成人声 + 伴奏。
+            //
+            // 用户选的选型标准是「体积可控」：52.8MB 的 MDX-Net，而不是 316MB 的
+            // htdemucs。全部本地算（Rust + 手机上已有的 libonnxruntime），不联网。
+            // 用途：短剧/口播换配音（保留背景乐）、提取干净人声做二次创作。
+            _workbenchEntry(
+              icon: Icons.call_split_rounded,
+              title: context.tr('人声分离'),
+              hint: context.tr('把歌拆成「人声」和「伴奏」两轨，本机算、不联网（一首歌约几分钟）'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => StemSepPage(runtime: widget.runtime),
+                ),
+              ),
+            ),
+            // 2026-11-14（三梯队之一「白板」）：思维导图 / 流程图 / 自由画。
+            //
+            // 与上面「画图表」的分工：画图表是**让模型生成一张静态图**（出 HTML/PNG，
+            // 用户改不了）；白板是**用户自己画、可反复编辑**的无限画布，能导出 PNG/JSON。
+            // 产物随包（Web 静态站点），走 loopback 静态服务 + WebView，离线可用。
+            _workbenchEntry(
+              icon: Icons.dashboard_customize_outlined,
+              title: context.tr('白板'),
+              hint: context.tr('思维导图 / 流程图 / 自由画，一块无限画布；可导出 PNG 与 JSON（随包自带，不联网）'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DrawnixPage(runtime: widget.runtime),
+                ),
+              ),
             ),
             _workbenchEntry(
               icon: Icons.schema_outlined,

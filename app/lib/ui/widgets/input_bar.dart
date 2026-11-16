@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/dsh_motion.dart';
 import '../theme/dsh_tokens.dart';
 
 import '../../i18n/dsh_i18n.dart';
@@ -24,7 +25,19 @@ import '../../i18n/dsh_i18n.dart';
 ///
 /// ⚠️ 这条注释原来写的是"占位交互"，而实现早就是真的了（chat_page 的
 /// `_onVoiceState` → `_startSpeech`/`_stopSpeech`）—— 属于会误导下一个人的过时注释。
-class InputBar extends StatelessWidget {
+///
+/// ## 2026-11-13 换界面：只动质感与动效，不动几何
+///
+/// 纵向次序、胶囊高度 46dp、按钮直径 46dp 全部保持原样（设计稿坐标是硬证据，
+/// 改几何要重新读图）。这一轮加的是三样，参数统一来自 [DshMotion] / [DshGlass]：
+///   1. **顶部 1.5px 受光高光**（原设计只有 0.8px 同色描边，形体是平的）；
+///   2. **聚焦过渡动画**：边框从细边渐到强调色，走 `DshMotion.base + ease`，
+///      不再是瞬间跳变；
+///   3. **按压反馈**：按钮与胶囊按下时形变、松手用 spring 弹回。
+///
+/// 输入框的底**仍然不透明**（`DshColors.fieldFill`，`contrast_test` 钉死了
+/// 「文字压在 fieldFill 上要过 AA」）—— 玻璃渐变只给不压正文的部件用。
+class InputBar extends StatefulWidget {
   const InputBar({
     super.key,
     this.controller,
@@ -42,6 +55,7 @@ class InputBar extends StatelessWidget {
     this.canSend = false,
     this.voiceHeld = false,
     this.onVoiceState,
+    this.onSendLongPress,
   });
 
   final TextEditingController? controller;
@@ -71,6 +85,41 @@ class InputBar extends StatelessWidget {
   /// 按住状态变化：`held=true` 按下，`false` 松开
   final void Function(bool held)? onVoiceState;
 
+  /// **长按发送键**弹出「发送方式」菜单（排队 / 中断并发送）。
+  ///
+  /// 为什么是长按：DSH Go 的同款交互 —— 短按的语义必须唯一（发送 / 停止），
+  /// 多选一的入口挂在长按上，既不占版面也不用猜。不传则不响应长按。
+  final VoidCallback? onSendLongPress;
+
+  @override
+  State<InputBar> createState() => _InputBarState();
+}
+
+class _InputBarState extends State<InputBar> {
+  /// 聚焦状态由本层持有：边框过渡动画需要知道"有没有在输入"。
+  /// 用内部 FocusNode 而不是让调用方传 —— 调用方（chat_page）已经有一个
+  /// controller，再要它管 focus 是把实现细节漏到页面层。
+  final FocusNode _focus = FocusNode();
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocus);
+  }
+
+  void _onFocus() {
+    if (!mounted || _focused == _focus.hasFocus) return;
+    setState(() => _focused = _focus.hasFocus);
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocus);
+    _focus.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -79,10 +128,10 @@ class InputBar extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (onTapAttach != null) ...[
+            if (widget.onTapAttach != null) ...[
               _CircleButton(
                 icon: Icons.add,
-                onTap: enabled ? onTapAttach : null,
+                onTap: widget.enabled ? widget.onTapAttach : null,
                 tooltip: context.tr('添加附件'),
               ),
               const SizedBox(width: 8),
@@ -94,31 +143,74 @@ class InputBar extends StatelessWidget {
             // page-11 是 `发消息或按住说话`。如果恒显麦克风，用户打了字就没有发送
             // 入口（实测只能靠软键盘回车）—— 这是上一版引入的真实可用性缺口。
             // 规则：输入框为空 → 麦克风（按住说话）；有文字 → 发送。
-            if (voiceMode && !canSend) ...[
+            // 运行中 → 停止（与 DSH Go 的「生成中发送键变停止」同语义，已具备）。
+            if (widget.voiceMode && !widget.canSend) ...[
               const SizedBox(width: 8),
               _VoiceButton(
-                enabled: enabled && !running,
-                held: voiceHeld,
-                onState: onVoiceState,
+                enabled: widget.enabled && !widget.running,
+                held: widget.voiceHeld,
+                onState: widget.onVoiceState,
               ),
             ] else ...[
               const SizedBox(width: 8),
               _CircleButton(
-                icon: running ? Icons.stop : Icons.arrow_upward,
-                onTap: running ? onCancel : onSend,
-                tooltip: running ? context.tr('停止') : context.tr('发送'),
+                icon: widget.running ? Icons.stop : Icons.arrow_upward,
+                onTap: widget.running ? widget.onCancel : widget.onSend,
+                tooltip:
+                    widget.running ? context.tr('停止') : context.tr('发送'),
                 primary: true,
+                // 长按恒弹菜单：运行中选「怎么发」，空闲时它也会弹（给「立即发送 /
+                // 排队」的语义留位置）—— 由调用方决定传不传。
+                onLongPress: widget.onSendLongPress,
               ),
             ],
           ],
         ),
         // 模型按钮在输入框**下方**（设计稿 y=2292~2346），右对齐
-        if (onTapModel != null)
+        if (widget.onTapModel != null)
           Padding(
             padding: const EdgeInsets.only(top: 7, right: 2),
-            child: _ModelChip(name: modelName, onTap: onTapModel!),
+            child: _ModelChip(name: widget.modelName, onTap: widget.onTapModel!),
           ),
       ],
+    );
+  }
+
+  /// 输入框外壳（两个分支共用）：实底 + 受光高光 + 聚焦过渡。
+  ///
+  /// 边框由**这里**统一画（`TextField` 自己的 border 全设为 `InputBorder.none`），
+  /// 否则外层描边和 `InputDecoration` 的 `focusedBorder` 会叠出两条线。
+  Widget _shell({required Widget child, required VoidCallback? onTap}) {
+    final m = DshMotion.of();
+    return AnimatedContainer(
+      duration: m.base,
+      curve: DshMotion.ease,
+      decoration: BoxDecoration(
+        // 输入框的底必须**不透明**：原来用 `DshColors.surface`（深色下 7% 白），
+        // 键入的正文会和页面渐变糊在一起 —— 用户 2026-10-15 的原话是
+        // 「输入文字的时候和底版混在一起看不清」。见 [DshPalette.fieldFill]。
+        color: DshColors.fieldFill,
+        borderRadius: BorderRadius.circular(DshMetrics.inputRadius),
+        // ⚠️ 必须是**同色同宽**的一圈：Flutter 在有 borderRadius 时禁止分边异色
+        //    （`Border.paint` 断言，见 DshGlass.rim 的说明）—— 第一版按"顶部
+        //    1.5px 高光"分边写，渲染直接抛异常，clickthrough 测试当场抓到。
+        //    聚焦时整圈换强调色；顶部受光感交给上方的柔光（boxShadow）。
+        border: Border.all(
+          color: _focused ? DshColors.accent : DshColors.line,
+          width: 1,
+        ),
+        boxShadow: _focused
+            ? <BoxShadow>[
+                BoxShadow(
+                  color: DshColors.accent.withValues(alpha: 0.22),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                  spreadRadius: -6,
+                ),
+              ]
+            : null,
+      ),
+      child: onTap == null ? child : InkWell(onTap: onTap, child: child),
     );
   }
 
@@ -127,71 +219,58 @@ class InputBar extends StatelessWidget {
     // 这里锁成 46dp，和设计稿在屏高上的占比一致。
     const fieldHeight = 46.0;
 
-    final field = Container(
-      height: fieldHeight,
-      alignment: Alignment.centerLeft,
-      // 输入框的底必须**不透明**：原来用 `DshColors.surface`（深色下 7% 白），
-      // 键入的正文会和页面渐变糊在一起 —— 用户 2026-10-15 的原话是
-      // 「输入文字的时候和底版混在一起看不清」。见 [DshPalette.fieldFill]。
-      decoration: BoxDecoration(
-        color: DshColors.fieldFill,
-        borderRadius: BorderRadius.circular(DshMetrics.inputRadius),
-        border: Border.all(color: DshColors.line, width: 0.8),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Text(
-        (controller != null && controller!.text.isNotEmpty && readOnly)
-            ? context.tr('发消息…')
-            : hintText,
-        style: TextStyle(color: DshColors.textFaint, fontSize: 13.5),
-      ),
+    final placeholder = Text(
+      (widget.controller != null &&
+              widget.controller!.text.isNotEmpty &&
+              widget.readOnly)
+          ? context.tr('发消息…')
+          : widget.hintText,
+      style: TextStyle(color: DshColors.textFaint, fontSize: 13.5),
     );
 
-    if (readOnly) {
+    if (widget.readOnly) {
       return Semantics(
         textField: true,
-        label: hintText,
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(DshMetrics.inputRadius),
-          child: field,
+        label: widget.hintText,
+        child: _shell(
+          onTap: widget.enabled ? widget.onTap : null,
+          child: SizedBox(
+            height: fieldHeight,
+            child: Align(alignment: Alignment.centerLeft, child: placeholder),
+          ),
         ),
       );
     }
 
     return Semantics(
       textField: true,
-      label: hintText,
+      label: widget.hintText,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: fieldHeight),
-        child: TextField(
-          controller: controller,
-          enabled: enabled,
-          minLines: 1,
-          maxLines: 5,
-          textInputAction: TextInputAction.newline,
-          keyboardType: TextInputType.multiline,
-          style: TextStyle(color: DshColors.text, fontSize: 13.5, height: 1.4),
-          cursorColor: DshColors.accent,
-          decoration: InputDecoration(
-            hintText: hintText,
-            filled: true,
-            // 同上：实色底，保证"正在键入的字"始终压在实底上。
-            fillColor: DshColors.fieldFill,
-            isDense: true,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(DshMetrics.inputRadius),
-              borderSide: BorderSide(color: DshColors.line, width: 0.8),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(DshMetrics.inputRadius),
-              borderSide: BorderSide(color: DshColors.line, width: 0.8),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(DshMetrics.inputRadius),
-              borderSide: BorderSide(color: DshColors.accent, width: 1),
+        child: _shell(
+          onTap: null,
+          child: TextField(
+            controller: widget.controller,
+            focusNode: _focus,
+            enabled: widget.enabled,
+            minLines: 1,
+            maxLines: 5,
+            textInputAction: TextInputAction.newline,
+            keyboardType: TextInputType.multiline,
+            style: TextStyle(color: DshColors.text, fontSize: 13.5, height: 1.4),
+            cursorColor: DshColors.accent,
+            decoration: InputDecoration(
+              hintText: widget.hintText,
+              filled: true,
+              // 同上：实色底，保证"正在键入的字"始终压在实底上。
+              fillColor: DshColors.fieldFill,
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              // 边框交给外层 `_shell` 画（要与聚焦动画同步），这里一律不画。
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
             ),
           ),
         ),
@@ -212,17 +291,14 @@ class _ModelChip extends StatelessWidget {
     return Semantics(
       button: true,
       label: context.tr('当前模型 {0}', [name]),
-      child: InkWell(
+      child: DshGlass.pressable(
+        enabled: true,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(DshMetrics.radius(14)),
-        child: Container(
+                child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-          decoration: BoxDecoration(
-            // 与输入框同一层实底：它俩是同一排控件，一个透一个不透会看着像两个 App。
-            color: DshColors.fieldFill,
-            borderRadius: BorderRadius.circular(DshMetrics.radius(14)),
-            border: Border.all(color: DshColors.line, width: 0.8),
-          ),
+          // 玻璃胶囊（不压正文的部件才用渐变；输入框仍走实底，见类注释）。
+          // 与输入框同一排控件，所以仍是"浅色偏亮、深色偏淡"的同一族。
+          decoration: DshGlass.capsule(radius: 14),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -270,6 +346,7 @@ class _VoiceButtonState extends State<_VoiceButton> {
   @override
   Widget build(BuildContext context) {
     final on = widget.enabled;
+    final m = DshMotion.of();
     return Semantics(
       button: true,
       label: context.tr('按住说话'),
@@ -278,8 +355,10 @@ class _VoiceButtonState extends State<_VoiceButton> {
         onLongPressStart: on ? (_) => widget.onState?.call(true) : null,
         onLongPressEnd: on ? (_) => widget.onState?.call(false) : null,
         onLongPressCancel: on ? () => widget.onState?.call(false) : null,
+        // 松手回弹走 spring（会过冲一下再落位），按下走 ease（干脆）。
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
+          duration: widget.held ? m.fast : m.state,
+          curve: widget.held ? DshMotion.ease : DshMotion.spring,
           width: widget.held ? 54 : 46,
           height: widget.held ? 54 : 46,
           decoration: BoxDecoration(
@@ -320,6 +399,7 @@ class _CircleButton extends StatelessWidget {
     required this.onTap,
     required this.tooltip,
     this.primary = false,
+    this.onLongPress,
   });
 
   final IconData icon;
@@ -327,32 +407,72 @@ class _CircleButton extends StatelessWidget {
   final String tooltip;
   final bool primary;
 
+  /// 长按（只给主按钮用，见 [InputBar.onSendLongPress]）。
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null;
+    final m = DshMotion.of();
+
+    // 主按钮（发送/停止）走玻璃质感 + 按压形变；
+    // 次按钮（加号）保持原来的实底 + 水波纹 —— 一排里两个都发光会没有主次，
+    // 而水波纹与形变同时套在同一个手势上会触发两次回调。
+    if (!primary) {
+      return Tooltip(
+        message: tooltip,
+        child: Semantics(
+          button: true,
+          label: tooltip,
+          child: Material(
+            color: DshColors.surface,
+            shape: const CircleBorder(),
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              child: SizedBox(
+                width: 46,
+                height: 46,
+                child: Icon(
+                  icon,
+                  size: 19,
+                  color: enabled ? DshColors.textDim : DshColors.textFaint,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Tooltip(
       message: tooltip,
       child: Semantics(
         button: true,
         label: tooltip,
-        child: Material(
-          color: primary
-              ? (enabled ? DshColors.accent : DshColors.surfaceHigh)
-              : DshColors.surface,
-          shape: const CircleBorder(),
-          child: InkWell(
-            onTap: onTap,
-            customBorder: const CircleBorder(),
-            child: SizedBox(
-              width: 46,
-              height: 46,
-              child: Icon(
-                icon,
-                size: 19,
-                color: primary
-                    ? (enabled ? const Color(0xFF06211D) : DshColors.textFaint)
-                    : (enabled ? DshColors.textDim : DshColors.textFaint),
-              ),
+        child: DshGlass.pressable(
+          enabled: enabled,
+          onTap: onTap,
+          onLongPress: onLongPress,
+          duration: m.fast,
+          child: AnimatedContainer(
+            duration: m.fast,
+            curve: DshMotion.ease,
+            width: 46,
+            height: 46,
+            decoration: enabled
+                ? DshGlass.capsule(radius: 23)
+                : BoxDecoration(
+                    color: DshColors.surfaceHigh,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: DshColors.line, width: 1),
+                  ),
+            child: Icon(
+              icon,
+              size: 19,
+              // 底是玻璃渐变（不是强调色实底），所以前景随皮肤正文色走：
+              // 浅色皮肤玻璃偏亮 → 深字；深色皮肤玻璃偏暗 → 浅字。
+              color: enabled ? DshColors.text : DshColors.textFaint,
             ),
           ),
         ),

@@ -17,6 +17,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../theme/dsh_motion.dart';
 import '../theme/dsh_tokens.dart';
 
 /// 玻璃卡：板块内容的统一容器。
@@ -29,11 +30,23 @@ class DshGlassCard extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: padding ?? const EdgeInsets.all(DshMetrics.cardPad),
-        decoration: DshColors.panel(),
+  Widget build(BuildContext context) {
+    final pad = padding ?? const EdgeInsets.all(DshMetrics.cardPad);
+    // 玻璃皮肤：这一层是"板块内容的统一容器"，一屏内通常 1~3 个，在模糊预算内；
+    // 其他皮肤保持原来的半透明面板（零成本、零回归风险）。
+    if (DshMetrics.glassStyle) {
+      return DshGlass.surface(
+        radius: DshMetrics.cardRadius,
+        padding: pad,
         child: child,
       );
+    }
+    return Container(
+      padding: pad,
+      decoration: DshColors.panel(),
+      child: child,
+    );
+  }
 }
 
 /// 板块标题字。

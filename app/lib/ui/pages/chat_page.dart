@@ -31,6 +31,7 @@ import '../widgets/bottom_nav.dart';
 import '../widgets/enabled_experts_sheet.dart';
 import '../widgets/input_bar.dart';
 import '../widgets/message_stream.dart';
+import '../widgets/msg_action_menu.dart';
 import '../widgets/workspace_entry.dart';
 import '../widgets/session_drawer.dart';
 
@@ -1732,6 +1733,76 @@ class _ChatPageState extends State<ChatPage> {
 
   // ---------------------------------------------------------------- 交互
 
+  // ── 消息长按菜单（2026-11-13 换界面周期 P1）────────────────────────
+  //
+  // 四个入口共用同一条发送链路（[_send]），**不另开第二条发消息的路** ——
+  // 会话创建、标题登记、用量记账、自动滚动全在那条路上，另写一份必然漏。
+
+  /// 复制：交给菜单工具（先关弹层再写剪贴板 + 一条 SnackBar 回执）。
+  void _copyMsg(String text) => unawaited(copyWithSnack(context, text));
+
+  /// 引用：把这段话以 `> ` 前缀填回输入框，光标落到末尾。
+  ///
+  /// 为什么不是"直接发"：引用是**准备**动作，用户还要补自己的话。
+  void _quoteMsg(String text) {
+    final quoted = '> ${text.replaceAll('\n', '\n> ')}';
+    setState(() {
+      _input.text = _input.text.trim().isEmpty
+          ? '$quoted\n'
+          : '${_input.text}\n$quoted\n';
+      _input.selection =
+          TextSelection.collapsed(offset: _input.text.length);
+      // ⚠️ 纯赋值不触发 listener（见 initState 里 initialText 那段注释），
+      //    这里必须自己把按钮状态补上，否则填进去了却还是麦克风。
+      _hasInput = true;
+    });
+  }
+
+  /// 编辑后重发：把原话填回输入框，**原消息先留着** ——
+  /// 改完发不发由用户决定；一填回来就删，等于"手滑一下原话就没了"。
+  void _editResendMsg(String text) {
+    setState(() {
+      _input.text = text;
+      _input.selection = TextSelection.collapsed(offset: text.length);
+      _hasInput = text.trim().isNotEmpty;
+    });
+  }
+
+  /// 重新回答：清掉本轮半截输出，把**最后一条用户消息**重发一次。
+  ///
+  /// 只对最后一条开放（菜单里由上层传不传回调决定）。历史消息来自
+  /// `_resumedHistory`、删不掉，但 [_mergedMessages] 的去重是 **live 优先** ——
+  /// 重发同文本时历史那条会被跳过，渲染出来仍然只有一条，不会出现双胞胎。
+  void _regenerate() {
+    if (_running || _sendBusy) return;
+    ChatMsg? lastUser;
+    final list = _mergedMessages;
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (list[i].role == ChatRole.user) {
+        lastUser = list[i];
+        break;
+      }
+    }
+    if (lastUser == null) return;
+
+    // 清掉 live 里最后一条 user 及其后的半截助手输出（否则重发会叠在旧轮次上）。
+    var liveIdx = -1;
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i].role == ChatRole.user) {
+        liveIdx = i;
+        break;
+      }
+    }
+    if (liveIdx >= 0) {
+      setState(() => _messages.removeRange(liveIdx, _messages.length));
+    }
+    setState(() {
+      _input.text = lastUser!.text;
+      _hasInput = true;
+    });
+    unawaited(_send());
+  }
+
   Future<void> _send() async {
     final text = _input.text.trim();
     final acp = _acp;
@@ -1930,6 +2001,78 @@ class _ChatPageState extends State<ChatPage> {
           ? null
           : context.tr('轮换池 {0} · 本次用 {1}', [used.pool, used.member]);
     });
+    // 排队 / 中断并发送留下的那句话：本轮到此结束，接着发出去。
+    await _flushPendingSend();
+  }
+
+  // ── 发送方式（2026-11-13 换界面周期 P1-2）────────────────────────
+  //
+  // **刻意不做「插话」**：ACP 同一会话只允许一个 prompt 在飞 —— 运行中再发
+  // 会回 `Invalid params: a prompt is already in flight for this session`
+  // （缺陷 D 记录过这条，设备日志里出现过 4 次）。所以"不打断地塞一句"
+  // 在这条协议上根本不存在；给一个点了必然报错的选项，比不给更糟。
+  // 这里只做协议真支持的两种：排队、中断并发送。
+
+  /// 排队/中断后、等本轮结束再发的那句话。
+  String? _pendingSend;
+
+  /// 长按发送键 → 选发送方式（运行中才有意义，见 [InputBar.onSendLongPress]）。
+  void _openSendModeMenu() {
+    if (!_running) return;
+    showMsgActionMenu(context, <MsgAction>[
+      MsgAction(
+        icon: Icons.queue,
+        label: context.tr('排队：本轮结束后发送'),
+        onTap: _queueSend,
+      ),
+      MsgAction(
+        icon: Icons.stop_circle_outlined,
+        label: context.tr('中断并发送'),
+        onTap: _cancelThenSend,
+      ),
+    ]);
+  }
+
+  /// 排队：本轮自然结束后由 [_flushPendingSend] 接着发。
+  void _queueSend() {
+    final t = _input.text.trim();
+    if (t.isEmpty) return;
+    setState(() {
+      _pendingSend = t;
+      _input.clear();
+      _hasInput = false;
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(context.tr('已排队，本轮结束后自动发送')),
+        duration: const Duration(seconds: 2),
+      ));
+  }
+
+  /// 中断并发送：先 `session/cancel`，本轮结束时 [_flushPendingSend] 接着发。
+  void _cancelThenSend() {
+    final t = _input.text.trim();
+    if (t.isEmpty) return;
+    setState(() {
+      _pendingSend = t;
+      _input.clear();
+      _hasInput = false;
+    });
+    unawaited(_cancel());
+  }
+
+  /// 本轮结束：有待发的就接着发（`_running` 此时已被置回 false，门禁过得去）。
+  Future<void> _flushPendingSend() async {
+    final t = _pendingSend;
+    if (t == null || t.isEmpty || !mounted) return;
+    _pendingSend = null;
+    setState(() {
+      _input.text = t;
+      _hasInput = true;
+    });
+    await _send();
   }
 
   Future<void> _cancel() async {
@@ -2469,6 +2612,10 @@ class _ChatPageState extends State<ChatPage> {
             onOpenArtifacts: _openArtifacts,
             cwd: _cwd,
             thinkingMode: widget.thinkingMode,
+            onCopy: _copyMsg,
+            onQuote: _quoteMsg,
+            onEditResend: _editResendMsg,
+            onRegenerate: _regenerate,
           ),
         ),
       ],
@@ -2851,6 +2998,8 @@ class _ChatPageState extends State<ChatPage> {
         onVoiceState: _onVoiceState,
         onSend: _send,
         onCancel: _cancel,
+        // 长按发送键选「怎么发」（只在运行中给，空闲时短按就是发送）
+        onSendLongPress: _running ? _openSendModeMenu : null,
         onTapModel: _openModelSheet,
         onTapAttach: () => setState(() => _showAttachMenu = !_showAttachMenu),
       ),

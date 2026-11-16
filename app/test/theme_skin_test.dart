@@ -94,9 +94,42 @@ void main() {
       expect(DshPalettes.byId(null).id, 'dark');
       // 「自定义」不在真实皮肤列表里 —— 它不可能被选中。
       // 2026-10-12：新增第三套「像素」（用户要求）—— 顺序就是设置页里显示的顺序。
+      // 2026-11-13：新增「泡泡白 / 泡泡夜」（Lucian 风格色板，只动 DshPalette）。
       expect(DshPalettes.all.map((p) => p.id).toList(),
-          <String>['light', 'dark', 'pixel']);
+          <String>['light', 'dark', 'pixel', 'lucian-light', 'lucian-dark']);
       expect(DshPalettes.byId('pixel').id, 'pixel');
+      expect(DshPalettes.byId('lucian-light').id, 'lucian-light');
+      expect(DshPalettes.byId('lucian-dark').id, 'lucian-dark');
+      // 新皮肤各自必须是自己的亮度面（浅色面被判成深色会让整套明暗主题错乱）
+      expect(DshPalettes.lucianLight.isLight, isTrue);
+      expect(DshPalettes.lucianDark.isLight, isFalse);
+    });
+
+    test('玻璃拟态：只有泡泡白/泡泡夜两套打开，且三套形态互斥', () {
+      // 用户 2026-11-13 选定「玻璃拟态」（原话只回了一个「3」）。
+      // 这三套形态是**互斥的总闸**：像素走 pixelStyle，泡泡走 glassStyle，
+      // 另外三套是常规。混着开会让 DshGlass / DshMotion 各自取到互相矛盾的档位。
+      expect(DshPalettes.lucianLight.glassStyle, isTrue);
+      expect(DshPalettes.lucianDark.glassStyle, isTrue);
+      expect(DshPalettes.light.glassStyle, isFalse);
+      expect(DshPalettes.dark.glassStyle, isFalse);
+      expect(DshPalettes.pixel.glassStyle, isFalse);
+      // 玻璃皮肤不能同时是像素皮肤
+      for (final p in DshPalettes.all) {
+        if (p.glassStyle) {
+          expect(p.pixelStyle, isFalse,
+              reason: '${p.id}：玻璃拟态和像素风不能同时开');
+        }
+      }
+    });
+
+    test('玻璃拟态的总闸跟着换肤走（页面不自己判皮肤 id）', () {
+      DshColors.applySkin(DshPalettes.lucianLight);
+      expect(DshMetrics.glassStyle, isTrue);
+      DshColors.applySkin(DshPalettes.dark);
+      expect(DshMetrics.glassStyle, isFalse);
+      // 复原，别影响后面的用例
+      DshColors.applySkin(DshPalettes.dark);
     });
 
     test('像素风：圆角缩放是 0（方角是像素风的一半识别度）', () {

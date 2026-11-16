@@ -211,6 +211,47 @@ class DshColors {
     // 阴影不在这里改：它在色板里（`DshPalette.panelShadow`），像素皮肤那份是
     // **无模糊的硬方块位移**。
     final pixel = DshMetrics.pixelStyle;
+
+    // 玻璃拟态（泡泡白/泡泡夜）的"伪玻璃"：
+    //
+    // 这里**不做 BackdropFilter** —— 这函数画的是全 App 的卡片，列表里会同时存在
+    // 十几张，逐帧模糊会直接掉帧（见 DshMotion 里 DshGlass 的性能分级说明）。
+    // 真模糊只给 `DshGlass.surface` 那几处"同屏 1~3 个"的面。
+    //
+    // 卡片要的玻璃感由三样凑出来，观感上足够"透":
+    //   ① 底更淡（半透明白叠上去，背后页面的柔光能透一点）；
+    //   ② 描边换成**更亮的白**（玻璃边缘反光，比 1px 灰线更像玻璃）；
+    //   ③ 投影走三层（在 `DshMotion._softShadow` 里，玻璃皮肤自动加档）。
+    if (DshMetrics.glassStyle) {
+      // 底色分两种来源，别混：
+      //   · 调用方给了色（用户气泡 accentDim / AI 气泡 aiBubble）→ 尊重色相，
+      //     只把 alpha 压到 85%（更透一点才有玻璃感）；
+      //   · 没给 → 用玻璃默认的淡白，**浅色 54% / 深色 7%**（深色下再高就发灰）。
+      Color? fill;
+      if (gradient == null) {
+        if (color != null) {
+          fill = color.withValues(alpha: color.a * 0.85);
+        } else {
+          fill = DshColors.isLight
+              ? const Color(0x8AFFFFFF)
+              : const Color(0x12FFFFFF);
+        }
+      }
+      return BoxDecoration(
+        color: fill,
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(DshMetrics.radius(radius)),
+        border: Border.all(
+          color: borderColor ??
+              (DshColors.isLight
+                  ? const Color(0xB8FFFFFF)
+                  : const Color(0x3DFFFFFF)),
+          width: borderWidth,
+        ),
+        boxShadow: glow ? (shadow ?? panelShadow) : null,
+      );
+    }
+
     return BoxDecoration(
       color: gradient == null
           ? (color ?? (pixel ? surfaceStrong : surfaceHigh))
@@ -285,6 +326,12 @@ class DshMetrics {
 
   /// 小控件圆角（网站 `--radius-sm: 10px`）：chip、输入框、小按钮。
   static const double controlRadius = 10;
+
+  /// 当前皮肤是不是**玻璃拟态**那一套（见 [DshPalette.glassStyle]）。
+  ///
+  /// 三套形态各有一个总闸，都在这里汇合（页面不要自己判皮肤 id）：
+  /// `pixelStyle`（直角等宽）/ `glassStyle`（模糊悬浮）/ 默认（常规）。
+  static bool get glassStyle => DshColors.skin.glassStyle;
 
   /// 当前皮肤是不是**像素/终端**那一套（见 [DshPalette.pixelStyle]）。
   ///

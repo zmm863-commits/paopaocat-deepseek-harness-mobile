@@ -6,6 +6,7 @@ import '../../data/artifact_opener.dart';
 import '../../data/artifacts.dart';
 import '../theme/dsh_tokens.dart';
 import 'common.dart';
+import 'msg_action_menu.dart';
 
 import '../../i18n/dsh_i18n.dart';
 import '../cards/card_renderer.dart';
@@ -70,6 +71,10 @@ class MessageStream extends StatelessWidget {
     this.cwd,
     this.turnStartedAt,
     this.thinkingMode = 'collapsed',
+    this.onCopy,
+    this.onQuote,
+    this.onRegenerate,
+    this.onEditResend,
   });
 
   final List<ChatMsg> messages;
@@ -88,10 +93,30 @@ class MessageStream extends StatelessWidget {
   /// 这一轮的开始时刻；非空时运行行会多显示「已等待 M:SS」（审计 P1-1）。
   final DateTime? turnStartedAt;
 
+  // ── 消息长按菜单（2026-11-13 换界面周期 P1）────────────────────────
+  //
+  // 四个回调**全部可选**：不传就不显示对应菜单项。这样"菜单里有个点了
+  // 没反应的项"从结构上不可能发生 —— 而不是靠每个调用方记得传齐。
+  final void Function(String text)? onCopy;
+  final void Function(String text)? onQuote;
+
+  /// 重新回答：只对**最后一条 AI 回答**开放（DSH Go 同语义）。
+  final VoidCallback? onRegenerate;
+
+  /// 编辑后重发：把这条用户消息填回输入框改完再发。
+  final void Function(String text)? onEditResend;
+
   @override
   Widget build(BuildContext context) {
     final screenH = MediaQuery.sizeOf(context).height;
     final itemCount = messages.length + 1; // 第 0 项是「内容由AI生成」提示
+
+    // 最后一条 AI 回答的下标 —— 「重新回答」只对它开放（再往前的重新发送
+    // 会把后面所有轮次一起丢掉，那不是用户想要的）。
+    var lastAi = -1;
+    for (var k = 0; k < messages.length; k++) {
+      if (messages[k].role == ChatRole.assistant) lastAi = k;
+    }
 
     return ListView.builder(
       controller: controller,
@@ -148,12 +173,21 @@ class MessageStream extends StatelessWidget {
               streaming: running && i == messages.length,
             ),
           ChatRole.tool => ToolCallCard(msg: msg),
-          ChatRole.user => _UserBubble(msg: msg),
+          ChatRole.user => _UserBubble(
+              msg: msg,
+              onCopy: onCopy,
+              onQuote: onQuote,
+              onEditResend: onEditResend,
+            ),
           ChatRole.assistant => _AssistantBlock(
               msg: msg,
               artifacts: artifacts,
               onOpenArtifacts: onOpenArtifacts,
               cwd: cwd,
+              onCopy: onCopy,
+              onQuote: onQuote,
+              onRegenerate:
+                  (i - 1 == lastAi) ? onRegenerate : null,
             ),
         };
         // 「上下文 / 待办」提示条插在第一条消息之前。
@@ -282,9 +316,19 @@ class _AiNotice extends StatelessWidget {
 /// 注意设计稿的用户消息**不是右侧小气泡**（和常见聊天 App 不同），
 /// 而是一段占满宽度的正文 + 左下角 `展开∨`。这里照设计稿来。
 class _UserBubble extends StatefulWidget {
-  const _UserBubble({required this.msg});
+  const _UserBubble({
+    required this.msg,
+    this.onCopy,
+    this.onQuote,
+    this.onEditResend,
+  });
 
   final ChatMsg msg;
+
+  /// 长按菜单回调（见 [MessageStream] 上的同名字段说明）。
+  final void Function(String text)? onCopy;
+  final void Function(String text)? onQuote;
+  final void Function(String text)? onEditResend;
 
   @override
   State<_UserBubble> createState() => _UserBubbleState();
@@ -299,13 +343,45 @@ class _UserBubbleState extends State<_UserBubble> {
   /// 折叠时显示的行数。设计稿 page-02 的样例长消息折叠后正好 5 行正文。
   static const int _collapsedLines = 5;
 
+  /// 长按弹出的菜单：复制 / 引用 / 编辑后重发（每一项都可选，见字段注释）。
+  void _showMenu(BuildContext context, String text) {
+    showMsgActionMenu(context, <MsgAction>[
+      if (widget.onCopy != null)
+        MsgAction(
+          icon: Icons.copy,
+          label: context.tr('复制'),
+          onTap: () => copyWithSnack(context, text),
+        ),
+      if (widget.onQuote != null)
+        MsgAction(
+          icon: Icons.format_quote,
+          label: context.tr('引用'),
+          onTap: () => widget.onQuote!(text),
+        ),
+      if (widget.onEditResend != null)
+        MsgAction(
+          icon: Icons.edit,
+          label: context.tr('编辑后重发'),
+          onTap: () => widget.onEditResend!(text),
+        ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = widget.msg.text;
     final needCollapse = text.length > _collapseThreshold;
+    final canMenu = widget.onCopy != null ||
+        widget.onQuote != null ||
+        widget.onEditResend != null;
 
-    return Container(
-      width: double.infinity,
+    // 长按归**这个** GestureDetector —— 正文里不能再放 SelectionArea，
+    // 它会赢下手势竞技场（2026-11-16 真机实测，见下面正文处的说明）。
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: canMenu ? () => _showMenu(context, text) : null,
+      child: Container(
+        width: double.infinity,
       // 设计稿：用户消息末行 785~842 → 下方 `展开√` 885~938，
       // 再往下 `已完成` 1057~1105。也就是"正文底 → 展开"约 2% 屏高，
       // 换算后块与块之间约 10dp。
@@ -316,18 +392,22 @@ class _UserBubbleState extends State<_UserBubble> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 可选中复制（用户反馈「会话页面的对话无法复制」）。
-          // 这里用 SelectionArea 包 Text，而不是换成 SelectableText：
-          // SelectableText 不支持 overflow.ellipsis，会让下面「展开/收起」的折叠失效。
-          SelectionArea(
-            child: Text(
-              text,
-              maxLines: (!_expanded && needCollapse) ? _collapsedLines : null,
-              overflow:
-                  (!_expanded && needCollapse) ? TextOverflow.ellipsis : null,
-              style:
-                  TextStyle(color: DshColors.text, fontSize: 13.5, height: 1.5),
-            ),
+          // ⚠️ **不要**再套 SelectionArea / SelectableText（2026-11-16 改）。
+          //
+          // 原来这里用 SelectionArea 让正文可选中复制。但实测：外层的
+          // `GestureDetector.onLongPress` **抢不过** SelectionArea —— 长按弹出的是
+          // Android 系统的 Cut/Copy/Paste/Select all 菜单，我们自己的菜单根本不出现。
+          //
+          // 用户要的是「长按出菜单」（复制 / 引用 / 重新回答 / 编辑后重发），
+          // 所以这里退回普通 Text：长按归菜单，复制整条由菜单第一项负责。
+          // 代价：不能再长按拖选部分文字 —— 这个退路用菜单的「复制」补上了。
+          Text(
+            text,
+            maxLines: (!_expanded && needCollapse) ? _collapsedLines : null,
+            overflow:
+                (!_expanded && needCollapse) ? TextOverflow.ellipsis : null,
+            style:
+                TextStyle(color: DshColors.text, fontSize: 13.5, height: 1.5),
           ),
           if (needCollapse)
             Semantics(
@@ -358,6 +438,7 @@ class _UserBubbleState extends State<_UserBubble> {
             ),
         ],
       ),
+      ), // ← GestureDetector（长按菜单）收口
     );
   }
 }
@@ -616,6 +697,9 @@ class _AssistantBlock extends StatefulWidget {
     required this.artifacts,
     required this.onOpenArtifacts,
     this.cwd,
+    this.onCopy,
+    this.onQuote,
+    this.onRegenerate,
   });
 
   final ChatMsg msg;
@@ -624,6 +708,12 @@ class _AssistantBlock extends StatefulWidget {
 
   /// 会话的工作目录（产物预览显示相对路径用）
   final String? cwd;
+
+  /// 长按菜单回调（见 [MessageStream] 上的同名字段说明）。
+  /// [onRegenerate] 只在"这是最后一条 AI 回答"时由上层传进来。
+  final void Function(String text)? onCopy;
+  final void Function(String text)? onQuote;
+  final VoidCallback? onRegenerate;
 
   @override
   State<_AssistantBlock> createState() => _AssistantBlockState();
@@ -639,13 +729,45 @@ class _AssistantBlockState extends State<_AssistantBlock> {
   static const int _collapseThreshold = 220;
   static const int _collapsedLines = 8;
 
+  /// 长按弹出的菜单：复制 / 引用 / 重新回答（每一项都可选）。
+  void _showMenu(BuildContext context, String text) {
+    showMsgActionMenu(context, <MsgAction>[
+      if (widget.onCopy != null)
+        MsgAction(
+          icon: Icons.copy,
+          label: context.tr('复制'),
+          onTap: () => copyWithSnack(context, text),
+        ),
+      if (widget.onQuote != null)
+        MsgAction(
+          icon: Icons.format_quote,
+          label: context.tr('引用'),
+          onTap: () => widget.onQuote!(text),
+        ),
+      if (widget.onRegenerate != null)
+        MsgAction(
+          icon: Icons.refresh,
+          label: context.tr('重新回答'),
+          onTap: () => widget.onRegenerate!(),
+        ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final msg = widget.msg;
     final text = msg.text;
     // 失败信息不折叠：报错被截断会让人查不出原因
     final needCollapse = !msg.failed && text.length > _collapseThreshold;
+    final canMenu = widget.onCopy != null ||
+        widget.onQuote != null ||
+        widget.onRegenerate != null;
 
+    // ⚠️ 长按菜单**只包正文卡片**，不包整个 Column。
+    //    下面的产物区里有 `_ArtifactRow`（长按整行 = 分享），把 Column 整体
+    //    包进菜单会让**父手势先抢走长按**（hit test 自根向叶，父的 recognizer
+    //    先入竞技场）—— 那是已有功能的回退，自查时抓到的。
+    //    "已完成"行不进菜单范围：它没有可复制的正文。
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -672,7 +794,11 @@ class _AssistantBlockState extends State<_AssistantBlock> {
             ),
           ),
         if (text.isNotEmpty)
-          Container(
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onLongPress:
+                canMenu ? () => _showMenu(context, text) : null,
+            child: Container(
             width: double.infinity,
             margin: const EdgeInsets.only(bottom: 9),
             padding: const EdgeInsets.all(DshMetrics.cardPad),
@@ -680,9 +806,9 @@ class _AssistantBlockState extends State<_AssistantBlock> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 可选中复制（同上：助手回复是用户最常想复制的内容）。
-                SelectionArea(
-                  child: Text(
+                // 同用户气泡：**不能**套 SelectionArea —— 它会把长按抢走，
+                // 弹系统菜单而不是我们的。复制由菜单负责。
+                Text(
                     text,
                     maxLines:
                         (!_expanded && needCollapse) ? _collapsedLines : null,
@@ -696,7 +822,6 @@ class _AssistantBlockState extends State<_AssistantBlock> {
                       height: 1.55,
                     ),
                   ),
-                ),
                 if (msg.failed && (msg.detail?.isNotEmpty ?? false))
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
@@ -781,6 +906,7 @@ class _AssistantBlockState extends State<_AssistantBlock> {
                     ),
                   ),
               ],
+            ),
             ),
           ),
         if (widget.artifacts.isNotEmpty)

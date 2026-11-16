@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+
+import 'i18n/app_language.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -159,6 +162,21 @@ class _DshMobileAppState extends State<DshMobileApp> {
           child: MaterialApp(
             title: tr('泡泡猫的DSH'),
             debugShowCheckedModeBanner: false,
+            // ── 系统控件文案的中文（2026-11-16）────────────────────────────
+            // 输入框 / 文本长按会弹出系统菜单：Cut / Copy / Paste / Share /
+            // Select all。这五个词来自 `MaterialLocalizations`，**不是**我们自己的
+            // 三张 i18n 表能覆盖的 —— 不挂 delegate 就永远是英文默认值。
+            // 所以这里按 App 自己的语言设置把 locale 喂给 Flutter，
+            // 我们自己那套 `DshI18n` 照旧管界面文案，两者互不干扰。
+            locale: Locale(_appSettings.language.id),
+            supportedLocales: <Locale>[
+              for (final l in AppLanguage.values) Locale(l.id),
+            ],
+            localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
             // 两套皮肤：浅色逐条对齐 https://soft.zmm168.top/ 的 site.css 令牌；
             // 深色沿用 App 原有深色底 + 网站 accent 系的深色面。色值见
             // ui/theme/dsh_palette.dart，主题组装见 ui/theme/dsh_tokens.dart。

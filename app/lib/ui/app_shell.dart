@@ -9,7 +9,6 @@ import '../data/schedule_store.dart';
 import '../data/workspace_store.dart';
 import '../local/bot_server.dart';
 import '../local/diagnostics_log.dart';
-import 'first_run_guide.dart';
 import '../local/dsh_runtime.dart';
 import '../local/local_model_server.dart';
 import '../local/port_forwarder.dart';
@@ -380,13 +379,6 @@ class _AppShellState extends State<AppShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncBackgroundKeepAlive());
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _restoreNavOnce());
-    // 首装引导（0.78）：只弹一次，三条「能做什么」，不挡任何操作。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      FirstRunGuideDialog.showOnceIfNeeded(context,
-          filesDir: widget.runtime.filesDir);
-    });
-
     // 把"返回手势/返回键该不该退"接上原生通道（用户第 10 条）。
     // 原生侧在收到手势时会问这里一次（见 MainActivity.dispatchBackToDart）。
     DshHost.onSystemBack = _shouldExitOnBack;

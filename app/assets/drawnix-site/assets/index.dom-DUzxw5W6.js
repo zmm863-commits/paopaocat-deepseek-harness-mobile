@@ -1,0 +1,1 @@
+var e=document.createElement(`i`);function t(t){let n=`&`+t+`;`;e.innerHTML=n;let r=e.textContent;return r.charCodeAt(r.length-1)===59&&t!==`semi`||r===n?!1:r}export{t};

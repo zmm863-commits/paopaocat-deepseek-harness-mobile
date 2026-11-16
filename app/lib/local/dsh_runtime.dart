@@ -694,6 +694,10 @@ class DshRuntime {
   String get pptxScriptPath => '$toolboxDir/make-pptx.mjs';
   String get rotateProxyScriptPath => '$toolboxDir/rotate-proxy.mjs';
 
+  /// PDF 读文本（2026-11-14）：pdf.js 实现，纯 JS、无原生依赖。
+  /// 输出 Markdown（按行合并）或 JSON（带每个文本块坐标）。
+  String get parsePdfScriptPath => '$toolboxDir/parse-pdf.mjs';
+
   /// 换机迁移的备份脚本（打包 / 加密 / 还原，见 backup.mjs）。
   String get backupScriptPath => '$toolboxDir/backup.mjs';
 

@@ -354,4 +354,49 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await _save(tester, 'settings-light.png');
   });
+
+  // ── 2026-11-13 换界面周期：两套新皮肤必须有自己的实物图 ──────────────
+  //
+  // 发布铁律要求"新版本要更新截图" —— 皮肤是本周期唯一的视觉交付物，
+  // 只有 light/dark 两张旧图等于没交付。结构照抄上面的浅色用例（同一段
+  // pump 节奏：固定两帧，**不能 pumpAndSettle**，理由见上面的注释）。
+  testWidgets('设置页 · 泡泡白（新皮肤）', (tester) async {
+    tester.view.physicalSize = _logical * _pixelRatio;
+    tester.view.devicePixelRatio = _pixelRatio;
+    addTearDown(tester.view.reset);
+
+    DshColors.applySkin(DshPalettes.lucianLight);
+    DshStrings.setCurrent(AppLanguage.zh);
+    await tester.pumpWidget(_wrap(
+      SettingsTab(
+        runtime: _fakeRuntime(),
+        appSettings: AppSettings(),
+        onModelChanged: () async {},
+      ),
+      AppLanguage.zh,
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await _save(tester, 'settings-lucian-light.png');
+  });
+
+  testWidgets('设置页 · 泡泡夜（新皮肤）', (tester) async {
+    tester.view.physicalSize = _logical * _pixelRatio;
+    tester.view.devicePixelRatio = _pixelRatio;
+    addTearDown(tester.view.reset);
+
+    DshColors.applySkin(DshPalettes.lucianDark);
+    DshStrings.setCurrent(AppLanguage.zh);
+    await tester.pumpWidget(_wrap(
+      SettingsTab(
+        runtime: _fakeRuntime(),
+        appSettings: AppSettings(),
+        onModelChanged: () async {},
+      ),
+      AppLanguage.zh,
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await _save(tester, 'settings-lucian-dark.png');
+  });
 }

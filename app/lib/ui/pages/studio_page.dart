@@ -5,7 +5,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../i18n/dsh_i18n.dart';
 import '../../local/dsh_runtime.dart';
-import '../../local/agnes_web.dart';
+import '../../local/studio_server.dart';
 import '../theme/dsh_tokens.dart';
 
 /// 「APP界面设计台」—— 泡泡猫设计工作站（基于 m3e-canvas，MIT）的手机版。
@@ -30,6 +30,7 @@ class StudioPage extends StatefulWidget {
 }
 
 class _StudioPageState extends State<StudioPage> {
+  StudioServer? _server;
   WebViewController? _web;
   bool _loading = true;
   String? _error;
@@ -42,24 +43,38 @@ class _StudioPageState extends State<StudioPage> {
 
   @override
   void dispose() {
-    // 页面走了要不要停后端，取决于「电脑访问」是否还在用它
-    // （开着的话电脑那边连着，停掉就是 502）。
-    unawaited(AgnesWeb.releaseIfUnused());
+    // 页面走了就把 loopback 静态服务关掉（否则每进出一次就漏一个端口）。
+    final s = _server;
+    _server = null;
+    if (s != null) unawaited(s.stop());
     super.dispose();
   }
 
   Future<void> _boot() async {
     if (mounted) setState(() { _loading = true; _error = null; });
     try {
-      // ⚠️ 2026-10-27：设计站不是纯静态站 —— 它的 15 个引擎都走
-      //    `/agnes-studio/api/*`。原来这里只起一个静态托管（StudioServer），
-      //    结果是「界面能开、点生成就 404」。现在改起完整后端（AgnesWeb），
-      //    和「电脑访问」共用同一个实例：资料存手机、模型用手机配置。
-      final s = await AgnesWeb.ensureStarted(widget.runtime);
+      // 2026-11-14（用户报「打开应该是手机界面设计工具啊」后改回）：
+      //
+      // 这里在 2026-10-27 的 8faaba4 里被换成了 `AgnesWeb`（**电脑端**那个
+      // 网页插件「泡泡猫设计站」），理由是"静态托管点生成会 404"。
+      // 但那两件事被混在一起了，它们是**不同的东西**：
+      //
+      //   · 「泡泡猫设计站 / 影视工具」= DSH 的**网页插件**，本来就该在电脑上跑
+      //     （它自己的界面里就写着"完整功能请在电脑浏览器中使用"）；
+      //   · 「APP界面设计台」= m3e-canvas（MIT）的**手机适配版**：左侧选部件、
+      //     拖到画布上拼界面 → 生成给 AI 编程工具的提示词。**纯前端**，
+      //     不需要任何后端引擎，静态托管就够。
+      //
+      // 把电脑端的东西塞进这个入口，结果是手机用户打开看到的是一套跑不完整的
+      // 桌面界面。所以这里换回 `StudioServer` + `assets/studio/`。
+      final s = await StudioServer.start(
+        filesDir: widget.runtime.filesDir,
+      );
       if (!mounted) {
-        await AgnesWeb.releaseIfUnused();
+        await s.stop();
         return;
       }
+      _server = s;
       final c = WebViewController();
       // 它靠 JS 渲染画布，禁 JS 就是白屏。
       await c.setJavaScriptMode(JavaScriptMode.unrestricted);
@@ -80,7 +95,7 @@ class _StudioPageState extends State<StudioPage> {
       );
       await c.loadRequest(Uri.parse('http://127.0.0.1:${s.port}/'));
       if (!mounted) {
-        await AgnesWeb.releaseIfUnused();
+        await s.stop();
         return;
       }
       setState(() {

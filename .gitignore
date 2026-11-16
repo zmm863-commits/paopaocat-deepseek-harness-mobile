@@ -57,3 +57,8 @@ app/ohos/entry/src/main/resources/rawfile/
 # 鸿蒙 HAP 成品与调试交接包
 release/harmony/
 dist/handoff/
+
+# 人声分离模型（52.8MB，第三方权重，不进 git）
+# 原因：① 它会让克隆体积涨 50MB+；② 权重来自 UVR 项目，许可证与我们不同。
+# 获取方式见 docs/模型说明.md
+app/assets/models/uvr-mdxnet-kara2.onnx

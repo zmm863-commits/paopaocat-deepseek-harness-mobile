@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../theme/dsh_tokens.dart';
@@ -77,7 +79,14 @@ class DshBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    // 玻璃拟态皮肤（泡泡白/泡泡夜）：底部导航是**最值得花模糊预算的一处**
+    // —— 它长期可见、面积固定、同屏只有一个，而且内容会从它底下滚过去，
+    // 糊得出"透过去"的效果。其他皮肤走原来的实底 + 一条细线。
+    //
+    // ⚠️ 这里不套 `DshGlass.surface`：那个会加 1.2dp 渐变描边与圆角，而导航条
+    //    是**贴边通栏**的（圆角会让底部露出页面底色）。所以单独包一层
+    //    `BackdropFilter`，只取"模糊"这一件事。
+    final bar = Container(
       decoration: BoxDecoration(
         color: DshColors.navBg,
         border: Border(top: BorderSide(color: DshColors.divider, width: 0.5)),
@@ -104,6 +113,19 @@ class DshBottomNav extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+
+    if (!DshMetrics.glassStyle) return bar;
+    // 真模糊：把背后滚过的内容糊一层，再叠上半透明底（navBg 本身是半透明的）。
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(
+          sigmaX: 16,
+          sigmaY: 16,
+          tileMode: TileMode.clamp,
+        ),
+        child: bar,
       ),
     );
   }

@@ -1,7 +1,7 @@
 name: dsh_mobile
 description: "DSH Mobile —— 远程使用电脑上的 DSH Agent（会话、流式消息、工具卡片、命令审批）"
 publish_to: 'none'
-version: 0.0.83+254
+version: 0.0.84+255
 
 environment:
   sdk: ^3.0.0
@@ -14,6 +14,11 @@ dependencies:
   # 验证记录（体积/实时率/模型选择）见 docs/本机离线配音-验证.md。
   sherpa_onnx: ^1.13.8
   flutter:
+    sdk: flutter
+  # 系统控件的中文（2026-11-16）：输入框/文本长按弹的那个
+  # Cut / Copy / Paste / Share / Select all 菜单，文案来自 MaterialLocalizations。
+  # 不引入它，Flutter 用英文默认值 —— 中文界面里冒出五个英文单词。
+  flutter_localizations:
     sdk: flutter
   cupertino_icons: ^1.0.8
   provider: ^6.1.0
@@ -30,6 +35,8 @@ dependencies:
   # 2026-10-19：Bot 页是 WebView，网页里的「添加文件」需要一个宿主侧的文件选择器；
   # WebView 的 onShowFileChooser 只是**请求**，真正弹出选择器并回传路径要靠它。
   file_picker: ^8.0.0
+  # 人声分离（2026-11-14）：调 libmdx.so 用的 FFI 原语（calloc 等）。
+  ffi: ^2.1.0
   # WebView 的 Android 平台实现：文件选择器（setOnShowFileSelector）在这个包里。
   webview_flutter_android: ^4.0.0
 
@@ -68,6 +75,8 @@ flutter:
     #    所以这两个目录必须逐个列 —— 少一行，手机上 `require` 就会失败，
     #    而 APK 里看不出来（本地测试也会过，因为测试读的是磁盘）。
     #    由 test/toolbox_assets_test.dart 守着（磁盘上有的必须都在包里）。
+    # PDF 解析（2026-11-14）：pdf.js（Apache-2.0），纯 JS、无原生依赖。
+    - assets/toolbox/vendor/pdfjs/
     - assets/toolbox/vendor/seek-bzip/
     - assets/toolbox/vendor/seek-bzip/lib/
     # 「泡泡猫设计站」（创作台入口 + 网页版入口）：paopaocat-studio-web 的**完整**
@@ -75,6 +84,24 @@ flutter:
     # ⚠️ Flutter 的 assets **不递归**：子目录必须逐个列，少一行手机上就白屏。
     #    清单由脚本枚举生成，`test/studio_assets_test.dart` 守着两边一致。
     # 重新生成：见该测试的说明（从 paopaocat-studio-web/public 同步）。
+    # 白板（Drawnix，MIT）：一体化无限画布产物。2026-11-14 三梯队之一。
+    # ⚠️ 同样不递归 —— 产物根 + 它的 assets/ 子目录都要列。
+    - assets/drawnix-site/
+    - assets/drawnix-site/assets/
+    - assets/drawnix-site/logo/
+    # 「APP界面设计台」= m3e-canvas（MIT）的手机适配版产物。
+    # 2026-11-14 恢复：这份产物在 2026-10-27 的 8faaba4 里被删掉了，
+    # StudioPage 被换成了 Agnes 设计站（影视工具）—— 用户反馈
+    # 「打开应该是手机界面设计工具啊」，所以从 d50c40b 取回。
+    # ⚠️ Flutter 的 assets 不递归：这些子目录必须逐个列。
+    - assets/studio/
+    - assets/studio/404/
+    - assets/studio/_next/static/WSXUoDAuAnv0IwmZecDlP/
+    - assets/studio/_next/static/chunks/
+    - assets/studio/_next/static/media/
+    - assets/studio/_not-found/
+    - assets/studio/icons/
+    - assets/studio/logos/
     - assets/studio-site/
     - assets/studio-site/design/
     - assets/studio-site/design/404/
@@ -167,6 +194,8 @@ flutter:
     # 而且 bytes / sha256 是**数据**，由 install/models/refresh-manifest.mjs 回填。
     # ⚠️ 与 skills 同理：目录写法在旧版本上不保证递归，这里显式列到文件级最稳。
     - assets/models/model_manifest.json
+    # 人声分离模型（MDX-Net KARA_2，52.8MB）。首次使用解包到私有目录，只解一次。
+    - assets/models/uvr-mdxnet-kara2.onnx
     # 知识库清单（用户 2026-10-09 要求：本地大模型栏目下加「知识库」）。
     # ⚠️ 与 models / skills 同理：**显式列到文件级**，不写目录 —— 写目录在旧版本
     # 上不保证递归，会变成"清单在、内容不在"。

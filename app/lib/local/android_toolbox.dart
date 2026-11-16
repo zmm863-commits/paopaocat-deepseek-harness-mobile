@@ -55,6 +55,17 @@ class AndroidToolbox {
     // 图片默认只标注不抽，给 `--extract-images 目录` 才真写出来。
     'assets/toolbox/read-docx.mjs': 'toolbox/read-docx.mjs',
     'assets/toolbox/rotate-proxy.mjs': 'toolbox/rotate-proxy.mjs',
+    // ── PDF 读文本（2026-11-14，三梯队之三）──────────────────────────
+    // 社区那套 PDF 解析大多靠 PDFium（Chrome 的引擎），但它的预编译发布**没有
+    // Android 版本**（只有 linux/mac/win/wasm），linux-arm64 那个又链 glibc、
+    // Android 是 bionic —— 拿过来跑不起来。自己编 PDFium 要 depot_tools + 几 GB。
+    // 所以这里用 pdf.js（Mozilla，Apache-2.0，**纯 JavaScript**）：无原生依赖、
+    // 不用交叉编译，直接跟着 node 跑，能给出「文本 + 坐标 + 宽高」。
+    'assets/toolbox/parse-pdf.mjs': 'toolbox/parse-pdf.mjs',
+    // pdf.js 本体（脚本里 `import` 它 → 相对路径，所以目录结构要原样保留）。
+    'assets/toolbox/vendor/pdfjs/pdf.mjs': 'toolbox/vendor/pdfjs/pdf.mjs',
+    'assets/toolbox/vendor/pdfjs/pdf.worker.mjs':
+        'toolbox/vendor/pdfjs/pdf.worker.mjs',
     // ── 手机屏幕助手（2026-10-23）──────────────────────────────────
     // Agent 调「看屏幕 / 点屏幕 / 开应用」的 Node 客户端：读 filesDir/phone-agent.json
     // 拿端口+令牌，再打本机 127.0.0.1 的桥（见 Android 侧 PhoneAgentBridge.kt）。

@@ -50,8 +50,18 @@ class StudioServer {
   /// 解包（幂等）+ 起服务。失败**抛异常**，由调用方如实显示原因。
   ///
   /// [filesDir] 是 App 私有目录（`DshRuntime.filesDir`）。
-  static Future<StudioServer> start({required String filesDir}) async {
-    final root = await _unpack(filesDir);
+  /// [assetPrefix] / [subdir] / [markerName] 三个参数是为了**复用给别的静态 Web 产物**
+  /// （2026-11-14 加：白板 Drawnix 也用这一套解包 + loopback 托管）。
+  /// 不传就是原来的「APP界面设计台」行为，老调用方一个字都不用改。
+  static Future<StudioServer> start({
+    required String filesDir,
+    String assetPrefix = 'assets/studio/',
+    String subdir = 'studio',
+    String markerName = '.studio-unpacked',
+    String logTag = 'studio',
+  }) async {
+    final root =
+        await _unpack(filesDir, assetPrefix, subdir, markerName, logTag);
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final s = StudioServer._(server, server.port, root);
     // 不 await：`listen` 会一直挂着，直到服务被关掉。
@@ -77,8 +87,10 @@ class StudioServer {
   /// **幂等**：指纹没变就直接用现有的（不必每次启动都拷 3 MB）。
   /// ⚠️ 指纹用**自己算的确定性**校验和，**不要用 `String.hashCode`** ——
   /// Dart 的字符串 hashCode 不保证跨进程一致，用它会导致每次启动都重新解包。
-  static Future<Directory> _unpack(String filesDir) async {
-    final root = Directory('$filesDir/studio');
+  static Future<Directory> _unpack(
+      String filesDir, String assetPrefix, String subdir, String markerName,
+      String logTag) async {
+    final root = Directory('$filesDir/$subdir');
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     final assets = manifest
         .listAssets()
@@ -103,11 +115,11 @@ class StudioServer {
     if (root.existsSync() && marker.existsSync()) {
       try {
         if (marker.readAsStringSync().trim() == fingerprint) {
-          debugPrint('[dsh-studio] 产物未变（$fingerprint），跳过解包');
+          debugPrint('[$logTag] 产物未变（$fingerprint），跳过解包');
           return root;
         }
       } catch (e) {
-        debugPrint('[dsh-studio] 读标记失败，改为重新解包：$e');
+        debugPrint('[$logTag] 读标记失败，改为重新解包：$e');
       }
     }
 
@@ -125,7 +137,7 @@ class StudioServer {
       count++;
     }
     marker.writeAsStringSync(fingerprint);
-    debugPrint('[dsh-studio] 已解包 $count 个文件 → ${root.path}（$fingerprint）');
+    debugPrint('[$logTag] 已解包 $count 个文件 → ${root.path}（$fingerprint）');
     return root;
   }
 

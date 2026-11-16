@@ -19,7 +19,13 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  // 现在有**两份** Web 产物，检查逻辑要覆盖两边：
+  //   · assets/studio-site —— 「泡泡猫设计站」= DSH 的网页插件（电脑端的形态）；
+  //   · assets/studio      —— 「APP界面设计台」= m3e-canvas 手机适配版
+  //     （2026-11-14 恢复：它在 8faaba4 里被删掉过，用户报「打开应该是手机界面
+  //     设计工具啊」后从 d50c40b 取回）。
   const studioRoot = 'assets/studio-site';
+  const studioRoots = <String>['assets/studio', 'assets/studio-site'];
 
   test('产物在（跑了 next build 并拷进来）', () {
     final dir = Directory(studioRoot);
@@ -37,10 +43,11 @@ void main() {
     expect(hasChunk, isTrue, reason: '产物里一个 .js 都没有 —— 页面打不开');
   });
 
-  test('磁盘上每个含文件的目录，pubspec.yaml 里都必须声明（否则手机上白屏）', () {
-    final root = Directory(studioRoot);
+  for (final rootPath in studioRoots) {
+  test('磁盘上每个含文件的目录，pubspec.yaml 里都必须声明（$rootPath）', () {
+    final root = Directory(rootPath);
     if (!root.existsSync()) {
-      markTestSkipped('产物不在，跳过（由上面那条测试报缺）');
+      markTestSkipped('$rootPath 不在，跳过');
       return;
     }
 
@@ -52,9 +59,15 @@ void main() {
       }
     }
 
-    // pubspec 侧：声明里的 assets/studio* 目录
+    // pubspec 侧：**只取这个 root 自己的**声明。
+    // ⚠️ 这里不能用 `assets/studio[^\s]*` 那种宽正则 —— 它会同时吃进
+    //    `assets/studio-site/...`，于是两条产物互相被判成"残留"（真踩过）。
     final pubspec = File('pubspec.yaml').readAsStringSync();
-    final declared = RegExp(r'^\s+-\s+(assets/studio[^\s]*)/\s*$', multiLine: true)
+    // 边界必须写死成「root 后面只能跟 /xxx」——
+    // 否则 assets/studio 会把 assets/studio-site/** 也匹配进来（真踩过两次）。
+    final declared = RegExp(
+            '^\\s+-\\s+(${RegExp.escape(rootPath)}(?:/[^\\s]*)?)/\\s*\$',
+            multiLine: true)
         .allMatches(pubspec)
         .map((m) => m.group(1)!)
         .toSet();
@@ -63,7 +76,7 @@ void main() {
     expect(missing, isEmpty,
         reason: '这些目录没在 pubspec.yaml 里声明，手机上会缺文件（白屏）：\n'
             '  ${missing.join('\n  ')}\n'
-            '修法：find assets/studio -type f -printf "%h\\n" | sort -u ，'
+            '修法：find $rootPath -type f -printf "%h\\n" | sort -u ，'
             '把结果逐行写成 assets: 下的条目');
 
     final stale = declared.difference(onDisk).toList()..sort();
@@ -71,4 +84,5 @@ void main() {
         reason: 'pubspec 里声明了磁盘上不存在的目录（产物重建后残留）：\n'
             '  ${stale.join('\n  ')}');
   });
+  }
 }

@@ -67,6 +67,15 @@ class DshPalette {
     /// 它一开：字体换等宽（`DshMetrics.fontFamily`）、描边加粗到 2dp、
     /// 面板改成不透明实心板、投影换成**无模糊的硬方块**、底纹加扫描线。
     this.pixelStyle = false,
+    /// **玻璃拟态**皮肤：真模糊层叠 + 高光描边 + 悬浮投影 + 快速弹入。
+    ///
+    /// 与 [pixelStyle] 同一个位置 —— 两者都是"换一整套形态"的总闸，
+    /// 由 `DshGlass` / `DshMotion` 读，**不要在页面里直接判皮肤 id**。
+    ///
+    /// 用户 2026-11-13 选定（原话只回了一个「3」，对应我给的三个方向里的
+    /// 第三档：玻璃拟态）。他此前对"只换色"的评价是「变化不大」，
+    /// 所以这一档必须做到**一眼能认出来**：能透过面看到背后的东西。
+    this.glassStyle = false,
     // ── 光晕阴影
     required this.panelShadow,
     required this.accentShadow,
@@ -177,6 +186,10 @@ class DshPalette {
   /// 圆角缩放（见构造里的说明）。
   /// 是不是"像素/终端"那套视觉（总闸在 `DshMetrics.pixelStyle`，别在别处判皮肤 id）。
   final bool pixelStyle;
+
+  /// 玻璃拟态（见构造参数说明）。`radiusScale` 之外，这一档还改模糊、描边、
+  /// 投影与动效时长 —— 具体在 `DshGlass` / `DshMotion` 里体现。
+  final bool glassStyle;
 
   final double radiusScale;
 
@@ -430,6 +443,151 @@ class DshPalettes {
         ],
       );
 
+  /// 「泡泡白」——暖白纸感 + 紫罗兰强调（Lucian 风格的浅色面）。
+  ///
+  /// 色值出处：Lucian UX/UI Prompt 的 `--ux-*` 主题令牌
+  /// （MIT License (c) 2026 Seokwoooo，https://lucianlabs.dev/uxui-prompt/）。
+  /// 这是一处**可行性判断**：该库的元素是纯 HTML/CSS/JS，无法直接进 Flutter，
+  /// 但它的色板是标准 CSS 变量，可以按名逐条映射到本类的字段上 —— 所以这里
+  /// 只取色值与层级关系，组件代码全部在 Dart 里重写。
+  ///
+  /// 与原令牌的三处**有意偏离**（都为过 `contrast_test` 的 WCAG AA）：
+  ///   * `--ux-accent:#6A57F2` → `#5F4EEB`：原值在暖白底上只有 4.41，在更实的
+  ///     次级底 `bgSoft` 上更低。同色相压暗到 **4.97 / 4.80**（首轮写 `#6452EE`
+  ///     时 `bgSoft` 还是更深的 `#EAE7E1`，实测 4.27 挂了测试 —— 两个值必须一起定）。
+  ///   * `--ux-ink-3:#8E8A97` → `#686472`：原值 3.01，压到 **5.14 / 4.96**。
+  ///     `textFaint` 是占位提示字，全 App 有两百多处 10.5px 小字在用它。
+  ///   * `--ux-warn:#D6731E` → `#9A5712`：原值 2.97，压到 **5.01 / 4.84**。
+  ///
+  /// 页面底取 `--ux-page`；次级底原计划取 `--ux-surface-3`（`#EAE7E1`，比底实
+  /// 一档），但它把上面两个色压到 4.27/4.29 直接挂测试 —— 改取 `#F1EEE8`
+  /// （在 `--ux-page` 与 `--ux-surface-3` 之间，亮度差 0.032，弹层仍有层次）。
+  static DshPalette get lucianLight => DshPalette(
+        id: 'lucian-light',
+        label: tr('泡泡白'),
+        glassStyle: true,
+        brightness: Brightness.light,
+        bg: const Color(0xFFF4F2EE),
+        bgSoft: const Color(0xFFF1EEE8),
+        bgGlow: const Color(0xFFFFFFFF),
+        // `--ux-glass:rgba(255,255,255,.58)`
+        surface: const Color(0x94FFFFFF),
+        surfaceHigh: const Color(0xF0FFFFFF),
+        surfaceStrong: const Color(0xFFFFFFFF),
+        fieldFill: const Color(0xFFFFFFFF),
+        navBg: const Color(0xF2FFFFFF),
+        // `--ux-line:rgba(22,21,27,.09)` / `--ux-line-2:…,.17)`
+        line: const Color(0x1716151B),
+        line2: const Color(0x2B16151B),
+        // `--ux-accent`（压暗后）/ `--ux-accent-2` / `--ux-grad` 第三色
+        accent: const Color(0xFF5F4EEB),
+        accent2: const Color(0xFF2F8FE0),
+        accent3: const Color(0xFF1FB89A),
+        accentDim: const Color(0x1F5F4EEB),
+        onAccent: const Color(0xFFFFFFFF),
+        // `--ux-ink` / `--ux-ink-2` / `--ux-ink-3`（faint 压暗后）
+        text: const Color(0xFF16151B),
+        textDim: const Color(0xFF57535F),
+        textFaint: const Color(0xFF686472),
+        // 代码块沿用本 App 的深蓝（Lucian 令牌没给代码色，这里不改设计语言）
+        codeBg: const Color(0xFF0F1729),
+        codeBg2: const Color(0xFF16203A),
+        codeText: const Color(0xFFE8EEFC),
+        codeMuted: const Color(0xFF93A2C6),
+        userBubble: const Color(0x1F5F4EEB),
+        aiBubble: const Color(0xE6FFFFFF),
+        // `--ux-mint` 压暗（原值 3.12）
+        ok: const Color(0xFF0E8A62),
+        busy: const Color(0xFF9A5712),
+        // `--ux-danger` 同族压暗，与本 App 浅色皮肤的 err 口径一致
+        err: const Color(0xFFC73249),
+        onOk: const Color(0xFFFFFFFF),
+        // `--ux-shadow:rgba(40,30,80,.14)`，几何沿用本 App 的面板光晕
+        panelShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x24281E50),
+            blurRadius: 44,
+            offset: Offset(0, 18),
+            spreadRadius: -24,
+          ),
+        ],
+        accentShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x8C5F4EEB),
+            blurRadius: 26,
+            offset: Offset(0, 10),
+            spreadRadius: -14,
+          ),
+        ],
+      );
+
+  /// 「泡泡夜」——近黑底 + 淡紫霓虹（Lucian 风格的深色面）。
+  ///
+  /// 色值出处同 [lucianLight]（`--ux-*` 令牌的 dark 段）。
+  /// 与原令牌的两处有意偏离：
+  ///   * `--ux-ink-2/.68` → `#A8A6A2`、`--ux-ink-3/.42` → `#82817F`：
+  ///     原令牌是**半透明**文字（要在页面上合成），本类的对比度是按不透明色
+  ///     算的（`contrast()` 忽略 alpha），所以这里给的是**合成到 `--ux-page`
+  ///     之后的不透明值** —— 口径不同，数值不能照抄。faint 合成后只有 3.66，
+  ///     提到 0.52 透明度再合成才到 5.14 / 4.71。
+  ///   * `--ux-warn` 等语义色直接用原值：深底上它们本来就过 AA。
+  static DshPalette get lucianDark => DshPalette(
+        id: 'lucian-dark',
+        label: tr('泡泡夜'),
+        glassStyle: true,
+        brightness: Brightness.dark,
+        bg: const Color(0xFF07080D),
+        bgSoft: const Color(0xFF13141C),
+        bgGlow: const Color(0xFF1A1B25),
+        // `--ux-glass:rgba(255,255,255,.07)` —— 与深色皮肤同为 7% 白，
+        // `theme_skin_test` 钉的「深色 surface alpha < 0.2」这条对它同样成立。
+        surface: const Color(0x12FFFFFF),
+        surfaceHigh: const Color(0x1AFFFFFF),
+        surfaceStrong: const Color(0xFF252632),
+        // 输入框填充必须不透明：`--ux-surface` 在深色下就是它
+        fieldFill: const Color(0xFF13141C),
+        navBg: const Color(0x14FFFFFF),
+        line: const Color(0x14FFFFFF),
+        line2: const Color(0x29FFFFFF),
+        // `--ux-accent` / `--ux-accent-2` / `--ux-grad` 第三色
+        accent: const Color(0xFFB7A4FF),
+        accent2: const Color(0xFF7DB4FF),
+        accent3: const Color(0xFFA5F2D3),
+        accentDim: const Color(0x26B7A4FF),
+        onAccent: const Color(0xFF0B0C12),
+        // `--ux-ink` 与两档合成后的不透明值（见类注释）
+        text: const Color(0xFFF4F0E8),
+        textDim: const Color(0xFFA8A6A2),
+        textFaint: const Color(0xFF82817F),
+        codeBg: const Color(0xFF0B0C12),
+        codeBg2: const Color(0xFF13141C),
+        codeText: const Color(0xFFF4F0E8),
+        codeMuted: const Color(0xFFA8A6A2),
+        userBubble: const Color(0x26B7A4FF),
+        aiBubble: const Color(0x0FFFFFFF),
+        ok: const Color(0xFF7EE8C0),
+        busy: const Color(0xFFFFB26B),
+        err: const Color(0xFFFF7D8C),
+        onOk: const Color(0xFF0B0C12),
+        // `--ux-shadow:rgba(0,0,0,.45)`
+        panelShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x73000000),
+            blurRadius: 44,
+            offset: Offset(0, 18),
+            spreadRadius: -24,
+          ),
+        ],
+        accentShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x8CB7A4FF),
+            blurRadius: 26,
+            offset: Offset(0, 10),
+            spreadRadius: -14,
+          ),
+        ],
+      );
+
   /// 按持久化的 id 取皮肤；认不出来就退回深色（旧版本的默认值）。
   static DshPalette byId(String? id) {
     switch (id) {
@@ -439,11 +597,21 @@ class DshPalettes {
         return dark;
       case 'pixel':
         return pixel;
+      case 'lucian-light':
+        return lucianLight;
+      case 'lucian-dark':
+        return lucianDark;
       default:
         return dark;
     }
   }
 
   /// 全部可选皮肤（UI 里按这个顺序画按钮）。
-  static List<DshPalette> get all => <DshPalette>[light, dark, pixel];
+  static List<DshPalette> get all => <DshPalette>[
+        light,
+        dark,
+        pixel,
+        lucianLight,
+        lucianDark,
+      ];
 }
