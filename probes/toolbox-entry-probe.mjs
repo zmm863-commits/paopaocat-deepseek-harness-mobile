@@ -46,10 +46,13 @@ function check(label, ok, detail = '') {
 }
 
 /** 跑一个脚本：返回 {code, stdout, stderr}。stdin 可选喂内容。 */
-function run(scriptPath, args = [], stdinText = null, timeoutMs = 8000) {
+function run(scriptPath, args = [], stdinText = null, timeoutMs = 8000, cwd = process.cwd()) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [scriptPath, ...args], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      // cwd 固定到临时目录：mcp-office --selftest 会往当前目录写
+      // `.mcp-office-selftest/selftest.docx|xlsx`，在仓库里跑会留下垃圾。
+      cwd,
     });
     let stdout = '';
     let stderr = '';
@@ -100,7 +103,7 @@ try {
     '',
   ].join('\n');
 
-  const mcp = await run(join(link, 'mcp-office.mjs'), [], handshake);
+  const mcp = await run(join(link, 'mcp-office.mjs'), [], handshake, 8000, work);
   const mcpTools = (mcp.stdout.match(/"name":"office_[a-z_]+"/g) || []).length;
   check(
     'mcp-office（经软链路径）能被 MCP 客户端拉起',
@@ -113,7 +116,7 @@ try {
   );
 
   // ── 2) mcp-office --selftest：走的是另一条入口分支
-  const selftest = await run(join(link, 'mcp-office.mjs'), ['--selftest']);
+  const selftest = await run(join(link, 'mcp-office.mjs'), ['--selftest'], null, 8000, work);
   check(
     'mcp-office --selftest（经软链路径）',
     selftest.code === 0 && /selftest ok/.test(selftest.stderr + selftest.stdout),
@@ -122,14 +125,14 @@ try {
 
   // ── 3) 另外三个：不给参数，只要**不静默**就算对（会打用法/报错，退出码非 0 也行）
   for (const script of ['make-docx.mjs', 'make-xlsx.mjs', 'read-xlsx.mjs']) {
-    const r = await run(join(link, script));
+    const r = await run(join(link, script), [], null, 8000, work);
     const silentZero = r.code === 0 && r.stdout.length === 0 && r.stderr.length === 0;
     check(`${script}（经软链路径）不会静默退出 0`, !silentZero,
       `exit=${r.code} out=${r.stdout.length}B err=${r.stderr.length}B`);
   }
 
   // ── 4) 对照：make-pptx 早就是新写法，必须一样不静默
-  const pptx = await run(join(link, 'make-pptx.mjs'));
+  const pptx = await run(join(link, 'make-pptx.mjs'), [], null, 8000, work);
   check(
     'make-pptx（对照组）同样不静默',
     !(pptx.code === 0 && pptx.stdout.length === 0 && pptx.stderr.length === 0),
