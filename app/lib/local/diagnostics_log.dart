@@ -548,7 +548,14 @@ class DiagnosticsLog {
           first: p.ts,
           last: p.ts,
           tag: p.tag,
-          msg: normalize(p.msg),
+          // ⚠️ 展示用**不带数字打码**的那一版。
+          //
+          // `normalize()` 会把所有数字换成 `#`（那是给聚合 key 用的），一旦拿它
+          // 当展示文本，KEY 段就变成 `HTTP #` / `180 秒` → `# 秒`；2026-11-27
+          // 那份真机报告里 `7API_API_KEY` 被写成 `#API_API_KEY`、正则
+          // `[A-Za-z0-9_]` 被写成 `[A-Za-z#-#_]` —— **诊断结论就藏在被抹掉的数字里**，
+          // 只有在 DETAIL 段才能还原。聚合仍然按 `normalize()` 分组，只是不再拿它当文字。
+          msg: _displayMsg(p.msg),
         );
       } else {
         byKey[key] = (
@@ -605,6 +612,18 @@ class DiagnosticsLog {
   /// （明细是"出事现场"，不该被过度改写）。
   static String normalizeForDisplay(String msg) =>
       msg.replaceAll(RegExp(r'[ \t]{3,}'), '  ').trim();
+
+  /// KEY 段**展示**用的文本：保留数字与路径（那是出事现场），只压空白 + 截断。
+  ///
+  /// 为什么单独一个函数：`normalize()` 会把数字全换成 `#`，那是**聚合**用的
+  /// 归一化（`HTTP 400`/`HTTP 401` 才能并成一组）。拿它当展示文本的代价是
+  /// 2026-11-27 那份真机报告里 `7API_API_KEY` 显示成 `#API_API_KEY`、
+  /// `/^[A-Za-z_][A-Za-z0-9_]*$/` 显示成 `/^[A-Za-z_][A-Za-z#-#_]*$/` ——
+  /// 结论就在被抹掉的数字里，读者只能在 DETAIL 段里把它捞回来。
+  static String _displayMsg(String msg) {
+    final s = normalizeForDisplay(msg);
+    return s.length > 160 ? '${s.substring(0, 160)}…' : s;
+  }
 
   /// 报告顶部的统计。
   static String statsText() {

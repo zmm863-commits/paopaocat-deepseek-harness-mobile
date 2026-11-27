@@ -104,9 +104,7 @@ class ConfiguredModels {
         label: (label ?? '').trim().isEmpty ? id : label!.trim(),
         baseUrl: baseUrl.trim(),
         api: api.isEmpty ? 'openai-completions' : api,
-        apiKeyEnv: (apiKeyEnv ?? '').trim().isEmpty
-            ? envNameFor(sanitizeProviderId(id))
-            : apiKeyEnv!.trim(),
+        apiKeyEnv: normalizeApiKeyEnv(sanitizeProviderId(id), apiKeyEnv),
       );
 
   /// provider id 里只允许出现这些字符（overlay 的 YAML key + DSH 的路由键）。
@@ -147,8 +145,43 @@ class ConfiguredModels {
   }
 
   /// 默认的凭据环境变量名：`deepseek` → `DEEPSEEK_API_KEY`。
-  static String envNameFor(String providerId) =>
-      '${providerId.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '_')}_API_KEY';
+  static String envNameFor(String providerId) {
+    var s = providerId.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '_');
+    // ⚠️⚠️ **必须以字母或下划线开头**（2026-11-27 真机事故，见 [normalizeApiKeyEnv]）。
+    // 用户把厂家叫「7API」时，原来的实现会算出 `7API_API_KEY` —— 那是**非法凭据引用**，
+    // 引擎直接抛 TypeError，整条 llm-pi-ai 不激活。
+    if (!RegExp(r'^[A-Za-z_]').hasMatch(s)) s = 'P$s';
+    return '${s}_API_KEY';
+  }
+
+  /// 引擎认的凭据引用形状（`dsh-credentials` 的 `credentialRef()` 就是这条正则）。
+  ///
+  /// 真机原文（2026-11-27）：
+  ///   `TypeError: credential ref "7API_API_KEY" must match /^[A-Za-z_][A-Za-z0-9_]*$/`
+  ///   → `dsh: warning: 1 entry did not activate`
+  ///   → `session/new 失败：{"details":"no adapter registered for provider \"custom\""}`
+  ///
+  /// 也就是说**厂家名以数字开头就能让所有模型不可用**，而错误里只有一句
+  /// `no adapter registered`，根本指不到「7API」这个名字上。所以这里做两件事：
+  ///   ① `envNameFor` 永不产出非法名字（数字开头加 `P` 前缀）；
+  ///   ② 读盘时把历史上已经存进 models.json 的非法值就地改掉（[normalizeApiKeyEnv]）。
+  static final RegExp credentialRefPattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+  /// 规整 `apiKeyEnv`：空的按 id 推、非法的按 id 重算（并留一行日志）。
+  ///
+  /// 为什么读盘也要做：`models.json` 里那条 `"apiKeyEnv": "7API_API_KEY"` 是
+  /// **已经落盘的旧值**，只改 [envNameFor] 治不到存量用户 —— 他们一升级还是炸。
+  /// Key 本身存在安全区、按 **provider id** 取（见 `ProviderKeys.read`），
+  /// 所以改这个变量名不会丢 Key。
+  static String normalizeApiKeyEnv(String providerId, String? raw) {
+    final s = (raw ?? '').trim();
+    if (s.isEmpty) return envNameFor(providerId);
+    if (credentialRefPattern.hasMatch(s)) return s;
+    final fixed = envNameFor(providerId);
+    debugPrint('[dsh-models] apiKeyEnv "$s" 不是合法凭据引用'
+        '（必须以字母/下划线开头）→ 改成 "$fixed"');
+    return fixed;
+  }
 
   // ------------------------------------------------------------ 兼容用法：读
 

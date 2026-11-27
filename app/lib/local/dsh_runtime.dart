@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../data/session_capabilities.dart';
 import '../data/agnes_builtin.dart';
 import '../data/configured_models.dart';
+import '../data/model_overlay_rules.dart';
 import 'android_toolbox.dart';
 import 'diagnostics_log.dart';
 import 'local_model_spec.dart';
@@ -841,27 +842,28 @@ class DshRuntime {
     final home = Directory(nodeHome);
     if (!home.existsSync()) home.createSync(recursive: true);
 
-    final providers = <ProviderSpec>[...config.providers];
     final groups = <RotationGroupSpec>[...config.groups];
 
-    // 只写"真的有模型"的厂家。
+    // **写前校验**：把运行时 `resolveProfiles()` 会拒的条目挡在盘外。
     //
-    // ⚠️ 这个过滤是必须的：用户在设置里加了一个厂家但还没拉到模型时，
-    // `providers` 里会有一个空 models 的条目；YAML 里 `models:` 后面没有任何列表项
-    // 就是 **null**，DSH 的配置校验会因此让**整份 overlay** 失败 ——
-    // 表现是"对话突然完全不能用"。宁可少写一个空厂家，也不能写坏整份配置。
-    final emittable = <ProviderSpec>[
-      for (final p in providers)
-        // 两个条件缺一不可：
-        //  1. 必须真挂了模型 —— 空 `models:` 在 YAML 里是 null，校验会否掉整份 overlay；
-        //  2. baseURL 不能为空 —— 引擎的 `resolveProfiles` 会直接抛
-        //     `provider "x" has an empty baseURL`，**整条 llm-pi-ai 插件激活失败**，
-        //     表现为所有厂家都没有适配器（`no adapter registered for provider`）。
-        //     2026-11-05 真机日志：用户留了一个 0 模型的空厂家，全套模型全挂。
-        if (config.models.any((m) => m.provider == p.id) &&
-            p.baseUrl.trim().isNotEmpty)
-          p,
-    ];
+    // 2026-11-27 之前这里只有两条手工条件（有模型、baseURL 非空）。运行时的校验
+    // 比这多得多，而且**一条不合就整张表不激活**（`invalid()` 是 throw 不是 skip）——
+    // 于是任何漏网的一条都表现为 `session/new 失败：Internal error`，用户只知道
+    // "会话建不起来"。现在统一走 [ModelOverlayRules]：能修的修（去重 / context 兜底 /
+    // 未知协议回落），修不了的只丢那一条并留日志。规则逐条对应运行时源码，
+    // 见 `data/model_overlay_rules.dart` 的注释。
+    final plan = ModelOverlayRules.plan(config);
+    for (final note in plan.notes) {
+      debugPrint('[dsh-runtime] 写前校验：$note');
+    }
+    if (plan.notes.isNotEmpty) {
+      DiagnosticsLog.add(
+          'dsh-model', '写前校验改了 ${plan.notes.length} 处：${plan.notes.join('；')}');
+    }
+
+    // 只写"真的能写"的厂家 —— 空 models、空 baseURL、非法协议这些都已经在 plan 里
+    // 处理过了，这里直接用它的产物，不再另写一套条件（两套条件迟早会分叉）。
+    final emittable = plan.providers;
     if (emittable.isEmpty && groups.isEmpty && localModel == null) {
       debugPrint(
           '[dsh-runtime] 没有任何「带模型的厂家」/轮换组/本地模型，拒绝写空 providers（会写坏 overlay）');
@@ -886,7 +888,7 @@ class DshRuntime {
       if (emittable.isNotEmpty) {
         activeProvider = emittable.first.id;
         final mine =
-            config.models.where((m) => m.provider == activeProvider).toList();
+            plan.modelsOf(activeProvider);
         activeModel = mine.isNotEmpty ? mine.first.id : config.models.first.id;
       } else if (groups.isNotEmpty) {
         // 一个模型都没配、但有轮换组：直接把默认指向第一个组。
@@ -905,7 +907,7 @@ class DshRuntime {
         if (emittable.isNotEmpty) {
           activeProvider = emittable.first.id;
           final mine =
-              config.models.where((m) => m.provider == activeProvider).toList();
+              plan.modelsOf(activeProvider);
           activeModel =
               mine.isNotEmpty ? mine.first.id : config.models.first.id;
         } else if (groups.isNotEmpty) {
@@ -930,7 +932,7 @@ class DshRuntime {
         if (emittable.isNotEmpty) {
           activeProvider = emittable.first.id;
           final mine =
-              config.models.where((m) => m.provider == activeProvider).toList();
+              plan.modelsOf(activeProvider);
           activeModel =
               mine.isNotEmpty ? mine.first.id : config.models.first.id;
         } else {
@@ -955,7 +957,7 @@ class DshRuntime {
         activeProvider.isNotEmpty &&
         emittable.any((p) => p.id == activeProvider)) {
       final mine =
-          config.models.where((m) => m.provider == activeProvider).toList();
+          plan.modelsOf(activeProvider);
       final exists = mine.any((m) => m.id == activeModel.trim());
       if (!exists && mine.isNotEmpty) {
         debugPrint(
@@ -1020,7 +1022,7 @@ class DshRuntime {
         buf.writeln('          x-opencode-session: dsh-mobile');
       }
       buf.writeln('        models:');
-      final mine = config.models.where((m) => m.provider == p.id).toList();
+      final mine = plan.modelsOf(p.id);
       for (final m in mine) {
         buf.writeln('          - id: ${_yamlStr(m.id)}');
         buf.writeln('            name: ${_yamlStr(m.displayName)}');
@@ -1146,7 +1148,9 @@ class DshRuntime {
       // —— 2026-11-05 之前报的是全量，排查那个"空厂家毒死插件"的 bug 时，
       // 日志显示 2 个厂家、overlay 里其实只有 1 个，差点看错方向。
       '[dsh-runtime] overlay 已重写：${emittable.length} 个厂家 / '
-      '${config.models.where((m) => emittable.any((p) => p.id == m.provider)).length} 个模型 / '
+      // 模型数也要按「真正写进去的」算（plan 里已去重、已丢坏条目）——
+      // 直接数 config.models 会把被去重/被丢掉的那些也算进来，日志就会撒谎。
+      '${emittable.fold<int>(0, (n, p) => n + plan.modelsOf(p.id).length)} 个模型 / '
       '${groups.length} 个轮换组，'
       '默认=$activeProvider/$activeModel',
     );

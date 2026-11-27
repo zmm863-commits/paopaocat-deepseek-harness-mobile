@@ -32,8 +32,8 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { basename, dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { colIndex, xmlUnescape, zipRead } from './office-zip.mjs';
 
@@ -232,6 +232,24 @@ function main() {
   );
 }
 
-const isDirectRun = process.argv[1]
-  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
-if (isDirectRun) main();
+// 只有被**直接** `node <script>` 调用时才执行；被 import 时什么都不做（方便单测）。
+//
+// ⚠️ 2026-11-27：原来这里只有一句 URL 全等判断
+//     `import.meta.url === pathToFileURL(resolve(argv[1])).href`
+//   —— 只要 argv[1] 与真实路径有细微差别（realpath / 软链 / 前缀不同），就判成
+//   "不是直接运行"，于是 main() 根本不执行、进程**静默退出 0、两路零输出**。
+//   真机现场：`探活失败：node 提前退出 exit=0 | stderr=(空)`，烧掉十几轮排查。
+//   现在按文件名兜底（make-pptx 在 10-20 就已经这么改了，另外四个没跟上）。
+const isDirectRun = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    if (pathToFileURL(resolve(process.argv[1])).href === import.meta.url) return true;
+    return basename(process.argv[1]) === basename(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectRun) {
+  main();
+}

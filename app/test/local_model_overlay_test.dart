@@ -543,4 +543,114 @@ void main() {
           reason: '应回落到该厂家第一个可用模型');
     });
   });
+
+  group('写前校验：坏条目只丢自己，不拖垮整张表', () {
+    // 2026-11-27 用户报 `session/new 失败：Internal error`。
+    // 运行时的 `resolveProfiles()` 是 **全量 + 抛异常**：一条坏 → 整条 llm-pi-ai
+    // 不激活 → 所有模型消失 → 外面只剩 Internal error。所以这里钉住两件事：
+    //   ① 坏到无法修的厂家，绝不能出现在 YAML 里；
+    //   ② 好厂家必须原样、完整地写出来（不能因为隔壁坏了就一起丢）。
+    test('一个坏厂家不能连累好厂家，且 overlay 里不能出现坏的那条', () async {
+      const cfg = ConfiguredConfig(
+        version: 2,
+        providers: <ProviderSpec>[
+          ProviderSpec(
+            id: 'broken',
+            label: 'Broken',
+            baseUrl: '',
+            apiKeyEnv: 'BROKEN_API_KEY',
+          ),
+          ProviderSpec(
+            id: 'agnes',
+            label: 'Agnes',
+            baseUrl: 'https://api.agnes-ai.cn/v1',
+            apiKeyEnv: 'AGNES_API_KEY',
+          ),
+        ],
+        models: <ModelSpec>[
+          ModelSpec(provider: 'broken', id: 'x'),
+          ModelSpec(provider: 'agnes', id: 'agnes-3.0-flash'),
+        ],
+        groups: <RotationGroupSpec>[],
+        selected: 'agnes/agnes-3.0-flash',
+      );
+      await runtime.writeOverlayFromConfig(
+        config: cfg,
+        activeRoute: 'agnes/agnes-3.0-flash',
+      );
+      final text = File(runtime.overlayPath).readAsStringSync();
+
+      expect(text, isNot(contains('broken')), reason: '空 baseURL 的厂家会让整张表不激活');
+      expect(text, contains('agnes'), reason: '好厂家必须照写');
+      expect(text, contains('agnes-3.0-flash'));
+      expect(text, contains('provider: "agnes"'), reason: '默认路由要落在还在的厂家上');
+    });
+
+    test('厂家叫「7API」时，overlay 里的 apiKeyEnv 必须是合法凭据引用', () async {
+      // 2026-11-27 真机原文（用户在华为 SPN-AL00 上）：厂家 id 是 7api →
+      //   TypeError: credential ref "7API_API_KEY" must match /^[A-Za-z_][A-Za-z0-9_]*$/
+      // → 整条 llm-pi-ai 不激活 → 所有模型都没有适配器 → session/new 失败。
+      // 这里钉住写盘结果：非法名字一个都不能出现在 overlay 里。
+      final cfg = ConfiguredConfig(
+        version: ConfiguredModels.currentVersion,
+        providers: <ProviderSpec>[
+          ConfiguredModels.provider(
+            id: '7api',
+            label: '7API',
+            baseUrl: 'https://7api.example.com/v1',
+            // 存量用户 models.json 里就是这个旧值
+            apiKeyEnv: '7API_API_KEY',
+          ),
+        ],
+        models: const <ModelSpec>[
+          ModelSpec(provider: '7api', id: 'gpt-x', name: 'GPT X'),
+        ],
+        groups: const <RotationGroupSpec>[],
+        selected: '7api/gpt-x',
+      );
+      await runtime.writeOverlayFromConfig(
+        config: cfg,
+        activeRoute: '7api/gpt-x',
+      );
+      final text = File(runtime.overlayPath).readAsStringSync();
+
+      expect(text, isNot(contains('apiKeyEnv: 7API_API_KEY')),
+          reason: '数字开头的凭据引用会让整条 llm-pi-ai 不激活');
+      expect(text, contains('apiKeyEnv: ${ConfiguredModels.envNameFor('7api')}'));
+      expect(ConfiguredModels.credentialRefPattern
+          .hasMatch(ConfiguredModels.envNameFor('7api')), isTrue);
+    });
+
+    test('重复模型 id 要去重、contextWindow 非法值要兜底（都写进 YAML 里）', () async {
+      const cfg = ConfiguredConfig(
+        version: 2,
+        providers: <ProviderSpec>[
+          ProviderSpec(
+            id: 'amd',
+            label: 'AMD',
+            baseUrl: 'https://developer.amd.com.cn/radeon/api/v1',
+            apiKeyEnv: 'AMD_API_KEY',
+          ),
+        ],
+        models: <ModelSpec>[
+          ModelSpec(provider: 'amd', id: 'DeepSeek-V4-Flash', context: 0),
+          ModelSpec(provider: 'amd', id: 'DeepSeek-V4-Flash', context: 0),
+        ],
+        groups: <RotationGroupSpec>[],
+        selected: 'amd/DeepSeek-V4-Flash',
+      );
+      await runtime.writeOverlayFromConfig(
+        config: cfg,
+        activeRoute: 'amd/DeepSeek-V4-Flash',
+      );
+      final text = File(runtime.overlayPath).readAsStringSync();
+
+      // 只数模型清单里的那行（默认路由段也会出现这个 id，所以不能全局数）
+      expect(RegExp(r'- id: "DeepSeek-V4-Flash"').allMatches(text), hasLength(1),
+          reason: '同一 id 出现两次 → 运行时整表拒绝（lists model more than once）');
+      expect(text, isNot(contains('contextWindow: 0')),
+          reason: 'contextWindow 必须是正整数，否则运行时报 must be a positive integer');
+      expect(text, contains('contextWindow: 1000000'), reason: '非法值应兜底');
+    });
+  });
 }

@@ -625,6 +625,150 @@ body { overscroll-behavior-y: contain; }
   })();
   ''';
 
+  /// **老 WebView 兼容补丁**：补上近两年才进 Chromium 的那几个全局 API。
+  ///
+  /// 为什么（2026-11-18 真机报告 `dsh-report-20261118-155243.txt`，华为 ELS-AN00 /
+  /// Android 12 / EMUI）：用户点 Bot 页 ⋮ →「添加工作区…」，弹出的「选择工作区目录」
+  /// 对话框**目录列表空的**，框里一行红字 `AbortSignal.any is not a function`。
+  ///
+  /// 定位：不是 Bot 服务没起来（同一份日志里 15:45:12 服务已就绪、端口 44833），
+  /// 而是**网页端**用了老 WebView 没有的 API。链路是：
+  ///   目录选择器 `listDirectory(path, controller.signal)` 带 signal 调后端 →
+  ///   页面里的 `@deepseek-ai/dsh-api-gateway` 在"调用方带 signal"时走
+  ///   `signal: AbortSignal.any([token.abort.signal, callerSignal])` →
+  ///   这台手机的 WebView（Chromium < 116）没有 `AbortSignal.any` → TypeError。
+  /// 页面把这条异常当成"列目录失败"渲染进对话框，于是看着像"目录读不出来"。
+  ///
+  /// 为什么不止补这一个：同一批页面 bundle 里还用了 `Promise.withResolvers`
+  /// （Chromium 119）、`Object.hasOwn`（93）、`structuredClone`（98）、
+  /// `crypto.randomUUID`（92）、`Array.prototype.findLast`（97）。华为/国产 ROM 的
+  /// WebView 常年冻结在同一版，今天补 `.any`，明天换个按钮又会撞下一个 ——
+  /// 一次补齐，别让用户替我们逐个试。
+  ///
+  /// ⚠️ 注入时机：与上传 hook 同一条路（`onPageStarted`）。这些 API 都是**调用时**
+  /// 才查表（`AbortSignal.any([...])` 是属性查表，不是模块加载时抓引用），所以
+  /// 只要在用户点下去之前补上就有效；但必须在 boot 前，所以走 onPageStarted 而不是
+  /// onPageFinished。返回值是"这次补了哪几个"，直接写进诊断日志 —— 下次报告里能看见。
+  ///
+  /// 已知取舍：`structuredClone` 的兜底是 JSON 往返，会丢 Date/Map/Set/二进制。
+  /// 页面只用它拷贝接口返回的纯 JSON，够用；真要传二进制，那条路另有实现。
+  static const String _compatJs = r"""
+  (function () {
+    var done = [];
+    function has(o, k) { try { return typeof o[k] === 'function'; } catch (e) { return false; } }
+    function put(label, fn) { try { fn(); done.push(label); } catch (e) {} }
+
+    // AbortSignal.any —— Chromium 116（页面在"带 signal 调后端"时必用）
+    if (typeof AbortSignal !== 'undefined' && !has(AbortSignal, 'any')) {
+      put('AbortSignal.any', function () {
+        AbortSignal.any = function (signals) {
+          var ctrl = new AbortController();
+          var list = signals ? Array.prototype.slice.call(signals) : [];
+          for (var i = 0; i < list.length; i++) {
+            (function (s) {
+              if (!s) return;
+              if (s.aborted) { try { ctrl.abort(s.reason); } catch (e) { ctrl.abort(); } return; }
+              s.addEventListener('abort', function () {
+                try { ctrl.abort(s.reason); } catch (e) { ctrl.abort(); }
+              }, { once: true });
+            })(list[i]);
+            if (ctrl.signal.aborted) return ctrl.signal;
+          }
+          return ctrl.signal;
+        };
+      });
+    }
+
+    // AbortSignal.timeout —— Chromium 103
+    if (typeof AbortSignal !== 'undefined' && !has(AbortSignal, 'timeout')) {
+      put('AbortSignal.timeout', function () {
+        AbortSignal.timeout = function (ms) {
+          var ctrl = new AbortController();
+          setTimeout(function () {
+            var reason;
+            try { reason = new DOMException('signal timed out', 'TimeoutError'); }
+            catch (e) { reason = new Error('TimeoutError'); }
+            try { ctrl.abort(reason); } catch (e) { ctrl.abort(); }
+          }, ms);
+          return ctrl.signal;
+        };
+      });
+    }
+
+    // Promise.withResolvers —— Chromium 119
+    if (!has(Promise, 'withResolvers')) {
+      put('Promise.withResolvers', function () {
+        Promise.withResolvers = function () {
+          var resolve, reject;
+          var promise = new Promise(function (res, rej) { resolve = res; reject = rej; });
+          return { promise: promise, resolve: resolve, reject: reject };
+        };
+      });
+    }
+
+    // Object.hasOwn —— Chromium 93
+    if (!has(Object, 'hasOwn')) {
+      put('Object.hasOwn', function () {
+        Object.hasOwn = function (obj, key) {
+          return Object.prototype.hasOwnProperty.call(obj, key);
+        };
+      });
+    }
+
+    // structuredClone —— Chromium 98（JSON 往返兜底，见上方取舍说明）
+    if (typeof structuredClone === 'undefined') {
+      put('structuredClone', function () {
+        window.structuredClone = function (value) {
+          if (value === null || typeof value !== 'object') return value;
+          return JSON.parse(JSON.stringify(value));
+        };
+      });
+    }
+
+    // Array.prototype.findLast / findLastIndex —— Chromium 97
+    if (typeof Array.prototype.findLast !== 'function') {
+      put('Array.findLast', function () {
+        Array.prototype.findLast = function (fn, thisArg) {
+          for (var i = this.length - 1; i >= 0; i--) {
+            if (fn.call(thisArg, this[i], i, this)) return this[i];
+          }
+          return undefined;
+        };
+      });
+    }
+    if (typeof Array.prototype.findLastIndex !== 'function') {
+      put('Array.findLastIndex', function () {
+        Array.prototype.findLastIndex = function (fn, thisArg) {
+          for (var i = this.length - 1; i >= 0; i--) {
+            if (fn.call(thisArg, this[i], i, this)) return i;
+          }
+          return -1;
+        };
+      });
+    }
+
+    // crypto.randomUUID —— Chromium 92（只在安全上下文里生效，127.0.0.1 算安全上下文）
+    try {
+      if (window.crypto && !has(window.crypto, 'randomUUID') && window.crypto.getRandomValues) {
+        put('crypto.randomUUID', function () {
+          window.crypto.randomUUID = function () {
+            var b = new Uint8Array(16);
+            window.crypto.getRandomValues(b);
+            b[6] = (b[6] & 0x0f) | 0x40;
+            b[8] = (b[8] & 0x3f) | 0x80;
+            var h = '';
+            for (var i = 0; i < 16; i++) h += (b[i] + 0x100).toString(16).slice(1);
+            return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) +
+                   '-' + h.slice(16, 20) + '-' + h.slice(20);
+          };
+        });
+      }
+    } catch (e) {}
+
+    return done.length === 0 ? '无缺失' : done.join(' / ');
+  })();
+  """;
+
   /// 让**文件上传走主线程 fetch**，而不是 DSH 默认的 Blob Worker。
   ///
   /// 为什么（2026-10-24 真机实测）：上传实现在 `@deepseek-ai/dsh-client-file-upload`，
@@ -898,6 +1042,15 @@ body { overscroll-behavior-y: contain; }
         NavigationDelegate(
           // ── ① 页面刚起步：抢在 Cordis boot 前装上传 hook（见 _uploadHookJs）──
           onPageStarted: (_) async {
+            // ① 先补老 WebView 缺的 JS API（AbortSignal.any 等），必须在网页 boot 前。
+            //    顺序不能反：页面模块一跑起来就可能调这些 API（见 _compatJs 注释）。
+            try {
+              final installed = await controller.runJavaScriptReturningResult(_compatJs);
+              DiagnosticsLog.add('dsh-bot',
+                  '老 WebView 兼容补丁：${installed.toString().replaceAll('"', '')}');
+            } catch (e) {
+              DiagnosticsLog.add('dsh-bot', '老 WebView 兼容补丁注入失败（页面可能缺 JS API）：$e');
+            }
             try {
               await controller.runJavaScript(_uploadHookJs);
               DiagnosticsLog.add('dsh-bot', '页面开始加载：已装上传 hook（走主线程 fetch）');
