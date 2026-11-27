@@ -20,6 +20,11 @@ set -uo pipefail
 
 SRC="${1:?用法: ohos-build-flutter-hap.sh <flutter 源码目录> [输出目录]}"
 OUT="${2:-$(cd "$(dirname "$0")/.." && pwd)/release/harmony}"
+# REPO 只用来找 ohos-node/lib 里的 libnode.so。默认取仓库根（脚本在 install/ 下）。
+# 2026-11-26：原来这里直接引用 $REPO 但从未赋值 —— set -u 下必炸「REPO: unbound variable」。
+REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+# 脚本自身目录：后面会 cd 到构建目录，届时 $(dirname $0) 就解析不到了（2026-11-26 踩过）。
+HERE="$(cd "$(dirname "$0")" && pwd)"
 FLUTTER="${FLUTTER_OHOS_ROOT:-/tmp/fl347}"
 SDK="${OHOS_SDK_26:-/tmp/sdk26}"
 CLT="${CLT_HOME:-/tmp/clt/command-line-tools}"
@@ -122,6 +127,12 @@ fi
 # DSH 的 node 应用代码（纯 JS，跨平台通用），放 rawfile 供运行时解压
 RT_ZIP="${DSH_RUNTIME_ZIP:-/root/办公/dsh-runtime-bottest.zip}"
 if [ -f "${RT_ZIP}" ]; then
+  # ⚠️ 2026-11-26：这里以前裸拷，于是把 10-17 的**旧种子**（bundles 里带
+  #    dsh-client-ui-paopaocat）打进了正式包 —— 手机 Bot 页「进不去」的真凶。
+  #    出包前必须过 install/verify-runtime.mjs（第⑤道闸就是拦这个的）。
+  if ! node "${HERE}/verify-runtime.mjs" "${RT_ZIP}"; then
+    die "runtime 体检没过：${RT_ZIP}（别用这份，见上面提示）"
+  fi
   info "注入 dsh-runtime.zip（$(ls -lh "${RT_ZIP}" | awk '{print $5}')）"
   mkdir -p ohos/entry/src/main/resources/rawfile
   cp -f "${RT_ZIP}" ohos/entry/src/main/resources/rawfile/dsh-runtime.zip
@@ -141,6 +152,29 @@ mkdir -p "${SIGN_DIR}" "${OUT}"
 [ -f "${SIGN_DIR}/dsh.p12" ] || die "缺签名密钥，先跑一次 install/ohos-build-hap.sh 生成证书链"
 
 # profile 有效期要覆盖当前时间（SDK 模板里的 validity 是 2021–2024，直接签会过期）
+# ── 签名方式选择 ────────────────────────────────────────────────
+# 自签（OpenHarmony 测试证书，device-ids 为空=不限设备）只对 OpenHarmony 设备有效。
+# 华为 HarmonyOS NEXT 真机要求 **AGC 下发的调试 profile（绑 UDID）**，否则 hdc install 报
+#   error: failed to install bundle. code:9568257 error: fail to verify pkcs7 file.
+# 2026-11-26 踩过：脚本「签名验证通过」，装机却被拒。只要 /tmp/sign-agc 那套材料在，就走 AGC。
+AGC_DIR="${OHOS_AGC_SIGN_DIR:-/tmp/sign-agc}"
+if [ -f "${AGC_DIR}/agc-debug.p7b" ] && [ -f "${AGC_DIR}/agc-debug.cer" ]; then
+  info "签名：AGC 调试 profile（真机可装）"
+  # AGC 用的是华为证书链，OpenHarmony 的 verify-app 认不了（会抛异常），跳过自验。
+  VERIFY_SIGNATURE=0
+  SIGNED_TMP="${WORK}/DSH-Mobile-harmony.hap"
+  java -jar "${LIB}/hap-sign-tool.jar" sign-app -mode localSign \
+    -keyAlias "dsh-debug" -keyPwd 123456 \
+    -appCertFile "${AGC_DIR}/agc-debug.cer" \
+    -profileFile "${AGC_DIR}/agc-debug.p7b" \
+    -inFile "${UNSIGNED}" -signAlg SHA256withECDSA \
+    -keystoreFile "${AGC_DIR}/dsh-debug.p12" -keystorePwd 123456 \
+    -outFile "${SIGNED_TMP}" -compatibleVersion 12 2>&1 | grep -q 'sign-app success' \
+    || die "AGC 签 HAP 失败"
+  ok "签名完成（AGC）"
+else
+  info "签名：自签（OpenHarmony 测试证书；真机装不上时改用 AGC 材料）"
+  VERIFY_SIGNATURE=1
 python3 - "${SIGN_DIR}" "${BUNDLE}" "${DEV_ID}" <<'PY'
 import json, re, sys, time
 sign_dir, bundle, dev_id = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -178,14 +212,19 @@ java -jar "${LIB}/hap-sign-tool.jar" sign-app -mode localSign \
   -keystoreFile "${SIGN_DIR}/dsh.p12" -keystorePwd 123456 \
   -outFile "${SIGNED_TMP}" -compatibleVersion 12 2>&1 | grep -q 'sign-app success' \
   || die "签 HAP 失败"
-ok "签名完成"
+  ok "签名完成（自签）"
+fi
 
 # ── 验证 ────────────────────────────────────────────────────────
-info "验证签名"
-VERIFY=$(java -jar "${LIB}/hap-sign-tool.jar" verify-app -inFile "${SIGNED_TMP}" \
-  -outCertChain "${SIGN_DIR}/vf-chain.cer" -outProfile "${SIGN_DIR}/vf.p7b" 2>&1)
-echo "${VERIFY}" | grep -q 'Verify success' || { echo "${VERIFY}" | tail -6; die "签名验证失败"; }
-ok "签名验证通过"
+if [ "${VERIFY_SIGNATURE}" = "1" ]; then
+  info "验证签名"
+  VERIFY=$(java -jar "${LIB}/hap-sign-tool.jar" verify-app -inFile "${SIGNED_TMP}" \
+    -outCertChain "${SIGN_DIR}/vf-chain.cer" -outProfile "${SIGN_DIR}/vf.p7b" 2>&1)
+  echo "${VERIFY}" | grep -q 'Verify success' || { echo "${VERIFY}" | tail -6; die "签名验证失败"; }
+  ok "签名验证通过"
+else
+  info "跳过签名自验（AGC 链路用华为证书，OpenHarmony 工具认不了）"
+fi
 
 SIGNED="${OUT}/DSH-Mobile-harmony.hap"
 cp "${SIGNED_TMP}" "${SIGNED}"

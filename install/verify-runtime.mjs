@@ -67,6 +67,23 @@ except Exception:
   }
 }
 
+/** 用 python 读 zip 里某个条目的内容（不落盘），读不到返回 undefined。 */
+function readEntry(zipPath, name) {
+  const code = `
+import sys, zipfile
+try:
+    with zipfile.ZipFile(sys.argv[1]) as z:
+        sys.stdout.buffer.write(z.read(${JSON.stringify(name)}))
+except Exception:
+    sys.exit(3)
+`;
+  try {
+    return execFileSync('python3', ['-c', code, zipPath]);
+  } catch {
+    return undefined;
+  }
+}
+
 const zipPath = process.argv[2];
 if (!zipPath) {
   process.stderr.write('用法：node install/verify-runtime.mjs <dsh-runtime.zip>\n');
@@ -121,6 +138,33 @@ if (seed === 0) {
   );
 }
 
+// ── ⑤ Bot 种子不得挂 paopaocat ───────────────────────────────────
+// 2026-11-26 真机定位：bottest 的 bundles 里留着 `dsh-client-ui-paopaocat` 时，
+// paopaocat 0.3.4 的 `PpcLayer.refreshTheme` 会调 `this.applyFluidPalettes()`
+// （该构建里没有这个方法）→ ds-bot 的 `install shell` 抛 TypeError →
+// Bot 页停在 dsh 原生首页 hero，同时客户端 connection 插件激活被中断，
+// 左下角显示「连接异常，刷新重试」。摘掉 paopaocat 后名册/聊天/模型选择器全部正常。
+// 用户 2026-10-17 也已明确：bottest 不需要品牌主题。
+const seedPkg = readEntry(zipPath, 'app/profiles-seed/bottest/package.json');
+if (seedPkg !== undefined) {
+  let bundles;
+  try {
+    bundles = JSON.parse(seedPkg.toString('utf8'))?.dsh?.profile?.bundles ?? [];
+  } catch {
+    die('Bot 种子的 package.json 不是合法 JSON —— App 建 profile 会失败。');
+  }
+  const bad = bundles.filter((name) => String(name).includes('paopaocat'));
+  if (bad.length > 0) {
+    die(
+      `Bot 种子的 bundles 里混进了 ${bad.join(', ')} —— 手机上的 Bot 页会「进不去」。`,
+      'paopaocat 0.3.4 的 PpcLayer.refreshTheme 调了不存在的 applyFluidPalettes()，' +
+        'ds-bot 的 install shell 直接 TypeError，外壳装不上、connection 插件也起不来。' +
+        '修：从 app/profiles-seed/bottest/package.json 的 dsh.profile.bundles 里删掉它' +
+        '（install/make-bottest-seed.sh 早已不写这一项，别用旧运行时的种子）。',
+    );
+  }
+}
+
 process.stdout.write(
-  `✓ runtime 体检通过：${mb}MB · 0 条 win32 · anysearch 在位（${any} 条）· Bot 种子在位\n`,
+  `✓ runtime 体检通过：${mb}MB · 0 条 win32 · anysearch 在位（${any} 条）· Bot 种子在位（无 paopaocat）\n`,
 );
