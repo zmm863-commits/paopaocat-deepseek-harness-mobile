@@ -367,36 +367,35 @@ class _GlassShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 高光边的三个色：左上最亮、中段几乎透明、右下留一点反光（玻璃有厚度）。
-    final hi = DshColors.isLight ? const Color(0xE6FFFFFF) : const Color(0x8AFFFFFF);
-    final mid = DshColors.isLight ? const Color(0x1FFFFFFF) : const Color(0x14FFFFFF);
-    final lo = DshColors.isLight ? const Color(0x66FFFFFF) : const Color(0x3DFFFFFF);
+    // ⚠️ **不要**改回「外层渐变铺满 + 内层留 1.2dp」那个做法。
+    //
+    // 2026-11-16 真机踩到：内层 child 的底是半透明的（glass 分支用 7% 白），
+    // 外层那片 54% 白的渐变会**从里面透出来**，在近黑底（泡泡夜）上表现为
+    // 整张卡片发灰、文字像隔了一层雾。浅色主题下背景本来就是白纸，
+    // 所以测试渲染的截图里完全看不出来 —— 只有真机能暴露。
+    //
+    // 现在用单色 border：边只占 border 那 1.2dp，不渗进内容层。
+    // 代价是没有「左上亮、右下暗」的渐变厚度感，换来的是夜色下的可读性。
+    final edge = DshColors.isLight
+        ? const Color(0x99FFFFFF)
+        : const Color(0x40FFFFFF);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[hi, mid, lo],
-          stops: const <double>[0.0, 0.5, 1.0],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        // tileMode 必须是 clamp：默认的 decal 在边界会透出透明像素，
+        // 圆角处会出现一圈"没模糊到"的亮边（实测可见）。
+        filter: ui.ImageFilter.blur(
+          sigmaX: sigma,
+          sigmaY: sigma,
+          tileMode: TileMode.clamp,
         ),
-      ),
-      child: Padding(
-        // 这一圈就是"描边"的宽度。
-        padding: const EdgeInsets.all(1.2),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(radius - 1.2),
-          child: BackdropFilter(
-            // tileMode 必须是 clamp：默认的 decal 在边界会透出透明像素，
-            // 圆角处会出现一圈"没模糊到"的亮边（实测可见）。
-            filter: ui.ImageFilter.blur(
-              sigmaX: sigma,
-              sigmaY: sigma,
-              tileMode: TileMode.clamp,
-            ),
-            child: child,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(color: edge, width: 1.2),
           ),
+          child: child,
         ),
       ),
     );
