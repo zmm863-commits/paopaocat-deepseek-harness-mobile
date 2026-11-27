@@ -41,14 +41,29 @@ const String kUpdateRepo = 'zmm863-commits/paopaocat-deepseek-harness-mobile';
 /// 更新清单的文件名。放**仓库根目录**（与 `README.md` 并排）。
 const String kUpdateManifestName = 'update.json';
 
+/// Gitee 上的**同源镜像**（仓库坐标）。国内用户的主入口。
+///
+/// 为什么要有（2026-11-18 真机报告 `dsh-report-20261118-155243.txt`）：
+/// 那位用户身上两条 GitHub 系源**同时**被 reset
+/// （`Connection reset by peer`，raw 和 jsDelivr 都是），他看到的是一句
+/// 「检查失败：更新源都没连上（多半是网络问题，过一会儿再试）」。
+/// 而同一进程 0.5 秒后，公告 `notice.json` 从**同一个 raw 源**拉到了 4 条 ——
+/// 说明网络本身时通时断，两条同源兜底等于只有一条命。
+/// Gitee 的 raw 入口实测可用（HTTP 200），且与 GitHub 仓库同步推送。
+const String kGiteeRepo = 'paopaocat/paopaocat-deepseek-harness-mobile';
+
 /// 按优先级排的更新源。清单是**同一个文件**，区别只在入口。
 ///
-/// 顺序有讲究（都是上面那两条实测结论推出来的）：
+/// 并发取、谁先回用谁（见 `update_checker.dart`），所以这里的顺序只影响
+/// "正常情况下谁先到"，不影响可用性：
 ///   1. raw —— 快且新鲜，当主源；
-///   2. jsDelivr —— 国内直连 raw 常被污染/超时时的加速兜底，代价是最多 12 小时延迟。
+///   2. jsDelivr —— 国内直连 raw 常被污染/超时时的加速兜底，代价是最多 12 小时延迟；
+///   3. **Gitee 同源镜像** —— 前两条都是 GitHub 系，被墙/被 reset 时会**一起**挂，
+///      这条是完全独立的线路（2026-11-27 补）。
 List<String> defaultUpdateSources() => <String>[
       'https://raw.githubusercontent.com/$kUpdateRepo/main/$kUpdateManifestName',
       'https://cdn.jsdelivr.net/gh/$kUpdateRepo@main/$kUpdateManifestName',
+      'https://gitee.com/$kGiteeRepo/raw/main/$kUpdateManifestName',
     ];
 
 /// GitHub 官方的"最新 Release"接口（可选兜底，**当前没接进主流程**）。

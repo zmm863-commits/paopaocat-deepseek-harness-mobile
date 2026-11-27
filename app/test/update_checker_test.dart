@@ -356,14 +356,19 @@ void main() {
       expect(looksLikeUpdateSource('https://'), isFalse);
     });
 
-    test('内置源顺序：raw 在 jsDelivr 前面（新鲜度优先）', () {
+    test('内置源顺序：raw → jsDelivr → Gitee，三条指向同一份清单', () {
       final list = defaultUpdateSources();
-      expect(list, hasLength(2));
-      expect(list.first, contains('raw.githubusercontent.com'));
-      expect(list.last, contains('cdn.jsdelivr.net'));
-      // 两条指的是**同一份**清单，只是入口不同 —— 这点别被名字绕进去。
-      expect(list.first, endsWith('/$kUpdateManifestName'));
-      expect(list.last, endsWith('/$kUpdateManifestName'));
+      // 为什么是三条（2026-11-18 真机）：raw 与 jsDelivr 都是 GitHub 系，
+      // 那位用户身上**同时**被 reset，两条同源兜底等于只有一条命。
+      // Gitee 是独立线路，必须排在最后当真正的兜底。
+      expect(list, hasLength(3));
+      expect(list[0], contains('raw.githubusercontent.com'));
+      expect(list[1], contains('cdn.jsdelivr.net'));
+      expect(list[2], contains('gitee.com'));
+      for (final u in list) {
+        // 三条指的是**同一份**清单，只是入口不同 —— 这点别被名字绕进去。
+        expect(u, endsWith('/$kUpdateManifestName'));
+      }
       expect(kReleasesPage, contains('/releases/latest'));
     });
   });
