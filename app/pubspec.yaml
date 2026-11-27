@@ -1,7 +1,7 @@
 name: dsh_mobile
 description: "DSH Mobile —— 远程使用电脑上的 DSH Agent（会话、流式消息、工具卡片、命令审批）"
 publish_to: 'none'
-version: 0.0.84+255
+version: 0.0.85+256
 
 environment:
   sdk: ^3.0.0
@@ -89,6 +89,7 @@ flutter:
     - assets/drawnix-site/
     - assets/drawnix-site/assets/
     - assets/drawnix-site/logo/
+    - assets/drawnix-site/product_showcase/
     # 「APP界面设计台」= m3e-canvas（MIT）的手机适配版产物。
     # 2026-11-14 恢复：这份产物在 2026-10-27 的 8faaba4 里被删掉了，
     # StudioPage 被换成了 Agnes 设计站（影视工具）—— 用户反馈
